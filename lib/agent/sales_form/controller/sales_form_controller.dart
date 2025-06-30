@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:stove_transaction/admin/sales/controller/sales_controller.dart';
 
 class SalesFormController extends GetxController {
   final GlobalKey<FormState> formKey = GlobalKey<FormState>();
@@ -114,20 +115,23 @@ class SalesFormController extends GetxController {
   void _loadSaleDataForEdit(String saleId) {
     // This is a placeholder. In a real app, you would fetch the sale data
     // from your API service using the saleId.
-    // For now, we'll simulate fetching data.
-    print('Loading sale data for edit: $saleId');
-    // Example: Populate controllers with mock data for editing
-    fullNameController.text = 'John Doe';
-    phoneNumberController.text = '123-456-7890';
-    addressController.text = '123 Edit Street, Edit City';
-    selectedStoveId.value = 'STV001';
-    currentLatitude.value = '34.0522';
-    currentLongitude.value = '-118.2437';
-    geoSource.value = 'GPS';
-    // stoveImagePath.value = 'path/to/existing/stove_image.jpg';
-    // agreementImagePath.value = 'path/to/existing/agreement_image.jpg';
-    hasSigned.value =
-        true; // Assuming a signed document exists for an existing sale
+    final SalesController salesController = Get.find<SalesController>();
+    final sale = salesController.findSaleById(saleId);
+
+    if (sale != null) {
+      fullNameController.text = sale.userId; // Assuming userId is end-user name
+      phoneNumberController.text = 'N/A'; // No phone in Sale model
+      addressController.text = 'N/A'; // No address in Sale model
+      selectedStoveId.value = sale.product; // Assuming product is stove ID
+      // For geo-location, photo, signature, you'd load from sale object if available
+      // currentLatitude.value = sale.latitude;
+      // currentLongitude.value = sale.longitude;
+      // stoveImagePath.value = sale.stoveImagePath;
+      // agreementImagePath.value = sale.agreementImagePath;
+      // hasSigned.value = sale.hasSigned;
+    } else {
+      Get.snackbar('Error', 'Sale not found for editing.');
+    }
   }
 
   void updateSale() {
@@ -136,7 +140,10 @@ class SalesFormController extends GetxController {
       // Simulate API call for updating sale
       Future.delayed(const Duration(seconds: 2), () {
         isLoading.value = false;
+        final SalesController salesController = Get.find<SalesController>();
+        salesController.completeSale(Get.arguments['saleId']);
         Get.snackbar('Success', 'Sale updated successfully!');
+        Get.back();
       });
     } else if (!hasSigned.value) {
       Get.snackbar('Error', 'Please provide a digital signature.');

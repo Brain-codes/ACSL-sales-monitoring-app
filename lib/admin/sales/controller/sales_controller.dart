@@ -4,12 +4,21 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:stove_transaction/admin/sales/model/sale_model.dart';
 import 'package:stove_transaction/core/services/session_manager.dart';
+import 'package:stove_transaction/admin/sub_accounts/model/sales_agent_model.dart';
 
 class SalesController extends GetxController {
   final SessionManager _sessionManager = Get.find<SessionManager>();
 
   var isAdmin = false.obs;
   var isAgent = false.obs;
+
+  // Mock data for sales agents
+  final RxList<SalesAgent> salesAgents = <SalesAgent>[
+    SalesAgent(id: 'AG001', name: 'Agent Alpha', location: 'New York'),
+    SalesAgent(id: 'AG002', name: 'Agent Beta', location: 'Los Angeles'),
+    SalesAgent(id: 'AG003', name: 'Agent Gamma', location: 'Chicago'),
+    SalesAgent(id: 'AG004', name: 'Agent Delta', location: 'Houston'),
+  ].obs;
 
   @override
   void onInit() {
@@ -105,17 +114,23 @@ class SalesController extends GetxController {
     if (saleIndex != -1) {
       agentSales[saleIndex].status = 'Completed';
       agentSales.refresh();
+      Get.snackbar('Success', 'Sale with ID $saleId completed successfully.');
     }
   }
 
-  // For Admin: Assign sale to an agent
   void assignSale(String saleId, String agentName) {
-    // Implement logic to assign sale to an agent
     final saleIndex = adminSales.indexWhere((sale) => sale.id == saleId);
     if (saleIndex != -1) {
-      adminSales[saleIndex].agentName = agentName;
-      adminSales[saleIndex].status = 'Assigned';
-      adminSales.refresh();
+      final updatedSale = adminSales[saleIndex].copyWith(
+        agentName: agentName,
+        status: 'Assigned',
+      );
+      adminSales[saleIndex] = updatedSale;
+      // In a real app, you would sync this change to Hive and/or API
+      print(
+          'Sale $saleId assigned to $agentName and status updated to Assigned');
+    } else {
+      // Get.snackbar('Error', 'Sale with ID $saleId not found for assignment.');
     }
   }
 
@@ -129,6 +144,20 @@ class SalesController extends GetxController {
   // For Admin: Create new sale
   void createNewSale() {
     // Implement logic to create a new sale
+  }
+
+  Sale? findSaleById(String saleId) {
+    // Check adminSales first
+    try {
+      return adminSales.firstWhere((sale) => sale.id == saleId);
+    } catch (e) {
+      // If not found in adminSales, check agentSales
+      try {
+        return agentSales.firstWhere((sale) => sale.id == saleId);
+      } catch (e) {
+        return null; // Sale not found in either list
+      }
+    }
   }
 
   Color getStatusColor(String status) {

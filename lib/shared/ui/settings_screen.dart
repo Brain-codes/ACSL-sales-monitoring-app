@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:get/get.dart';
 import 'package:stove_transaction/core/constants/app_icons.dart';
+import 'package:stove_transaction/core/routes/app_routes.dart';
 import 'package:stove_transaction/shared/controller/settings_controller.dart';
 
 import 'package:stove_transaction/core/constants/app_colors.dart';
@@ -24,6 +25,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   _logout() {
     _settingsController.logout(context);
+    Get.toNamed(AppRoutes.SPLASH);
   }
 
   @override

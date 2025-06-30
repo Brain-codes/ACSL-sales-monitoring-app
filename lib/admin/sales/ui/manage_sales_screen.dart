@@ -6,6 +6,7 @@ import 'package:stove_transaction/admin/sales/controller/manage_sales_controller
 import 'package:stove_transaction/admin/sales/controller/sales_controller.dart';
 import 'package:stove_transaction/admin/sales/ui/sale_details_screen.dart';
 import 'package:stove_transaction/shared/widgets/base_app_bar.dart';
+import 'package:stove_transaction/core/routes/app_routes.dart';
 
 class ManageSalesScreen extends StatelessWidget {
   const ManageSalesScreen({Key? key}) : super(key: key);
@@ -36,8 +37,10 @@ class ManageSalesScreen extends StatelessWidget {
                   subtitle: Text('Amount: \$${sale.amount.toStringAsFixed(2)}'),
                   trailing: Text(sale.date.toLocal().toString().split(' ')[0]),
                   onTap: () {
-                    Get.put(SalesController());
-                    Get.to(() => SaleDetailsScreen(sale: sale));
+                    Get.toNamed(AppRoutes.AGENT_SALES_FORM, arguments: {
+                      'isEditMode': true,
+                      'saleId': sale.id,
+                    });
                   },
                 ),
               );

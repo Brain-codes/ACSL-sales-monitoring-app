@@ -46,4 +46,24 @@ class Sale {
         "agentName": agentName,
         "userId": userId,
       };
+
+  Sale copyWith({
+    String? id,
+    String? product,
+    double? amount,
+    DateTime? date,
+    String? status,
+    String? agentName,
+    String? userId,
+  }) {
+    return Sale(
+      id: id ?? this.id,
+      product: product ?? this.product,
+      amount: amount ?? this.amount,
+      date: date ?? this.date,
+      status: status ?? this.status,
+      agentName: agentName ?? this.agentName,
+      userId: userId ?? this.userId,
+    );
+  }
 }
