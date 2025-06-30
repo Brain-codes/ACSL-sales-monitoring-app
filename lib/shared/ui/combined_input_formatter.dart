@@ -1,5 +1,7 @@
 //IGNORE AND ONLY IMPROVE
 
+// ignore_for_file: prefer_const_constructors
+
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 
@@ -22,7 +24,8 @@ class CombinedInputFormatter extends TextInputFormatter {
 
     // Allow deletion
     if (newText.isEmpty) {
-      return TextEditingValue(text: '', selection: TextSelection.collapsed(offset: 0));
+      return TextEditingValue(
+          text: '', selection: TextSelection.collapsed(offset: 0));
     }
 
     // Remove all non-digit characters except for the decimal point
@@ -41,7 +44,8 @@ class CombinedInputFormatter extends TextInputFormatter {
     }
 
     // Format the number with commas
-    String formattedText = NumberFormat("#,##0.${'0' * decimalRange}").format(value);
+    String formattedText =
+        NumberFormat("#,##0.${'0' * decimalRange}").format(value);
 
     // Adjust the cursor position
     int newOffset = formattedText.length;
@@ -55,4 +59,4 @@ class CombinedInputFormatter extends TextInputFormatter {
       selection: TextSelection.collapsed(offset: newOffset),
     );
   }
-} 
+}

@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:stove_transaction/core/constants/app_colors.dart';
 import 'package:stove_transaction/core/constants/text_theme.dart';
-import 'package:stove_transaction/shared/Constants/app_icons.dart';
+import 'package:stove_transaction/core/constants/app_icons.dart';
 
 class BaseAppBar extends StatelessWidget implements PreferredSizeWidget {
   final bool showSkipButton;

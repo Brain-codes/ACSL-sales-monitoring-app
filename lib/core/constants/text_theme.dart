@@ -11,7 +11,7 @@ class TextThemes {
     double? letterSpacing,
     FontStyle fontStyle = FontStyle.normal,
   }) {
-    return GoogleFonts.dmSans(
+    return GoogleFonts.outfit(
       fontSize: fontSize,
       color: color,
       fontWeight: fontWeight,

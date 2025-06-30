@@ -1,5 +1,8 @@
+// ignore_for_file: prefer_const_constructors
+
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:stove_transaction/admin/sales/ui/admin_sales_screen.dart';
 import 'package:stove_transaction/core/services/session_manager.dart';
 import 'package:stove_transaction/main_layout/controller/layout_controller.dart';
 import 'package:stove_transaction/main_layout/ui/admin_bottom_nav.dart';
@@ -28,7 +31,7 @@ class MainLayout extends GetView<LayoutController> {
             index: controller.tabIndex.value,
             children: [
               DashboardScreen(),
-              SalesScreen(),
+              AdminSalesScreen(),
               MonitoringScreen(),
               SettingsScreen(),
             ],
@@ -37,7 +40,7 @@ class MainLayout extends GetView<LayoutController> {
           return IndexedStack(
             index: controller.tabIndex.value,
             children: [
-              SalesFormScreen(),
+              SalesScreen(),
               HistoryScreen(),
               SettingsScreen(),
             ],
