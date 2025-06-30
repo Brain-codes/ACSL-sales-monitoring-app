@@ -9,16 +9,22 @@ Sale saleFromJson(String str) => Sale.fromJson(json.decode(str));
 String saleToJson(Sale data) => json.encode(data.toJson());
 
 class Sale {
-  String id;
-  String product;
-  double amount;
-  DateTime date;
+  final String id;
+  final String product;
+  final double amount;
+  final DateTime date;
+  String status;
+  String? agentName;
+  final String userId;
 
   Sale({
     required this.id,
     required this.product,
     required this.amount,
     required this.date,
+    required this.status,
+    this.agentName,
+    required this.userId,
   });
 
   factory Sale.fromJson(Map<String, dynamic> json) => Sale(
@@ -26,6 +32,9 @@ class Sale {
         product: json["product"],
         amount: json["amount"],
         date: DateTime.parse(json["date"]),
+        status: json["status"],
+        agentName: json["agentName"],
+        userId: json["userId"],
       );
 
   Map<String, dynamic> toJson() => {
@@ -33,5 +42,8 @@ class Sale {
         "product": product,
         "amount": amount,
         "date": date.toIso8601String(),
+        "status": status,
+        "agentName": agentName,
+        "userId": userId,
       };
 }

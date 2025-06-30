@@ -3,6 +3,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:stove_transaction/admin/sales/controller/manage_sales_controller.dart';
+import 'package:stove_transaction/admin/sales/controller/sales_controller.dart';
 import 'package:stove_transaction/admin/sales/ui/sale_details_screen.dart';
 import 'package:stove_transaction/shared/widgets/base_app_bar.dart';
 
@@ -14,7 +15,8 @@ class ManageSalesScreen extends StatelessWidget {
     final ManageSalesController controller = Get.put(ManageSalesController());
 
     return Scaffold(
-      appBar: BaseAppBar( title: "Manage Sales",
+      appBar: BaseAppBar(
+        title: "Manage Sales",
       ),
       body: Obx(() {
         if (controller.isLoading.value) {
@@ -34,6 +36,7 @@ class ManageSalesScreen extends StatelessWidget {
                   subtitle: Text('Amount: \$${sale.amount.toStringAsFixed(2)}'),
                   trailing: Text(sale.date.toLocal().toString().split(' ')[0]),
                   onTap: () {
+                    Get.put(SalesController());
                     Get.to(() => SaleDetailsScreen(sale: sale));
                   },
                 ),

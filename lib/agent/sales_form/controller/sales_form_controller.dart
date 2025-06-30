@@ -34,12 +34,17 @@ class SalesFormController extends GetxController {
   // Loading and Offline State
   final RxBool isLoading = false.obs;
   final RxBool isOffline = false.obs; // Mock for now
+  var isEditMode = false.obs;
 
   @override
   void onInit() {
     super.onInit();
     // Simulate initial geo-location fetch
     _fetchCurrentLocation();
+    if (Get.arguments != null && Get.arguments['isEditMode'] == true) {
+      isEditMode.value = true;
+      _loadSaleDataForEdit(Get.arguments['saleId']);
+    }
   }
 
   void _fetchCurrentLocation() {
@@ -104,6 +109,40 @@ class SalesFormController extends GetxController {
     agreementImagePath.value = '';
     hasSigned.value = false;
     _fetchCurrentLocation(); // Re-fetch location for new form
+  }
+
+  void _loadSaleDataForEdit(String saleId) {
+    // This is a placeholder. In a real app, you would fetch the sale data
+    // from your API service using the saleId.
+    // For now, we'll simulate fetching data.
+    print('Loading sale data for edit: $saleId');
+    // Example: Populate controllers with mock data for editing
+    fullNameController.text = 'John Doe';
+    phoneNumberController.text = '123-456-7890';
+    addressController.text = '123 Edit Street, Edit City';
+    selectedStoveId.value = 'STV001';
+    currentLatitude.value = '34.0522';
+    currentLongitude.value = '-118.2437';
+    geoSource.value = 'GPS';
+    // stoveImagePath.value = 'path/to/existing/stove_image.jpg';
+    // agreementImagePath.value = 'path/to/existing/agreement_image.jpg';
+    hasSigned.value =
+        true; // Assuming a signed document exists for an existing sale
+  }
+
+  void updateSale() {
+    if (validateForm() && hasSigned.value) {
+      isLoading.value = true;
+      // Simulate API call for updating sale
+      Future.delayed(const Duration(seconds: 2), () {
+        isLoading.value = false;
+        Get.snackbar('Success', 'Sale updated successfully!');
+      });
+    } else if (!hasSigned.value) {
+      Get.snackbar('Error', 'Please provide a digital signature.');
+    } else {
+      Get.snackbar('Error', 'Please fill all required fields.');
+    }
   }
 
   @override

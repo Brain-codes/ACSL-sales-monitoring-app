@@ -8,7 +8,7 @@ import 'package:stove_transaction/core/constants/app_colors.dart';
 import 'package:stove_transaction/core/constants/text_theme.dart';
 import 'package:stove_transaction/core/routes/app_routes.dart';
 import 'package:stove_transaction/core/services/session_manager.dart';
-import 'package:stove_transaction/shared/Constants/app_icons.dart';
+import 'package:stove_transaction/core/constants/app_icons.dart';
 import 'package:stove_transaction/shared/widgets/dashboard_action_tile.dart';
 import 'package:stove_transaction/shared/widgets/summary_box.dart';
 

@@ -9,7 +9,10 @@ class AppColors {
   static const Color white = Color(0xFFFFFFFF);
   static const Color red = Color(0xFFFF0000);
   static const Color deepRed = Color(0xFFAF0000);
+  static const Color errorColor = Color(0xFFAF0000);
+  static const Color warningColor = Color(0xFFFFC107);
   static const Color green = Color(0xFF008000);
+  static const Color successColor = Color(0xFF008000);
   static const Color hintTextColor = AppColors.secondaryTextColor;
   static const Color borderColor = AppColors.borderGrey;
   static const Color borderGrey = Color(0xFFD8D9E0);

@@ -10,7 +10,7 @@ import 'package:stove_transaction/agent/sales_form/widgets/signature_input_widge
 import 'package:stove_transaction/core/constants/app_colors.dart';
 import 'package:stove_transaction/core/constants/text_theme.dart';
 import 'package:stove_transaction/shared/widgets/base_app_bar.dart';
-
+import 'package:stove_transaction/shared/widgets/page_header_tile.dart';
 
 class SalesFormScreen extends StatelessWidget {
   const SalesFormScreen({Key? key}) : super(key: key);
@@ -20,7 +20,7 @@ class SalesFormScreen extends StatelessWidget {
     final SalesFormController controller = Get.put(SalesFormController());
 
     return Scaffold(
-        appBar: BaseAppBar( title: "New Sale",),
+      appBar: BaseAppBar(),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
         child: Form(
@@ -28,7 +28,12 @@ class SalesFormScreen extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              PageHeaderTile(
+                title: 'New Sales',
+                subtitle: 'Capture sales details for your stove',
+              ),
               // End-User Info Section
+              SizedBox(height: 16),
               Card(
                 elevation: 2,
                 shape: RoundedRectangleBorder(
@@ -280,8 +285,12 @@ class SalesFormScreen extends StatelessWidget {
               // Submit Button + Offline Note
               Obx(
                 () => PrimaryButton(
-                  text: 'Submit Sale',
-                  onPressed: controller.submitForm,
+                  text: controller.isEditMode.value
+                      ? 'Update Sale'
+                      : 'Submit Sale',
+                  onPressed: () => controller.isEditMode.value
+                      ? controller.updateSale()
+                      : controller.submitForm(),
                   isLoading: controller.isLoading.value,
                 ),
               ),
