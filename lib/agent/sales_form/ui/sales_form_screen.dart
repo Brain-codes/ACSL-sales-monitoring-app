@@ -113,7 +113,9 @@ class SalesFormScreen extends StatelessWidget {
                       const SizedBox(height: 16),
                       Obx(
                         () => DropdownButtonFormField<String>(
-                          value: controller.selectedStoveId.value.isEmpty
+                          value: controller.selectedStoveId.value.isEmpty ||
+                                  !controller.mockStoveIds.contains(
+                                      controller.selectedStoveId.value)
                               ? null
                               : controller.selectedStoveId.value,
                           decoration: InputDecoration(

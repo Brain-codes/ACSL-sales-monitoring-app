@@ -2,12 +2,14 @@
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:stove_transaction/admin/sales/controller/sales_controller.dart';
 import 'package:stove_transaction/admin/sales/model/sale_model.dart';
+import 'package:stove_transaction/agent/sales_form/ui/sales_form_screen.dart';
+import 'package:stove_transaction/core/constants/text_theme.dart';
 import 'package:stove_transaction/shared/widgets/base_app_bar.dart';
 import 'package:stove_transaction/core/constants/app_colors.dart';
-import 'package:stove_transaction/core/constants/text_theme.dart';
-import 'package:stove_transaction/agent/sales_form/ui/sales_form_screen.dart';
-import 'package:stove_transaction/admin/sales/controller/sales_controller.dart';
+import 'package:stove_transaction/shared/widgets/primary_button.dart';
+import 'package:stove_transaction/admin/sub_accounts/model/sales_agent_model.dart';
 
 class SaleDetailsScreen extends StatelessWidget {
   final Sale sale;
@@ -206,103 +208,91 @@ class SaleDetailsScreen extends StatelessWidget {
 
   Widget _buildActionButtons(
       BuildContext context, SalesController salesController, Sale sale) {
-    return Container(
+    return Padding(
       padding: const EdgeInsets.all(16.0),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.grey.withOpacity(0.2),
-            spreadRadius: 2,
-            blurRadius: 5,
-            offset: Offset(0, 3),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          PrimaryButton(
+            text: 'Edit Sale',
+            onPressed: () {
+              Get.to(() => SalesFormScreen(), arguments: {
+                'isEditMode': true,
+                'saleId': sale.id,
+              });
+            },
+          ),
+          const SizedBox(height: 10),
+          PrimaryButton(
+            text: 'Assign to Agent',
+            onPressed: () {
+              _showAssignAgentBottomSheet(context, salesController, sale);
+            },
           ),
         ],
       ),
-      child: SafeArea(
+    );
+  }
+
+  void _showAssignAgentBottomSheet(
+      BuildContext context, SalesController salesController, Sale sale) {
+    Get.bottomSheet(
+      Container(
+        height: Get.height * 0.7,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+        ),
         child: Column(
-          mainAxisSize: MainAxisSize.min,
           children: [
-            ElevatedButton.icon(
-              onPressed: () {
-                // TODO: Implement Assign to Agent functionality
-                Get.snackbar('Action', 'Assign to Agent clicked');
-              },
-              icon: Icon(Icons.person_add, color: Colors.white),
-              label: Text('Assign to Agent',
-                  style: TextStyle(color: Colors.white)),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primaryColor,
-                minimumSize: Size.fromHeight(50),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10)),
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Text(
+                'Assign Sale to Agent',
+                style: TextThemes(context).getTextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.primaryColor,
+                ),
               ),
             ),
-            const SizedBox(height: 10),
-            ElevatedButton.icon(
-              onPressed: () {
-                // Navigate to SalesFormScreen for editing
-                Get.to(() => SalesFormScreen(),
-                    arguments: {'saleId': sale.id, 'isEditMode': true});
-              },
-              icon: Icon(Icons.edit, color: AppColors.primaryColor),
-              label: Text('Edit Sale',
-                  style: TextStyle(color: AppColors.primaryColor)),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.lightGrey,
-                minimumSize: Size.fromHeight(50),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10)),
-              ),
-            ),
-            const SizedBox(height: 10),
-            ElevatedButton.icon(
-              onPressed: () {
-                // TODO: Implement Mark as Completed functionality
-                salesController.completeSale(sale.id);
-                Get.snackbar('Action', 'Sale marked as Completed');
-              },
-              icon: Icon(Icons.check_circle, color: Colors.white),
-              label: Text('Mark as Completed',
-                  style: TextStyle(color: Colors.white)),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.green,
-                minimumSize: Size.fromHeight(50),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10)),
-              ),
-            ),
-            const SizedBox(height: 10),
-            ElevatedButton.icon(
-              onPressed: () {
-                // TODO: Implement Delete Sale functionality with confirmation
-                Get.defaultDialog(
-                  title: 'Delete Sale',
-                  middleText: 'Are you sure you want to delete this sale?',
-                  textConfirm: 'Delete',
-                  textCancel: 'Cancel',
-                  confirmTextColor: Colors.white,
-                  buttonColor: Colors.red,
-                  onConfirm: () {
-                    salesController.deleteSale(sale.id);
-                    Get.back(); // Close dialog
-                    Get.back(); // Go back to sales list
-                    Get.snackbar('Success', 'Sale deleted successfully');
+            Expanded(
+              child: Obx(() {
+                if (salesController.salesAgents.isEmpty) {
+                  return Center(
+                    child: Text('No agents available to assign at this time.'),
+                  );
+                }
+                return ListView.builder(
+                  itemCount: salesController.salesAgents.length,
+                  itemBuilder: (context, index) {
+                    final agent = salesController.salesAgents[index];
+                    return ListTile(
+                      title: Text(agent.name),
+                      subtitle: Text(agent.location),
+                      trailing: ElevatedButton(
+                        onPressed: () {
+                          salesController.assignSale(sale.id, agent.name);
+                          Get.back(); // Close bottom sheet
+                          Get.snackbar(
+                            'Success',
+                            'Sale assigned to ${agent.name} successfully.',
+                            snackPosition: SnackPosition.BOTTOM,
+                            backgroundColor: AppColors.primaryColor,
+                            colorText: Colors.white,
+                          );
+                        },
+                        child: Text('Assign'),
+                      ),
+                    );
                   },
                 );
-              },
-              icon: Icon(Icons.delete, color: Colors.white),
-              label: Text('Delete Sale', style: TextStyle(color: Colors.white)),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red,
-                minimumSize: Size.fromHeight(50),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10)),
-              ),
+              }),
             ),
           ],
         ),
       ),
+      isScrollControlled: true,
     );
   }
 }

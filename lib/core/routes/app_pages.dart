@@ -1,5 +1,8 @@
 import 'package:get/get.dart';
+import 'package:stove_transaction/admin/dashboard/controller/dashboard_controller.dart';
 import 'package:stove_transaction/admin/monitoring/monitoring_screen.dart';
+import 'package:stove_transaction/admin/sales/controller/sales_controller.dart';
+import 'package:stove_transaction/agent/sales_form/controller/sales_form_controller.dart';
 import 'package:stove_transaction/form/ui/user_form.dart';
 import 'package:stove_transaction/splash/ui/splash_screen.dart';
 import 'package:stove_transaction/onboarding/ui/onboarding_screen.dart';
@@ -42,13 +45,15 @@ class AppPages {
       page: () => MainLayout(),
       binding: BindingsBuilder(() {
         Get.put(LayoutController());
+        Get.put(DashboardController());
       }),
     ),
     GetPage(
-      name: AppRoutes.ADMIN_HOME,
+      name: AppRoutes.AGENT_HOME,
       page: () => MainLayout(),
       binding: BindingsBuilder(() {
         Get.put(LayoutController());
+        Get.put(SalesController());
       }),
     ),
     GetPage(
@@ -82,10 +87,16 @@ class AppPages {
     GetPage(
       name: AppRoutes.AGENT_SALES_FORM,
       page: () => const SalesFormScreen(),
+      binding: BindingsBuilder(() {
+        Get.put(SalesFormController());
+      }),
     ),
     GetPage(
       name: AppRoutes.SALES_FORM,
       page: () => const SalesFormScreen(),
+      binding: BindingsBuilder(() {
+        Get.put(SalesFormController());
+      }),
     ),
     GetPage(
       name: AppRoutes.USER_FORM,
