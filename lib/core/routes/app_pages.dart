@@ -82,7 +82,7 @@ class AppPages {
     ),
     GetPage(
       name: AppRoutes.MANAGE_SALES,
-      page: () => const ManageSalesScreen(),
+      page: () =>  ManageSalesScreen(),
     ),
     GetPage(
       name: AppRoutes.AGENT_SALES_FORM,

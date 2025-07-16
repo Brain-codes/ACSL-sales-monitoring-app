@@ -20,7 +20,7 @@ publish_to: "none" # Remove this line if you wish to publish to pub.dev
 version: 1.0.0+1
 
 environment:
-  sdk: ">=2.18.2 <3.0.0"
+  sdk: ">=3.2.0 <4.0.0"
 
 # Dependencies specify other packages that your package needs in order to work.
 # To automatically upgrade your package dependencies to the latest versions
@@ -38,21 +38,27 @@ dependencies:
   get: ^4.6.5
   dio: ^5.7.0
   googleapis_auth: ^1.3.1
-  googleapis: ^10.1.0
+  googleapis: ^13.1.0
   signature: ^5.3.0
   uuid: ^4.1.0
-  flutter_svg: ^1.1.6
+  flutter_svg: ^2.0.9
   google_fonts: ^4.0.4
-  intl: ^0.18.1
+  intl: ^0.20.2
   currency_formatter: ^2.2.2
-  camera: ^0.10.5+3
-  permission_handler: ^11.0.1
+  camera: ^0.11.0+2
+  permission_handler: ^12.0.0+1
   path_provider: ^2.1.0
   image_picker: ^1.0.2
   http_parser: ^4.0.2
   google_maps_flutter: ^2.3.0
   google_place: ^0.4.7
   get_storage: ^2.1.1
+  supabase_flutter: ^2.9.1
+  logger: ^2.6.0
+  toastification: ^2.3.0
+  cached_network_image: ^3.3.1
+  http_interceptor: ^1.0.2
+  shimmer: ^3.0.0
 
 dev_dependencies:
   flutter_test:
@@ -63,7 +69,7 @@ dev_dependencies:
   # activated in the `analysis_options.yaml` file located at the root of your
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
-  flutter_lints: ^2.0.0
+  flutter_lints: ^5.0.0
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

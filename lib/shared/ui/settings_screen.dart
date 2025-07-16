@@ -25,7 +25,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   _logout() {
     _settingsController.logout(context);
-    Get.toNamed(AppRoutes.SPLASH);
   }
 
   @override

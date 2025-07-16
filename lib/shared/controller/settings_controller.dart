@@ -2,6 +2,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:stove_transaction/core/routes/app_routes.dart';
 import 'package:stove_transaction/core/services/api_service.dart';
 import 'package:stove_transaction/shared/services/settings_service.dart';
 
@@ -38,31 +39,9 @@ class SettingsController extends GetxController {
   }
 
   Future<void> logout(BuildContext context) async {
-    // isLoading.value = true;
-    // final response = await _service.logout();
-    // if (response.code == 200) {
-    // await LocalDatabaseService().delete(DbKeyStrings.userDetailsKey);
-    // await LocalDatabaseService().delete(DbKeyStrings.signupDevice);
-    // await LocalDatabaseService().delete(DbKeyStrings.loginTimeCreated);
-    // await LocalDatabaseService().delete(DbKeyStrings.loginToken);
-    // await LocalDatabaseService().delete(DbKeyStrings.refreshToken);
-    // await LocalDatabaseService().delete(DbKeyStrings.tokenExpiration);
-    // await LocalDatabaseService().delete(
-    //   DbKeyStrings.decideLaterActive,
-    // );
-    // UserStatusPosition.isDecideLater = false;
-    // Navigator.pushNamedAndRemoveUntil(
-    //     context, ScreenConstant.loginScreen, (Route<dynamic> route) => false);
+    isLoading.value = true;
+    // Navigate to the splash screen and remove all previous routes
+    Get.offAllNamed(AppRoutes.LOGIN);
+    isLoading.value = false;
   }
-  // isLoading.value = false;
-  // }
-  // isLoading.value = false;
-
-  // Future<void> getUser(BuildContext context) async {
-  //   final response = await _authService.getUser();
-  //   if (response.code == 200) {
-  //     // await LocalDatabaseService()
-  //     //     .add(DbKeyStrings.userDetailsKey, response.body);
-  //   }
-  // }
 }

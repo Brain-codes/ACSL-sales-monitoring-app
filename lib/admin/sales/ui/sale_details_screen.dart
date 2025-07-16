@@ -1,298 +1,502 @@
-// ignore_for_file: prefer_const_constructors
-
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:get/get.dart';
+// Removed unused import
+
 import 'package:stove_transaction/admin/sales/controller/sales_controller.dart';
 import 'package:stove_transaction/admin/sales/model/sale_model.dart';
-import 'package:stove_transaction/agent/sales_form/ui/sales_form_screen.dart';
+import 'package:stove_transaction/core/constants/app_colors.dart';
+import 'package:stove_transaction/core/constants/app_icons.dart';
 import 'package:stove_transaction/core/constants/text_theme.dart';
 import 'package:stove_transaction/shared/widgets/base_app_bar.dart';
-import 'package:stove_transaction/core/constants/app_colors.dart';
-import 'package:stove_transaction/shared/widgets/primary_button.dart';
-import 'package:stove_transaction/admin/sub_accounts/model/sales_agent_model.dart';
 
 class SaleDetailsScreen extends StatelessWidget {
-  final Sale sale;
+  final SaleModel sale;
 
   const SaleDetailsScreen({Key? key, required this.sale}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
-    final SalesController salesController = Get.find<SalesController>();
-
     return Scaffold(
+      backgroundColor: AppColors.white,
       appBar: BaseAppBar(
-        title: "Sale Details",
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Header Section
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'End-User: ${sale.userId}', // Assuming userId is end-user name for now
-                  style: const TextStyle(
-                      fontSize: 20, fontWeight: FontWeight.bold),
-                ),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: salesController.getStatusColor(sale.status),
-                    borderRadius: BorderRadius.circular(5),
-                  ),
-                  child: Text(
-                    sale.status,
-                    style: TextStyle(
-                        color: Colors.white, fontWeight: FontWeight.bold),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Date: ${sale.date.toLocal().toString().split(' ')[0]}',
-              style: const TextStyle(fontSize: 16, color: Colors.grey),
-            ),
-            const SizedBox(height: 24),
-
-            // Bonus: Status Banners
-            if (sale.status == 'Assigned')
-              Container(
-                padding: EdgeInsets.all(8),
-                margin: EdgeInsets.only(bottom: 16),
-                decoration: BoxDecoration(
-                  color: Colors.orange.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  children: [
-                    Icon(Icons.info_outline, color: Colors.orange),
-                    SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'This sale has not been completed by the agent yet.',
-                        style: TextStyle(color: Colors.orange, fontSize: 14),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            if (sale.agentName == null || sale.agentName!.isEmpty)
-              Container(
-                padding: EdgeInsets.all(8),
-                margin: EdgeInsets.only(bottom: 16),
-                decoration: BoxDecoration(
-                  color: Colors.red.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  children: [
-                    Icon(Icons.warning_amber_outlined, color: Colors.red),
-                    SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'No agent has been assigned yet. Please assign one.',
-                        style: TextStyle(color: Colors.red, fontSize: 14),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-            // Details Section
-            _buildDetailsCard(
-              context,
-              title: 'End-User Information',
-              children: [
-                _buildDetailRow('Full Name:', sale.userId), // Placeholder
-                _buildDetailRow(
-                    'Address:', '123 Main St, Anytown'), // Placeholder
-                _buildDetailRow('Phone:', '555-123-4567'), // Placeholder
-              ],
-            ),
-            _buildDetailsCard(
-              context,
-              title: 'Stove Details',
-              children: [
-                _buildDetailRow(
-                    'Stove ID:', sale.product), // Assuming product is stove ID
-              ],
-            ),
-            _buildDetailsCard(
-              context,
-              title: 'Geo-location',
-              children: [
-                _buildDetailRow('Coordinates:',
-                    'Lat: 34.0522, Lon: -118.2437'), // Placeholder
-                _buildDetailRow('Origin Method:', 'GPS'), // Placeholder
-              ],
-            ),
-            _buildDetailsCard(
-              context,
-              title: 'Assigned Agent',
-              children: [
-                _buildDetailRow('Agent Name:', sale.agentName ?? 'N/A'),
-              ],
-            ),
-            _buildDetailsCard(
-              context,
-              title: 'Attached Media',
-              children: [
-                // Placeholder for images and signature
-                Text('Images: (Preview not implemented)'),
-                Text('Signature: (Preview not implemented)'),
-              ],
-            ),
-          ],
-        ),
-      ),
-      bottomNavigationBar: _buildActionButtons(context, salesController, sale),
-    );
-  }
-
-  Widget _buildDetailsCard(BuildContext context,
-      {required String title, required List<Widget> children}) {
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-      ),
-      margin: const EdgeInsets.only(bottom: 16),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              title,
-              style: TextThemes(context).getTextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
+        otherWidgets: GestureDetector(
+          onTap: () {},
+          child: Padding(
+            padding: const EdgeInsets.only(right: 16),
+            child: Transform.rotate(
+              angle: 90 * 3.14 / 180, // Rotate the icon 90 degrees
+              child: SvgPicture.asset(
+                AppIcons.moreIcon,
                 color: AppColors.primaryColor,
               ),
             ),
-            const SizedBox(height: 16),
-            ...children,
-          ],
+          ),
         ),
       ),
-    );
-  }
-
-  Widget _buildDetailRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4.0),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              value,
-              style: const TextStyle(fontSize: 16),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildActionButtons(
-      BuildContext context, SalesController salesController, Sale sale) {
-    return Padding(
-      padding: const EdgeInsets.all(16.0),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          PrimaryButton(
-            text: 'Edit Sale',
-            onPressed: () {
-              Get.to(() => SalesFormScreen(), arguments: {
-                'isEditMode': true,
-                'saleId': sale.id,
-              });
-            },
-          ),
-          const SizedBox(height: 10),
-          PrimaryButton(
-            text: 'Assign to Agent',
-            onPressed: () {
-              _showAssignAgentBottomSheet(context, salesController, sale);
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showAssignAgentBottomSheet(
-      BuildContext context, SalesController salesController, Sale sale) {
-    Get.bottomSheet(
-      Container(
-        height: Get.height * 0.7,
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-        ),
+      body: SingleChildScrollView(
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Text(
-                'Assign Sale to Agent',
-                style: TextThemes(context).getTextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.primaryColor,
+            Container(
+              decoration: BoxDecoration(
+                border: Border(
+                  top: BorderSide(
+                    color: const Color(0xFFCDCDCD),
+                    width: 0.5,
+                  ),
                 ),
               ),
             ),
-            Expanded(
-              child: Obx(() {
-                if (salesController.salesAgents.isEmpty) {
-                  return Center(
-                    child: Text('No agents available to assign at this time.'),
-                  );
-                }
-                return ListView.builder(
-                  itemCount: salesController.salesAgents.length,
-                  itemBuilder: (context, index) {
-                    final agent = salesController.salesAgents[index];
-                    return ListTile(
-                      title: Text(agent.name),
-                      subtitle: Text(agent.location),
-                      trailing: ElevatedButton(
-                        onPressed: () {
-                          salesController.assignSale(sale.id, agent.name);
-                          Get.back(); // Close bottom sheet
-                          Get.snackbar(
-                            'Success',
-                            'Sale assigned to ${agent.name} successfully.',
-                            snackPosition: SnackPosition.BOTTOM,
-                            backgroundColor: AppColors.primaryColor,
-                            colorText: Colors.white,
-                          );
-                        },
-                        child: Text('Assign'),
-                      ),
-                    );
-                  },
-                );
-              }),
+
+            const SizedBox(height: 10),
+            // Sale ID and Status
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: _buildHeaderSection(context),
             ),
+
+            const SizedBox(height: 16),
+
+            // End-User Information
+            _buildInfoCard(
+              context,
+              title: 'End-User Information',
+              children: [
+                _buildDetailRow('Full Name', sale.endUserName ?? 'N/A'),
+                if (sale.aka != null && sale.aka!.isNotEmpty)
+                  _buildDetailRow('Also Known As', sale.aka!),
+                _buildDetailRow('Phone Number', sale.phone ?? 'N/A'),
+                if (sale.otherPhone != null && sale.otherPhone!.isNotEmpty)
+                  _buildDetailRow('Other Number', sale.otherPhone!),
+                if (sale.contactPerson != null &&
+                    sale.contactPerson!.isNotEmpty)
+                  _buildDetailRow('Contact Person', sale.contactPerson!),
+                if (sale.contactPhone != null && sale.contactPhone!.isNotEmpty)
+                  _buildDetailRow('Contact Phone', sale.contactPhone!),
+              ],
+            ),
+
+            const SizedBox(height: 16),
+
+            // Transaction Details
+            _buildInfoCard(
+              context,
+              title: 'Transaction Details',
+              children: [
+                _buildDetailRow(
+                    'Transaction ID', sale.transactionId ?? sale.id),
+                _buildDetailRow(
+                    'Amount', 'NGN ${sale.amount.toStringAsFixed(2)}'),
+                _buildDetailRow(
+                  'Date',
+                  sale.salesDate != null
+                      ? '${sale.salesDate!.day} ${_getMonthName(sale.salesDate!.month)}, ${sale.salesDate!.year}'
+                      : 'N/A',
+                ),
+                _buildDetailRow('Created By', sale.createdBy ?? 'N/A'),
+              ],
+            ),
+
+            const SizedBox(height: 16),
+
+            // Stove Details & Location
+            _buildInfoCard(
+              context,
+              title: 'Stove Details & Location',
+              children: [
+                _buildDetailRow(
+                    'Stove Serial Number', sale.stoveSerialNo ?? 'N/A'),
+                _buildDetailRow('Address', sale.address?.fullAddress ?? 'N/A'),
+                _buildDetailRow('City', sale.address?.city ?? 'N/A'),
+                _buildDetailRow('State', sale.address?.state ?? 'N/A'),
+                _buildDetailRow('Country', sale.address?.country ?? 'N/A'),
+                if (sale.address?.latitude != null &&
+                    sale.address?.longitude != null)
+                  _buildDetailRow(
+                    'Coordinates',
+                    'Lat - ${sale.address!.latitude}, Lon - ${sale.address!.longitude}',
+                  ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Column(
+              children: [
+                Container(
+                  padding: EdgeInsets.symmetric(horizontal: 16),
+                  width: double.infinity,
+                  child: Text(
+                    'MAP PREVIEW',
+                    textAlign: TextAlign.end,
+                    style: TextThemes(context).getTextStyle(
+                      fontSize: 13,
+                      color: AppColors.primaryTextColor,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+                SizedBox(
+                  height: 10,
+                ),
+                Container(
+                  clipBehavior: Clip.hardEdge,
+                  height: 200,
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                      color: AppColors.bgGrey,
+                      border: Border.all(
+                        color: const Color(0xFFCDCDCD),
+                        width: 0.5,
+                      )),
+                  child: Image.network(
+                    sale.stoveImageId?.url ?? '',
+                    fit: BoxFit.cover,
+                  ),
+                )
+              ],
+            ),
+
+            const SizedBox(height: 16),
+
+            // Attachments
+            _buildAttachmentsSection(context),
           ],
         ),
       ),
-      isScrollControlled: true,
     );
+  }
+
+  Widget _buildHeaderSection(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 4),
+              decoration: BoxDecoration(
+                color: _getStatusBackgroundColor(sale.status),
+                border: Border.all(
+                    color: _getStatusBorderColor(sale.status), width: 0.5),
+                borderRadius: BorderRadius.circular(200),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    sale.status ?? 'N/A',
+                    style: TextThemes(context).getTextStyle(
+                      fontSize: 14,
+                      color: _getStatusTextColor(sale.status),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                _buildDateInfo(context, 'Sale Date', sale.salesDate),
+                const SizedBox(height: 10),
+                _buildDateInfo(context, 'Created At', sale.createdAt),
+              ],
+            ),
+          ],
+        ),
+        const SizedBox(height: 20),
+        Text(
+          'Sale ID: ${sale.id}',
+          overflow: TextOverflow.ellipsis,
+          style: TextThemes(context).getTextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        Text(
+          sale.endUserName ?? 'N/A',
+          overflow: TextOverflow.ellipsis,
+          style: TextThemes(context).getTextStyle(
+            color: AppColors.secondaryTextColor,
+            fontSize: 16,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDateInfo(BuildContext context, String title, DateTime? date) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      mainAxisAlignment: MainAxisAlignment.end,
+      children: [
+        Text(
+          title,
+          textAlign: TextAlign.end,
+          style: TextThemes(context).getTextStyle(
+            fontSize: 11,
+            color: AppColors.secondaryTextColor,
+          ),
+        ),
+        Text(
+          date != null
+              ? '${date.day} ${_getMonthName(date.month)}, ${date.year}'
+              : 'N/A',
+          textAlign: TextAlign.end,
+          style: TextThemes(context).getTextStyle(
+            fontSize: 13,
+            color: AppColors.primaryTextColor,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _getMonthName(int month) {
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec'
+    ];
+    return months[month - 1];
+  }
+
+  Widget _buildInfoCard(
+    BuildContext context, {
+    required String title,
+    required List<Widget> children,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          padding: EdgeInsets.symmetric(vertical: 12, horizontal: 15),
+          decoration: BoxDecoration(
+            color: Colors.black.withOpacity(0.06),
+            border: Border(
+              top: BorderSide(
+                color: const Color(0xFFCDCDCD),
+                width: 0.5,
+              ),
+              bottom: BorderSide(
+                color: const Color(0xFFCDCDCD),
+                width: 0.5,
+              ),
+            ),
+          ),
+          child: Flex(
+            direction: Axis.horizontal,
+            children: [
+              Expanded(
+                child: Text(
+                  title,
+                  style: TextThemes(context).getTextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              SvgPicture.asset(
+                AppIcons.userIcon,
+              )
+            ],
+          ),
+        ),
+        const SizedBox(height: 8),
+        Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 4,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.start,
+            children: children,
+          ),
+        )
+        // ...children,
+      ],
+    );
+  }
+
+  Widget _buildDetailRow(
+    String label,
+    String value,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: TextThemes(Get.context!).getTextStyle(
+              fontSize: 11,
+              color: AppColors.secondaryTextColor,
+            ),
+          ),
+          Text(
+            value,
+            style: TextThemes(Get.context!).getTextStyle(
+              fontSize: 13,
+              color: AppColors.primaryTextColor,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAttachmentsSection(BuildContext context) {
+    final hasStoveImage = sale.stoveImageId != null;
+    final hasAgreementImage = sale.agreementImageId != null;
+    final hasSignature = sale.signature != null && sale.signature!.isNotEmpty;
+
+    if (!hasStoveImage && !hasAgreementImage && !hasSignature) {
+      return const SizedBox.shrink();
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          padding: EdgeInsets.symmetric(vertical: 12, horizontal: 15),
+          decoration: BoxDecoration(
+            color: Colors.black.withOpacity(0.06),
+            border: Border(
+              top: BorderSide(
+                color: const Color(0xFFCDCDCD),
+                width: 0.5,
+              ),
+              bottom: BorderSide(
+                color: const Color(0xFFCDCDCD),
+                width: 0.5,
+              ),
+            ),
+          ),
+          child: Flex(
+            direction: Axis.horizontal,
+            children: [
+              Expanded(
+                child: Text(
+                  'Attachments',
+                  style: TextThemes(context).getTextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              SvgPicture.asset(
+                AppIcons.userIcon,
+              )
+            ],
+          ),
+        ),
+        const SizedBox(height: 8),
+        if (hasStoveImage)
+          _buildAttachmentItem(context, 'Stove Image', sale.stoveImageId!),
+        if (hasAgreementImage)
+          _buildAttachmentItem(
+              context, 'Agreement Document', sale.agreementImageId!),
+        if (hasSignature)
+          _buildAttachmentItem(context, 'Signature', sale.signature!),
+      ],
+    );
+  }
+
+  Widget _buildAttachmentItem(
+      BuildContext context, String title, dynamic attachment) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 14),
+      child: Column(
+        children: [
+          Container(
+            padding: EdgeInsets.symmetric(horizontal: 16),
+            width: double.infinity,
+            child: Text(
+              title.toUpperCase(),
+              textAlign: TextAlign.start,
+              style: TextThemes(context).getTextStyle(
+                fontSize: 13,
+                color: AppColors.primaryTextColor,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          SizedBox(
+            height: 10,
+          ),
+          Container(
+            clipBehavior: Clip.hardEdge,
+            height: 200,
+            width: double.infinity,
+            decoration: BoxDecoration(
+                color: AppColors.bgGrey,
+                border: Border.all(
+                  color: const Color(0xFFCDCDCD),
+                  width: 0.5,
+                )),
+            child: Image.network(
+              sale.stoveImageId?.url ?? '',
+              fit: BoxFit.cover,
+            ),
+          )
+        ],
+      ),
+    );
+  }
+}
+
+Color _getStatusBackgroundColor(String status) {
+  switch (status.toLowerCase()) {
+    case 'completed':
+      return Color(0xFF238126).withOpacity(0.1);
+    case 'pending':
+      return Colors.yellow.withOpacity(0.1);
+    case 'failed':
+      return Colors.red.withOpacity(0.1);
+    default:
+      return Colors.grey.withOpacity(0.1);
+  }
+}
+
+Color _getStatusBorderColor(String status) {
+  switch (status.toLowerCase()) {
+    case 'completed':
+      return Color(0xFF238126);
+    case 'pending':
+      return Colors.yellow;
+    case 'failed':
+      return Colors.red;
+    default:
+      return Colors.grey;
+  }
+}
+
+Color _getStatusTextColor(String status) {
+  switch (status.toLowerCase()) {
+    case 'completed':
+      return Color(0xFF238126);
+    case 'pending':
+      return Colors.yellow;
+    case 'Failed':
+      return Colors.red;
+    default:
+      return Colors.grey;
   }
 }

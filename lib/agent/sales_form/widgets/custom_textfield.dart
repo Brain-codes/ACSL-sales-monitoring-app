@@ -18,12 +18,16 @@ class CustomTextField extends StatelessWidget {
   final String? hintText;
   final Widget? suffixIcon;
   final VoidCallback? onSuffixIconTap;
-
+  final String? prefixText;
+  final Widget? prefixIcon;
+  final TextInputAction? actionKeyboard;
+  final double radius;
   const CustomTextField({
     Key? key,
     required this.label,
     required this.controller,
     this.inputType = TextInputType.text,
+    this.actionKeyboard = TextInputAction.next,
     this.validator,
     this.readOnly = false,
     this.onTap,
@@ -35,6 +39,9 @@ class CustomTextField extends StatelessWidget {
     this.hintText,
     this.suffixIcon,
     this.onSuffixIconTap,
+    this.prefixText,
+    this.prefixIcon,
+    this.radius = 8,
   }) : super(key: key);
 
   @override
@@ -44,6 +51,7 @@ class CustomTextField extends StatelessWidget {
       child: TextFormField(
         controller: controller,
         keyboardType: inputType,
+        textInputAction: actionKeyboard,
         validator: validator,
         readOnly: readOnly,
         focusNode: focusNode,
@@ -64,25 +72,43 @@ class CustomTextField extends StatelessWidget {
                 color: AppColors.hintTextColor,
               ),
               border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(radius),
                 borderSide: BorderSide(color: AppColors.borderColor),
               ),
               enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(radius),
                 borderSide: BorderSide(color: AppColors.borderColor),
               ),
               focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(radius),
                 borderSide: BorderSide(color: AppColors.primaryColor, width: 2),
               ),
               errorBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(radius),
                 borderSide: BorderSide(color: AppColors.red, width: 2),
               ),
               focusedErrorBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(radius),
                 borderSide: BorderSide(color: AppColors.red, width: 2),
               ),
+              prefixIcon: prefixText != null
+                  ? SizedBox(
+                      width: 2,
+                      child: Center(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                          child: Text(
+                            prefixText!,
+                            style: TextThemes(context).getTextStyle(
+                              fontSize: 14.0,
+                              fontWeight: FontWeight.w400,
+                              color: AppColors.secondaryTextColor,
+                            ),
+                          ),
+                        ),
+                      ),
+                    )
+                  : prefixIcon,
               suffixIcon: suffixIcon != null
                   ? GestureDetector(
                       onTap: onSuffixIconTap,

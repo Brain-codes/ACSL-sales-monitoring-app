@@ -5,6 +5,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:get/get.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:signature/signature.dart';
+import 'package:stove_transaction/agent/sales_form/widgets/primary_button.dart';
 import 'package:stove_transaction/core/constants/app_colors.dart';
 import 'package:stove_transaction/core/constants/text_theme.dart';
 import 'package:stove_transaction/form/controller/form_controller.dart';
@@ -17,6 +18,9 @@ import 'package:stove_transaction/shared/ui/number_input_formatter.dart';
 import 'package:camera/camera.dart';
 import 'dart:io';
 import 'dart:convert';
+
+import 'package:stove_transaction/shared/widgets/base_app_bar.dart';
+import 'package:stove_transaction/shared/widgets/page_header_tile.dart';
 
 class UserForm extends StatefulWidget {
   @override
@@ -137,22 +141,17 @@ class _UserFormState extends State<UserForm> {
   Widget build(BuildContext context) {
     // controller.isLoading.value = false;
     return Scaffold(
-      appBar: AppBar(
-        leading: !isSearchingAddress
-            ? null
-            : GestureDetector(
-                onTap: () {
-                  setState(() {
-                    isSearchingAddress = !isSearchingAddress;
-                  });
-                },
-                child: Icon(
-                  Icons.arrow_back_outlined,
-                ),
-              ),
-        title: Text(
-          'User Form',
-        ),
+      appBar: BaseAppBar(
+        showBottomBorder: false,
+        onTaps: !isSearchingAddress
+            ? () {
+                Navigator.pop(context);
+              }
+            : () {
+                setState(() {
+                  isSearchingAddress = !isSearchingAddress;
+                });
+              },
       ),
       body: Obx(() {
         return controller.partnerNames.isEmpty
@@ -189,14 +188,22 @@ class _UserFormState extends State<UserForm> {
                       )
                     : SingleChildScrollView(
                         child: Padding(
-                          padding: const EdgeInsets.all(16.0),
+                          padding: const EdgeInsets.only(
+                            left: 16.0,
+                            right: 16,
+                            bottom: 16,
+                          ),
                           child: Form(
                             key: formKey,
                             child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                SizedBox(
-                                  height: 10,
+                                PageHeaderTile(
+                                  title: 'New Sales',
+                                  subtitle:
+                                      'Capture sales details for your stove',
                                 ),
+                                SizedBox(height: 25),
                                 Autocomplete<String>(
                                   optionsBuilder:
                                       (TextEditingValue textEditingValue) {
@@ -291,7 +298,7 @@ class _UserFormState extends State<UserForm> {
                                           data: ThemeData.light().copyWith(
                                             primaryColor:
                                                 AppColors.primaryColor,
-                                            accentColor: AppColors.primaryColor,
+                                            // accentColor: AppColors.primaryColor,
                                             colorScheme: ColorScheme.light(
                                                 primary:
                                                     AppColors.primaryColor),
@@ -470,16 +477,16 @@ class _UserFormState extends State<UserForm> {
                                             crossAxisAlignment:
                                                 CrossAxisAlignment.start,
                                             children: [
-                                              Text(
-                                                'Note: For Debugging purposes only',
-                                                overflow: TextOverflow.ellipsis,
-                                                style: TextThemes(context)
-                                                    .getTextStyle(
-                                                  fontWeight: FontWeight.w400,
-                                                  fontSize: 13,
-                                                  color: AppColors.deepRed,
-                                                ),
-                                              ),
+                                              // Text(
+                                              //   'Note: For Debugging purposes only',
+                                              //   overflow: TextOverflow.ellipsis,
+                                              //   style: TextThemes(context)
+                                              //       .getTextStyle(
+                                              //     fontWeight: FontWeight.w400,
+                                              //     fontSize: 13,
+                                              //     color: AppColors.deepRed,
+                                              //   ),
+                                              // ),
                                               CustomInputField(
                                                 label: 'Latitude',
                                                 readOnly: true,
@@ -947,7 +954,7 @@ class _UserFormState extends State<UserForm> {
                                                             ),
                                                           ),
                                                           Text(
-                                                            'JPG, JEPG, PNG',
+                                                            'JPG, JPEG, PNG',
                                                             overflow:
                                                                 TextOverflow
                                                                     .ellipsis,
@@ -1110,39 +1117,44 @@ class _UserFormState extends State<UserForm> {
                                                 SizedBox(
                                                   width: 15,
                                                 ),
-                                                Column(
-                                                  mainAxisAlignment:
-                                                      MainAxisAlignment.start,
-                                                  crossAxisAlignment:
-                                                      CrossAxisAlignment.start,
-                                                  children: [
-                                                    Text(
-                                                      'Picture of hard copy signed agreement',
-                                                      overflow:
-                                                          TextOverflow.ellipsis,
-                                                      style: TextThemes(context)
-                                                          .getTextStyle(
-                                                        fontWeight:
-                                                            FontWeight.w400,
-                                                        fontSize: 13,
-                                                        color: AppColors
-                                                            .primaryTextColor,
+                                                Expanded(
+                                                  child: Column(
+                                                    mainAxisAlignment:
+                                                        MainAxisAlignment.start,
+                                                    crossAxisAlignment:
+                                                        CrossAxisAlignment
+                                                            .start,
+                                                    children: [
+                                                      Text(
+                                                        'Picture of hard copy signed agreement',
+                                                        overflow: TextOverflow
+                                                            .ellipsis,
+                                                        style:
+                                                            TextThemes(context)
+                                                                .getTextStyle(
+                                                          fontWeight:
+                                                              FontWeight.w400,
+                                                          fontSize: 13,
+                                                          color: AppColors
+                                                              .primaryTextColor,
+                                                        ),
                                                       ),
-                                                    ),
-                                                    Text(
-                                                      'JPG, JEPG, PNG',
-                                                      overflow:
-                                                          TextOverflow.ellipsis,
-                                                      style: TextThemes(context)
-                                                          .getTextStyle(
-                                                        fontWeight:
-                                                            FontWeight.w400,
-                                                        fontSize: 10,
-                                                        color: AppColors
-                                                            .secondaryTextColor,
+                                                      Text(
+                                                        'JPG, JPEG, PNG',
+                                                        overflow: TextOverflow
+                                                            .ellipsis,
+                                                        style:
+                                                            TextThemes(context)
+                                                                .getTextStyle(
+                                                          fontWeight:
+                                                              FontWeight.w400,
+                                                          fontSize: 10,
+                                                          color: AppColors
+                                                              .secondaryTextColor,
+                                                        ),
                                                       ),
-                                                    ),
-                                                  ],
+                                                    ],
+                                                  ),
                                                 ),
                                               ],
                                             ),
@@ -1152,7 +1164,7 @@ class _UserFormState extends State<UserForm> {
                                 SizedBox(height: 16),
                                 SizedBox(
                                   width: double.infinity,
-                                  child: ElevatedButton(
+                                  child: PrimaryButton(
                                     onPressed: controller.isLoading.value
                                         ? () {}
                                         : () async {
@@ -1184,7 +1196,7 @@ class _UserFormState extends State<UserForm> {
                                               );
 
                                               // Call the submitForm method from the controller
-                                              await controller.submitForm(
+                                              await controller.handleSaleSubmit(
                                                 stoveImage,
                                                 agreedDocumentImage,
                                                 signature,
@@ -1241,32 +1253,8 @@ class _UserFormState extends State<UserForm> {
                                               );
                                             }
                                           },
-                                    child: Padding(
-                                      padding: const EdgeInsets.symmetric(
-                                        vertical: 16,
-                                      ),
-                                      child: SizedBox(
-                                        child: controller.isLoading.value
-                                            ? SizedBox(
-                                                width: 17,
-                                                height: 17,
-                                                child:
-                                                    CircularProgressIndicator(
-                                                  color: Colors.white,
-                                                  strokeWidth: 1.3,
-                                                ),
-                                              )
-                                            : Text(
-                                                'Submit',
-                                                style: TextThemes(context)
-                                                    .getTextStyle(
-                                                  fontWeight: FontWeight.w700,
-                                                  fontSize: 14,
-                                                  color: AppColors.white,
-                                                ),
-                                              ),
-                                      ),
-                                    ),
+                                    isLoading: controller.isLoading.value,
+                                    text: "Submit",
                                   ),
                                 ),
                               ],

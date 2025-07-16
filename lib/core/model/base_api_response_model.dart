@@ -1,7 +1,15 @@
+import 'dart:convert';
+
+BaseApiResponse baseApiResponseFromJson(String str, Function fromJson) =>
+    BaseApiResponse.fromJson(json.decode(str), fromJson);
+
+String baseApiResponseToJson(BaseApiResponse data) =>
+    json.encode(data.toJson());
+
 class BaseApiResponse<T> {
   final int? code;
   final String message;
-  final bool? isSuccessful;
+  final bool? success;
   final bool showSheetAlert;
   final T? body;
 
@@ -9,16 +17,18 @@ class BaseApiResponse<T> {
     this.code,
     required this.message,
     this.body,
-    this.isSuccessful,
+    this.success,
     this.showSheetAlert = true,
   });
 
   factory BaseApiResponse.fromJson(
-      Map<String, dynamic> json, Function fromJson) {
+    Map<String, dynamic> json,
+    Function fromJson,
+  ) {
     return BaseApiResponse(
       code: json['code'] as int,
       message: json['message'] as String,
-      isSuccessful: json['isSuccessful'] as bool,
+      success: json['success'] as bool,
       showSheetAlert: json['showSheetAlert'] as bool,
       body: fromJson(json['data']),
     );
@@ -28,7 +38,7 @@ class BaseApiResponse<T> {
     return {
       'code': code,
       'message': message,
-      'isSuccessful': isSuccessful,
+      'success': success,
       'showSheetAlert': showSheetAlert,
       'data': body,
     };
@@ -38,7 +48,7 @@ class BaseApiResponse<T> {
     return BaseApiResponse(
       code: code,
       message: message,
-      isSuccessful: false,
+      success: false,
       showSheetAlert: true,
       body: null,
     );

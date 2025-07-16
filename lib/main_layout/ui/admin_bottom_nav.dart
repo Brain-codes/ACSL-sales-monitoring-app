@@ -9,49 +9,62 @@ class AdminBottomNav extends GetView<LayoutController> {
 
   @override
   Widget build(BuildContext context) {
-    return Obx(
-      () => BottomNavigationBar(
-        currentIndex: controller.tabIndex.value,
-        onTap: controller.changeTabIndex,
-        type: BottomNavigationBarType.fixed,
-        items: [
-          BottomNavigationBarItem(
-            icon: BottomNavItem(
-              icon: Icons.dashboard,
-              label: 'Dashboard',
-              isSelected: controller.tabIndex.value == 0,
-              onTap: () => controller.changeTabIndex(0),
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white, // ✅ Ensures pure white background
+        border: Border(
+          top:
+              BorderSide(color: Colors.grey.shade300, width: 1), // ✅ Top border
+        ),
+      ),
+      child: SafeArea(
+        bottom: false, // ✅ Removes extra SafeArea padding
+        child: BottomNavigationBar(
+          currentIndex: controller.tabIndex.value,
+          onTap: controller.changeTabIndex,
+          type: BottomNavigationBarType.fixed,
+          elevation: 0,
+          backgroundColor: Colors.white,
+          // surfaceTintColor: Colors.transparent, // ✅ Remove Material 3 tint
+          items: [
+            BottomNavigationBarItem(
+              icon: BottomNavItem(
+                icon: Icons.dashboard,
+                label: 'Dashboard',
+                isSelected: controller.tabIndex.value == 0,
+                onTap: () => controller.changeTabIndex(0),
+              ),
+              label: '',
             ),
-            label: '',
-          ),
-          BottomNavigationBarItem(
-            icon: BottomNavItem(
-              icon: Icons.point_of_sale,
-              label: 'Sales',
-              isSelected: controller.tabIndex.value == 1,
-              onTap: () => controller.changeTabIndex(1),
+            BottomNavigationBarItem(
+              icon: BottomNavItem(
+                icon: Icons.point_of_sale,
+                label: 'Sales',
+                isSelected: controller.tabIndex.value == 1,
+                onTap: () => controller.changeTabIndex(1),
+              ),
+              label: '',
             ),
-            label: '',
-          ),
-          BottomNavigationBarItem(
-            icon: BottomNavItem(
-              icon: Icons.monitor,
-              label: 'Monitoring',
-              isSelected: controller.tabIndex.value == 2,
-              onTap: () => controller.changeTabIndex(2),
+            BottomNavigationBarItem(
+              icon: BottomNavItem(
+                icon: Icons.monitor,
+                label: 'Monitoring',
+                isSelected: controller.tabIndex.value == 2,
+                onTap: () => controller.changeTabIndex(2),
+              ),
+              label: '',
             ),
-            label: '',
-          ),
-          BottomNavigationBarItem(
-            icon: BottomNavItem(
-              icon: Icons.settings,
-              label: 'Settings',
-              isSelected: controller.tabIndex.value == 3,
-              onTap: () => controller.changeTabIndex(3),
+            BottomNavigationBarItem(
+              icon: BottomNavItem(
+                icon: Icons.settings,
+                label: 'Settings',
+                isSelected: controller.tabIndex.value == 3,
+                onTap: () => controller.changeTabIndex(3),
+              ),
+              label: '',
             ),
-            label: '',
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

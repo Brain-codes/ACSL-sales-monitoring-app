@@ -33,6 +33,7 @@ class SignupScreen extends StatelessWidget {
                   color: AppColors.primaryTextColor,
                 ),
               ),
+              const SizedBox(height: 8),
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
@@ -43,8 +44,9 @@ class SignupScreen extends StatelessWidget {
                       color: AppColors.secondaryTextColor,
                     ),
                   ),
-                  TextButton(
-                    onPressed: () {
+                  const SizedBox(width: 4),
+                  GestureDetector(
+                    onTap: () {
                       Get.back(); // Navigate back to login
                     },
                     child: Text(
@@ -59,8 +61,8 @@ class SignupScreen extends StatelessWidget {
               ),
               const SizedBox(height: 40),
               CustomTextField(
-                label: 'Username',
-                hintText: 'Enter your username',
+                label: 'Full Name',
+                hintText: 'Enter your full name',
                 controller: signupController.nameController,
                 inputType: TextInputType.text,
                 validator: signupController.validateName,

@@ -7,7 +7,7 @@ import 'package:stove_transaction/core/constants/text_theme.dart';
 import 'package:stove_transaction/core/constants/app_icons.dart';
 
 class BaseAppBar extends StatelessWidget implements PreferredSizeWidget {
-  final bool showSkipButton;
+  final bool showBackButton;
   final Color? backgroundColor;
   final Color? themeColor;
   final VoidCallback? onActionButtonPressed;
@@ -16,10 +16,11 @@ class BaseAppBar extends StatelessWidget implements PreferredSizeWidget {
   final String icon;
   final String? title;
   final Widget? otherWidgets;
+  final bool showBottomBorder;
 
   const BaseAppBar({
     super.key,
-    this.showSkipButton = false,
+    this.showBackButton = true,
     this.onActionButtonPressed,
     this.backgroundColor,
     this.themeColor,
@@ -28,6 +29,7 @@ class BaseAppBar extends StatelessWidget implements PreferredSizeWidget {
     this.icon = AppIcons.leftArrow,
     this.otherWidgets,
     this.title,
+    this.showBottomBorder = true,
     // this.skipText = AppStrings.skip,
   });
   @override
@@ -36,7 +38,7 @@ class BaseAppBar extends StatelessWidget implements PreferredSizeWidget {
   @override
   Widget build(BuildContext context) {
     return AppBar(
-      leading: showSkipButton == true
+      leading: showBackButton == false
           ? SizedBox()
           : InkWell(
               onTap: searching == null || searching == false
@@ -64,23 +66,33 @@ class BaseAppBar extends StatelessWidget implements PreferredSizeWidget {
               ),
             ),
       actions: [
-        if (showSkipButton)
-          IconButton(
-            icon: SvgPicture.asset(
-              AppIcons.closeIcon,
-              fit: BoxFit.scaleDown,
-            ),
-            onPressed: () {
-              Navigator.pop(context);
-            },
-          ),
+        // if (showBackButton)
+        //   IconButton(
+        //     icon: SvgPicture.asset(
+        //       AppIcons.closeIcon,
+        //       fit: BoxFit.scaleDown,
+        //     ),
+        //     onPressed: () {
+        //       Navigator.pop(context);
+        //     },
+        //   ),
         if (otherWidgets != null)
           SizedBox(
             child: otherWidgets,
           ),
       ],
       backgroundColor: backgroundColor ?? AppColors.white,
-      elevation: 0,
+      elevation: 0, // ✅ No shadow
+      scrolledUnderElevation: 0, // ✅ Remove shadow when scrolling
+      surfaceTintColor: Colors.transparent, // ✅ Remove Material 3 tint
+      shape: showBottomBorder
+          ? Border(
+              bottom: BorderSide(
+                color: Colors.grey.shade300, // Or AppColors.borderColor
+                width: 1, // Adjust thickness
+              ),
+            )
+          : null,
     );
   }
 

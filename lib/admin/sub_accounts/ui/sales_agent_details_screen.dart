@@ -6,7 +6,7 @@ import 'package:stove_transaction/admin/sub_accounts/model/sales_agent_model.dar
 import 'package:stove_transaction/shared/widgets/base_app_bar.dart';
 
 class SalesAgentDetailsScreen extends StatelessWidget {
-  final SalesAgent salesAgent;
+  final SalesAgentModel salesAgent;
 
   const SalesAgentDetailsScreen({Key? key, required this.salesAgent})
       : super(key: key);
@@ -22,12 +22,12 @@ class SalesAgentDetailsScreen extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Name: ${salesAgent.name}',
+              'Name: ${salesAgent.fullName}',
               style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 10),
             Text(
-              'Location: ${salesAgent.location}',
+              'Location: ${salesAgent.email}',
               style: const TextStyle(fontSize: 18),
             ),
             const SizedBox(height: 10),
