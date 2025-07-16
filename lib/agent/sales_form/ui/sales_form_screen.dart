@@ -1,6 +1,7 @@
 // ignore_for_file: prefer_const_constructors
 
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:get/get.dart';
 import 'package:stove_transaction/agent/sales_form/controller/sales_form_controller.dart';
 import 'package:stove_transaction/agent/sales_form/widgets/custom_textfield.dart';
@@ -8,7 +9,9 @@ import 'package:stove_transaction/agent/sales_form/widgets/image_input_widget.da
 import 'package:stove_transaction/agent/sales_form/widgets/primary_button.dart';
 import 'package:stove_transaction/agent/sales_form/widgets/signature_input_widget.dart';
 import 'package:stove_transaction/core/constants/app_colors.dart';
+
 import 'package:stove_transaction/core/constants/text_theme.dart';
+import 'package:stove_transaction/core/services/session_manager.dart';
 import 'package:stove_transaction/shared/widgets/base_app_bar.dart';
 import 'package:stove_transaction/shared/widgets/page_header_tile.dart';
 
@@ -19,6 +22,7 @@ class SalesFormScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final SalesFormController controller = Get.put(SalesFormController());
 
+
     return Scaffold(
       appBar: BaseAppBar(),
       body: SingleChildScrollView(
@@ -28,10 +32,11 @@ class SalesFormScreen extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              PageHeaderTile(
-                title: 'New Sales',
-                subtitle: 'Capture sales details for your stove',
-              ),
+              // PageHeaderTile(
+              //   title: 'New Sales',
+              //   subtitle: 'Capture sales details for your stove',
+              // ),
+         
               // End-User Info Section
               SizedBox(height: 16),
               Card(

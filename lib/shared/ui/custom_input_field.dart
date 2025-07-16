@@ -1,5 +1,7 @@
 //IGNORE AND ONLY IMPROVE
 
+// ignore_for_file: prefer_const_constructors
+
 import 'package:flutter/material.dart';
 import 'package:stove_transaction/core/constants/app_colors.dart';
 import 'package:stove_transaction/core/constants/text_theme.dart';
@@ -16,7 +18,10 @@ class CustomInputField extends StatelessWidget {
   final ValueChanged<String>? onChanged;
   final InputDecoration? decoration;
   final List<TextInputFormatter>? inputFormatters;
-
+  final Widget? suffixIcon;
+  final TextInputAction? actionKeyboard;
+  final void Function()? onSuffixIconTap;
+  final int? numberOfLines;
   const CustomInputField({
     Key? key,
     required this.label,
@@ -29,6 +34,10 @@ class CustomInputField extends StatelessWidget {
     this.onChanged,
     this.decoration,
     this.inputFormatters,
+    this.suffixIcon,
+    this.actionKeyboard,
+    this.onSuffixIconTap,
+    this.numberOfLines,
   }) : super(key: key);
 
   @override
@@ -38,7 +47,9 @@ class CustomInputField extends StatelessWidget {
       child: TextFormField(
         controller: controller,
         keyboardType: inputType,
+        textInputAction: actionKeyboard,
         validator: validator,
+        maxLines: numberOfLines,
         readOnly: readOnly,
         focusNode: focusNode,
         onTap: onTap,
@@ -53,30 +64,44 @@ class CustomInputField extends StatelessWidget {
             InputDecoration(
               labelText: label,
               labelStyle: TextThemes(context).getTextStyle(
-                fontWeight: FontWeight.w600,
+                fontWeight: FontWeight.w500,
                 fontSize: 14,
                 color: AppColors.primaryColor,
               ),
-              filled: true,
+              filled: false,
               fillColor: AppColors.lightGrey,
+              suffixIcon: suffixIcon != null
+                  ? GestureDetector(
+                      child: suffixIcon,
+                      onTap: onSuffixIconTap,
+                    )
+                  : null,
               border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12.0),
-                borderSide: BorderSide.none,
+                borderRadius: BorderRadius.circular(7.0),
+                borderSide: BorderSide(
+                  color: AppColors.primaryColor,
+                  width: 0.7,
+                ),
+                // borderSide: BorderSide.none,
               ),
               enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12.0),
-                borderSide: BorderSide.none,
+                borderRadius: BorderRadius.circular(7.0),
+                borderSide: BorderSide(
+                  color: AppColors.primaryColor,
+                  width: 0.7,
+                ),
+                // borderSide: BorderSide.none,
               ),
               focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12.0),
-                borderSide: BorderSide.none,
+                borderRadius: BorderRadius.circular(7.0),
+                // borderSide: BorderSide.none,
               ),
               errorBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12.0),
+                borderRadius: BorderRadius.circular(7.0),
                 borderSide: const BorderSide(color: Colors.red, width: 1.0),
               ),
               focusedErrorBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12.0),
+                borderRadius: BorderRadius.circular(7.0),
                 borderSide: const BorderSide(color: Colors.red, width: 1.0),
               ),
             ),

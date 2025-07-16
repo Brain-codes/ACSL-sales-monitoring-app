@@ -1,54 +1,64 @@
 import 'package:stove_transaction/admin/sales/model/sale_model.dart';
+import 'package:stove_transaction/core/model/supabase_api_response.dart';
+import 'package:stove_transaction/core/services/supabase_service.dart';
+
+import 'package:logger/logger.dart';
 
 class SaleApiService {
-  Future<List<Sale>> fetchSales() async {
-    await Future.delayed(const Duration(seconds: 2)); // Simulate network delay
-    return [
-      Sale(
-        id: 'S001',
-        product: 'Stove A',
-        amount: 1200.00,
-        date: DateTime(2023, 1, 15),
-        status: 'Completed',
-        agentName: 'Agent Alpha',
-        userId: 'U001',
-      ),
-      Sale(
-        id: 'S002',
-        product: 'Oven B',
-        amount: 850.00,
-        date: DateTime(2023, 1, 20),
-        status: 'Assigned',
-        agentName: 'Agent Beta',
-        userId: 'U002',
-      ),
-      Sale(
-        id: 'S003',
-        product: 'Microwave C',
-        amount: 300.00,
-        date: DateTime(2023, 2, 1),
-        status: 'Pending',
-        agentName: 'Agent Gamma',
-        userId: 'U003',
-      ),
-      Sale(
-        id: 'S004',
-        product: 'Dishwasher D',
-        amount: 1500.00,
-        date: DateTime(2023, 2, 10),
-        status: 'Completed',
-        agentName: 'Agent Delta',
-        userId: 'U004',
-      ),
-      Sale(
-        id: 'S005',
-        product: 'Refrigerator E',
-        amount: 2500.00,
-        date: DateTime(2023, 2, 25),
-        status: 'Assigned',
-        agentName: 'Agent Epsilon',
-        userId: 'U005',
-      ),
-    ];
+  final SupabaseService _supabaseService;
+
+  SaleApiService(this._supabaseService);
+  Logger logger = Logger();
+
+  Future<SupabaseApiResponse<PaginatedSales>> fetchSales({
+    int page = 1,
+    int limit = 50,
+    String? endUserName,
+    String? from,
+    String? to,
+    String? state,
+    String? lga,
+  }) async {
+    final queryParams = {
+      'page': page.toString(),
+      'limit': limit.toString(),
+      if (endUserName != null && endUserName.isNotEmpty)
+        'endUserName': endUserName,
+      if (from != null && from.isNotEmpty) 'from': from,
+      if (to != null && to.isNotEmpty) 'to': to,
+      if (state != null && state.isNotEmpty) 'state': state,
+      if (lga != null && lga.isNotEmpty) 'lga': lga,
+    };
+
+    final response = await _supabaseService.callEdgeFunction(
+      'get-sales',
+      body: {},
+      requireAuth: true,
+      queryParams: queryParams,
+    );
+
+    if (response.success) {
+      final raw = response.data as Map<String, dynamic>;
+      final paginatedSales = PaginatedSales.fromJson(raw);
+      return SupabaseApiResponse.success(paginatedSales);
+    } else {
+      return SupabaseApiResponse.error(response.message, code: response.code);
+    }
+  }
+
+}
+
+
+class PaginatedSales {
+  final List<SaleModel> sales;
+  final PaginationInfo pagination;
+
+  PaginatedSales({required this.sales, required this.pagination});
+
+  factory PaginatedSales.fromJson(Map<String, dynamic> json) {
+    final salesData = json['sales'] as List<dynamic>;
+    final salesList = salesData.map((e) => SaleModel.fromJson(e)).toList();
+    final pagination = PaginationInfo.fromJson(json['pagination']);
+    return PaginatedSales(sales: salesList, pagination: pagination);
   }
 }

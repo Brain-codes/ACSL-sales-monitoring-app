@@ -5,7 +5,6 @@ import 'package:stove_transaction/core/constants/app_colors.dart';
 import 'package:stove_transaction/core/constants/text_theme.dart';
 import 'package:stove_transaction/core/routes/app_pages.dart';
 import 'package:stove_transaction/login/controller/login_controller.dart';
-import 'package:flutter/material.dart';
 import 'package:stove_transaction/shared/widgets/custom_textfield.dart';
 import 'package:stove_transaction/shared/widgets/custom_checkbox.dart';
 import 'package:stove_transaction/shared/widgets/primary_button.dart';
@@ -38,6 +37,7 @@ class LoginScreen extends StatelessWidget {
                         color: AppColors.primaryTextColor,
                       ),
                     ),
+                    const SizedBox(height: 8),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
@@ -48,8 +48,9 @@ class LoginScreen extends StatelessWidget {
                             color: AppColors.secondaryTextColor,
                           ),
                         ),
-                        TextButton(
-                          onPressed: () {
+                        const SizedBox(width: 4),
+                        GestureDetector(
+                          onTap: () {
                             Get.toNamed(AppRoutes.SIGNUP);
                           },
                           child: Text(
@@ -92,9 +93,14 @@ class LoginScreen extends StatelessWidget {
                   },
                 ),
               ),
-              CustomCheckbox(
-                value: loginController.rememberMe,
-                text: 'Remember Me',
+              GestureDetector(
+                onTap: () {
+                  loginController.isLoading.value = false;
+                },
+                child: CustomCheckbox(
+                  value: loginController.rememberMe,
+                  text: 'Remember Me',
+                ),
               ),
             ],
           ),
@@ -109,7 +115,7 @@ class LoginScreen extends StatelessWidget {
             text: 'Login',
             onPressed: () {
               if (_formKey.currentState!.validate()) {
-                loginController.login();
+                loginController.login(context);
               }
             },
             isLoading: loginController.isLoading.value,

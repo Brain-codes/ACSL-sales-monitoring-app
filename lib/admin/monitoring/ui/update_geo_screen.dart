@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:stove_transaction/core/constants/app_colors.dart';
 import 'package:stove_transaction/core/constants/text_theme.dart';
+import 'package:stove_transaction/shared/ui/toastification_snackbar.dart';
 import 'package:stove_transaction/shared/widgets/base_app_bar.dart';
 
 class UpdateGeoScreen extends StatelessWidget {
@@ -10,9 +11,7 @@ class UpdateGeoScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: BaseAppBar(
-        title: "Update Stove Geo-Coordinations"
-      ),
+      appBar: BaseAppBar(title: "Update Stove Geo-Coordinations"),
       body: ListView.builder(
         padding: const EdgeInsets.all(16.0),
         itemCount: 7, // Mock number of stoves
@@ -37,10 +36,10 @@ class UpdateGeoScreen extends StatelessWidget {
               ),
               trailing: ElevatedButton(
                 onPressed: () {
-                  Get.snackbar(
-                    'Action',
-                    'Update Geo for Stove STV00${200 + index} (dummy action)',
-                    snackPosition: SnackPosition.BOTTOM,
+                  showSuccessToast(
+                    message:
+                        'Update Geo for Stove STV00${200 + index} (dummy action)',
+                    title: 'Action',
                   );
                 },
                 child: const Text('Update'),

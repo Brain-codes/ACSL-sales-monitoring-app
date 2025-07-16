@@ -59,8 +59,11 @@ class FormController extends GetxController {
     }
   }
 
-  Future<void> submitForm(
-      File? stoveImage, File? agreedDocumentImage, String? signature) async {
+  Future<void> handleSaleSubmit(
+    File? stoveImage,
+    File? agreedDocumentImage,
+    String? signature,
+  ) async {
     isLoading.value = true;
     String? stoveImagePublicId;
     String? stoveImageUrl;

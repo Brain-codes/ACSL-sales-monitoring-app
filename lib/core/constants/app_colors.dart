@@ -22,4 +22,6 @@ class AppColors {
   static const inactiveTextFormFieldColor = Color(0xFFE4E4E4);
   static const Color cardColor = Color(0xFFFFFFFF);
   static const Color bgGrey = Color(0xFFF5F5F5);
+  static const Color faintPrimaryColor = Color(0xFFF5F6FF);
+  static const Color orange = Color(0xFFFF4F18);
 }

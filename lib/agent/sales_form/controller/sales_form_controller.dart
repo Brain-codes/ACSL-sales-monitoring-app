@@ -119,10 +119,10 @@ class SalesFormController extends GetxController {
     final sale = salesController.findSaleById(saleId);
 
     if (sale != null) {
-      fullNameController.text = sale.userId; // Assuming userId is end-user name
+      // fullNameController.text = sale.userId; // Assuming userId is end-user name
       phoneNumberController.text = 'N/A'; // No phone in Sale model
       addressController.text = 'N/A'; // No address in Sale model
-      selectedStoveId.value = sale.product; // Assuming product is stove ID
+      // selectedStoveId.value = sale.product; // Assuming product is stove ID
       // For geo-location, photo, signature, you'd load from sale object if available
       // currentLatitude.value = sale.latitude;
       // currentLongitude.value = sale.longitude;
@@ -135,21 +135,21 @@ class SalesFormController extends GetxController {
   }
 
   void updateSale() {
-    if (validateForm() && hasSigned.value) {
-      isLoading.value = true;
-      // Simulate API call for updating sale
-      Future.delayed(const Duration(seconds: 2), () {
-        isLoading.value = false;
-        final SalesController salesController = Get.find<SalesController>();
-        salesController.completeSale(Get.arguments['saleId']);
-        Get.snackbar('Success', 'Sale updated successfully!');
-        Get.back();
-      });
-    } else if (!hasSigned.value) {
-      Get.snackbar('Error', 'Please provide a digital signature.');
-    } else {
-      Get.snackbar('Error', 'Please fill all required fields.');
-    }
+    // if (validateForm() && hasSigned.value) {
+    //   isLoading.value = true;
+    //   // Simulate API call for updating sale
+    //   Future.delayed(const Duration(seconds: 2), () {
+    //     isLoading.value = false;
+    //     final SalesController salesController = Get.find<SalesController>();
+    //     salesController.completeSale(Get.arguments['saleId']);
+    //     Get.snackbar('Success', 'Sale updated successfully!');
+    //     Get.back();
+    //   });
+    // } else if (!hasSigned.value) {
+    //   Get.snackbar('Error', 'Please provide a digital signature.');
+    // } else {
+    //   Get.snackbar('Error', 'Please fill all required fields.');
+    // }
   }
 
   @override
