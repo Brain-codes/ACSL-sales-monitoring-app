@@ -1,15 +1,22 @@
+// ignore_for_file: unnecessary_null_comparison
+
 import 'dart:io';
 import 'dart:convert';
 
 import 'package:get/get.dart';
 import 'package:flutter/material.dart';
+import 'package:logger/logger.dart';
+import 'package:stove_transaction/core/services/session_manager.dart';
+import 'package:stove_transaction/core/services/supabase_service.dart';
 import 'package:stove_transaction/shared/services/googlesheetservices.dart';
 import 'package:stove_transaction/form/services/form_services.dart';
 import 'package:stove_transaction/core/constants/app_colors.dart';
+import 'package:stove_transaction/shared/ui/toastification_snackbar.dart';
 
 class FormController extends GetxController {
   final GoogleSheetService googleSheetService = GoogleSheetService();
-  final FormService formService = FormService();
+  final FormService _apiService = FormService(SupabaseService());
+  final SessionManager _sessionManager = Get.find<SessionManager>();
   final isLoading = false.obs;
   final transactionIdController = TextEditingController();
   final salesDateController = TextEditingController();
@@ -26,7 +33,7 @@ class FormController extends GetxController {
   final amountController = TextEditingController();
   final stoveSerialController = TextEditingController();
   final signatureController = TextEditingController();
-
+  Logger logger = Logger();
   final placesAddressController = TextEditingController();
 
   RxList<String> partnerNames = <String>[].obs;
@@ -54,6 +61,7 @@ class FormController extends GetxController {
       partnerNames
           .addAll(data.map((item) => item['partnerName']).whereType<String>());
       stoveIds.addAll(data.map((item) => item['stoveId']).whereType<String>());
+      logger.d('Partner Names: $partnerNames');
     } catch (e) {
       Get.snackbar('Error', 'Failed to fetch data: $e');
     }
@@ -65,29 +73,48 @@ class FormController extends GetxController {
     String? signature,
   ) async {
     isLoading.value = true;
+    logger.d("Sale submission started.");
+
     String? stoveImagePublicId;
-    String? stoveImageUrl;
     String? agreementImagePublicId;
-    String? agreementImageUrl;
 
+    // Upload stove image
     if (stoveImage != null) {
+      logger.d("Uploading stove image...");
       final stoveImageResponse =
-          await formService.uploadImage(stoveImage, 'stoveImage');
-      if (stoveImageResponse != null) {
-        stoveImagePublicId = stoveImageResponse['public_id'];
-        stoveImageUrl = stoveImageResponse['url'];
+          await _apiService.uploadImage(stoveImage, 'stoveImage');
+      if (stoveImageResponse != null &&
+          stoveImageResponse.success &&
+          stoveImageResponse.data?.id != null) {
+        stoveImagePublicId = stoveImageResponse.data?.id;
+        logger.d("Stove image uploaded successfully. ID: $stoveImagePublicId");
+      } else {
+        logger.e("Failed to upload stove image.");
       }
+    } else {
+      logger.d("No stove image provided.");
     }
 
+    // Upload agreement image
     if (agreedDocumentImage != null) {
+      logger.d("Uploading agreement image...");
       final agreementImageResponse =
-          await formService.uploadImage(agreedDocumentImage, 'agreementImage');
-      if (agreementImageResponse != null) {
-        agreementImagePublicId = agreementImageResponse['public_id'];
-        agreementImageUrl = agreementImageResponse['url'];
+          await _apiService.uploadImage(agreedDocumentImage, 'agreementImage');
+      if (agreementImageResponse != null &&
+          agreementImageResponse.success &&
+          agreementImageResponse.data?.id != null) {
+        agreementImagePublicId = agreementImageResponse.data?.id;
+        logger.d(
+            "Agreement image uploaded successfully. ID: $agreementImagePublicId");
+      } else {
+        logger.e("Failed to upload agreement image.");
       }
+    } else {
+      logger.d("No agreement image provided.");
     }
 
+    // Prepare transaction data
+    logger.d("Preparing transaction data...");
     final transactionData = {
       "transactionId": transactionIdController.text,
       "stoveSerialNo": stoveSerialController.text,
@@ -96,6 +123,14 @@ class FormController extends GetxController {
       "contactPhone": contactPhoneController.text,
       "endUserName": surnameController.text,
       "aka": akaController.text,
+      "stateBackup": stateController.text,
+      "lgaBackup": lgaController.text,
+      "phone": phoneController.text,
+      "otherPhone": otherPhoneController.text,
+      "partnerName": "Partner Corp",
+      "amount":
+          double.tryParse(amountController.text.replaceAll(',', '')) ?? 0.0,
+      "signature": signature,
       "addressData": {
         "fullAddress": addressController.text,
         "street": street,
@@ -103,44 +138,32 @@ class FormController extends GetxController {
         "state": state,
         "country": country,
         "latitude": latitude,
-        "longitude": longitude
+        "longitude": longitude,
       },
-      "stateBackup": lgaController.text,
-      "lgaBackup": stateController.text,
-      "phone": phoneController.text,
-      "otherPhone": otherPhoneController.text,
-      "partnerName": "Partner Corp",
-      "amount":
-          double.tryParse(amountController.text.replaceAll(',', '')) ?? 0.0,
-      "signature": signature,
-      "stoveImage": {
-        "public_id": stoveImagePublicId,
-        "url": stoveImageUrl,
-      },
-      "agreementImage": {
-        "public_id": agreementImagePublicId,
-        "url": agreementImageUrl,
-      }
+      "stoveImageId": stoveImagePublicId,
+      "agreementImageId": agreementImagePublicId,
     };
+    logger.d("Transaction data prepared: $transactionData");
 
-    final response = await formService.submitTransaction(transactionData);
-    if (response != null && [200, 201, 202].contains(response['code'])) {
-      Get.snackbar(
-        'Success',
-        'Form submitted successfully!',
-        colorText: AppColors.white,
-        backgroundColor: Color.fromARGB(149, 35, 203, 1),
-        snackPosition: SnackPosition.BOTTOM,
+    // Call the service to create the sale
+    logger.d("Sending transaction data to the server...");
+    final response = await _apiService.createSales(transactionData);
+    if (response.code == 200) {
+      logger.d("Sale submission successful.");
+      showSuccessToast(
+        title: 'Success',
+        message: 'Form submitted successfully!',
       );
     } else {
-      Get.snackbar(
-        'Error',
-        'Failed to submit the form.',
-        colorText: AppColors.white,
-        snackPosition: SnackPosition.BOTTOM,
+      logger.e(
+          "Sale submission failed. Error: ${response.message ?? 'Unknown error'}");
+      showInfoToast(
+        title: 'Sales Transaction Failed',
+        message: response.message ?? 'Failed to submit the form.',
       );
     }
     isLoading.value = false;
+    logger.d("Sale submission process completed.");
   }
 
   // Future<String?> _getSignature() async {

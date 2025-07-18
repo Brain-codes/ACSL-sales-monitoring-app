@@ -35,4 +35,5 @@ mixin AppIcons {
   static const dashboardIcon = "images/dashboardIcon.svg";
   static const trashIconFilled = "images/trashIconFilled.svg";
   static const editPenIcon = "images/editPenIcon.svg";
+  static const emptySales = "images/emptySales.svg";
 }

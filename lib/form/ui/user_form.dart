@@ -5,6 +5,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:get/get.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:signature/signature.dart';
+import 'package:stove_transaction/agent/sales_form/widgets/custom_textfield.dart';
 import 'package:stove_transaction/agent/sales_form/widgets/primary_button.dart';
 import 'package:stove_transaction/core/constants/app_colors.dart';
 import 'package:stove_transaction/core/constants/text_theme.dart';
@@ -276,13 +277,13 @@ class _UserFormState extends State<UserForm> {
                                 SizedBox(
                                   height: 5,
                                 ),
-                                CustomInputField(
+                                CustomTextField(
                                   label: 'Transaction ID (Invoice Number)',
                                   controller: TextEditingController(
                                       text: transactionId),
                                   readOnly: true,
                                 ),
-                                CustomInputField(
+                                CustomTextField(
                                   label: 'Sales Date',
                                   controller: controller.salesDateController,
                                   readOnly: true,
@@ -317,7 +318,7 @@ class _UserFormState extends State<UserForm> {
                                     }
                                   },
                                 ),
-                                CustomInputField(
+                                CustomTextField(
                                   label: 'Contact Person / Buyer',
                                   controller:
                                       controller.contactPersonController,
@@ -328,7 +329,7 @@ class _UserFormState extends State<UserForm> {
                                     return null; // No error
                                   },
                                 ),
-                                CustomInputField(
+                                CustomTextField(
                                   label: 'Contact Person\'s Phone Number',
                                   controller: controller.contactPhoneController,
                                   inputType: TextInputType.phone,
@@ -339,7 +340,7 @@ class _UserFormState extends State<UserForm> {
                                     return null; // No error
                                   },
                                 ),
-                                CustomInputField(
+                                CustomTextField(
                                   label:
                                       'End User\'s Name (Surname / First name)',
                                   controller: controller.surnameController,
@@ -350,7 +351,7 @@ class _UserFormState extends State<UserForm> {
                                     return null; // No error
                                   },
                                 ),
-                                CustomInputField(
+                                CustomTextField(
                                   label: 'Also Known As (AKA)',
                                   controller: controller.akaController,
                                 ),
@@ -453,7 +454,7 @@ class _UserFormState extends State<UserForm> {
                                 SizedBox(
                                   height: 10,
                                 ),
-                                CustomInputField(
+                                CustomTextField(
                                   label: 'Residential Address',
                                   readOnly: true,
                                   onTap: () {
@@ -487,7 +488,7 @@ class _UserFormState extends State<UserForm> {
                                               //     color: AppColors.deepRed,
                                               //   ),
                                               // ),
-                                              CustomInputField(
+                                              CustomTextField(
                                                 label: 'Latitude',
                                                 readOnly: true,
                                                 controller:
@@ -496,7 +497,7 @@ class _UserFormState extends State<UserForm> {
                                                       .toString(),
                                                 ),
                                               ),
-                                              CustomInputField(
+                                              CustomTextField(
                                                 label: 'Longitude',
                                                 readOnly: true,
                                                 controller:
@@ -510,7 +511,7 @@ class _UserFormState extends State<UserForm> {
                                         )
                                       : null,
                                 ),
-                                CustomInputField(
+                                CustomTextField(
                                   label: 'Phone Number',
                                   controller: controller.phoneController,
                                   inputType: TextInputType.phone,
@@ -521,7 +522,7 @@ class _UserFormState extends State<UserForm> {
                                     return null; // No error
                                   },
                                 ),
-                                CustomInputField(
+                                CustomTextField(
                                   label: 'Other Number',
                                   controller: controller.otherPhoneController,
                                   inputType: TextInputType.phone,
@@ -552,7 +553,7 @@ class _UserFormState extends State<UserForm> {
                                 //     // Handle selection
                                 //   },
                                 // ),
-                                CustomInputField(
+                                CustomTextField(
                                   label: 'Amount',
                                   controller: controller.amountController,
                                   inputType: TextInputType.numberWithOptions(

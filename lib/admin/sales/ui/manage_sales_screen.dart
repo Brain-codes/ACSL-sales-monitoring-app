@@ -4,6 +4,7 @@ import 'package:get/get.dart';
 import 'package:stove_transaction/admin/sales/controller/manage_sales_controller.dart';
 import 'package:stove_transaction/admin/sales/model/filter_model.dart';
 import 'package:stove_transaction/admin/sales/model/sale_model.dart';
+import 'package:stove_transaction/admin/sales/ui/empty_sales_screen.dart';
 import 'package:stove_transaction/admin/sales/ui/filter_sales_screen.dart';
 import 'package:stove_transaction/admin/sales/ui/manage_sales_card_tile.dart';
 import 'package:stove_transaction/admin/sales/ui/shimmer_sale_card.dart';
@@ -156,9 +157,7 @@ class ManageSalesScreen extends StatelessWidget {
 
                 if (controller.sales.isEmpty) {
                   return Expanded(
-                    child: Center(
-                        child: Text('No sales found',
-                            style: TextStyle(fontSize: 18))),
+                    child: EmptySalesScreen(),
                   );
                 }
 
