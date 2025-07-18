@@ -1,11 +1,17 @@
+import 'package:flutter/widgets.dart';
 import 'package:get/get.dart';
 import 'package:stove_transaction/admin/sales/model/sale_model.dart';
 import 'package:stove_transaction/admin/sales/model/filter_model.dart';
 import 'package:stove_transaction/admin/sales/services/sale_api_service.dart';
+import 'package:stove_transaction/core/services/session_manager.dart';
 import 'package:stove_transaction/core/services/supabase_service.dart';
 
 class ManageSalesController extends GetxController {
   final SaleApiService _apiService = SaleApiService(SupabaseService());
+  final SessionManager _sessionManager = Get.find<SessionManager>();
+  final TextEditingController searchText = TextEditingController();
+  var isAdmin = false.obs;
+  var isAgent = false.obs;
 
   var sales = <SaleModel>[].obs;
   var isLoading = false.obs;
@@ -25,6 +31,8 @@ class ManageSalesController extends GetxController {
   @override
   void onInit() {
     super.onInit();
+    isAdmin.value = _sessionManager.isAdmin;
+    isAgent.value = _sessionManager.isAgent;
     fetchSales();
     debounce(endUserNameFilter, (_) => applyFilters(),
         time: const Duration(milliseconds: 500));
