@@ -24,4 +24,8 @@ class AppColors {
   static const Color bgGrey = Color(0xFFF5F5F5);
   static const Color faintPrimaryColor = Color(0xFFF5F6FF);
   static const Color orange = Color(0xFFFF4F18);
+  static const Color backgroundGray = Color(0xFFF8F9FA);
+  static const Color textDark = Color(0xFF1E1F24);
+  static const Color textMedium = Color(0xFF81838E);
+  static const Color textLight = Color(0xFFB9BBC6);
 }
