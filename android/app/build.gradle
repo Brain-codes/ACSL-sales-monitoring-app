@@ -21,6 +21,11 @@ if (flutterVersionName == null) {
     flutterVersionName = '1.0'
 }
 
+def googleMapsApiKey = localProperties.getProperty('GOOGLE_MAPS_API_KEY')
+if (googleMapsApiKey == null) {
+    googleMapsApiKey = ''
+}
+
 apply plugin: 'com.android.application'
 apply plugin: 'kotlin-android'
 apply from: "$flutterRoot/packages/flutter_tools/gradle/flutter.gradle"
@@ -28,7 +33,7 @@ apply from: "$flutterRoot/packages/flutter_tools/gradle/flutter.gradle"
 android {
     namespace 'com.example.stove_transaction'
     compileSdkVersion 35
-    ndkVersion flutter.ndkVersion
+    ndkVersion "26.1.10909125"
 
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8
@@ -52,6 +57,11 @@ android {
         targetSdkVersion 35
         versionCode flutterVersionCode.toInteger()
         versionName flutterVersionName
+        
+        // Add Google Maps API key as a build config field
+        manifestPlaceholders = [
+            googleMapsApiKey: googleMapsApiKey
+        ]
     }
 
     buildTypes {

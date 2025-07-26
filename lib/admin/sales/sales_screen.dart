@@ -18,6 +18,7 @@ import 'package:stove_transaction/admin/sales/ui/shimmer_sale_card.dart';
 import 'package:stove_transaction/admin/sales/ui/sale_details_screen.dart';
 import 'package:stove_transaction/agent/sales_form/widgets/custom_textfield.dart';
 import 'package:stove_transaction/core/constants/app_icons.dart';
+import 'package:stove_transaction/admin/sales/controller/offline_sales_controller.dart';
 
 class SalesScreen extends StatelessWidget {
   final bool showBackArrow;
@@ -94,6 +95,71 @@ class SalesScreen extends StatelessWidget {
                     ],
                   ),
                   SizedBox(height: 30),
+
+                  // Offline Status Banner for Agents
+                  Obx(() {
+                    try {
+                      final offlineController =
+                          Get.find<OfflineSalesController>();
+                      final stats = offlineController.statistics;
+                      final pendingCount = stats['pending'] ?? 0;
+
+                      if (pendingCount > 0) {
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 16),
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: AppColors.primaryColor.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                                color: AppColors.primaryColor.withOpacity(0.3)),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(Icons.schedule,
+                                  color: AppColors.primaryColor, size: 20),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'You have $pendingCount offline record${pendingCount == 1 ? '' : 's'} waiting to sync',
+                                  style: TextThemes(context).getTextStyle(
+                                    fontSize: 14,
+                                    color: AppColors.primaryTextColor,
+                                  ),
+                                ),
+                              ),
+                              GestureDetector(
+                                onTap: () async {
+                                  await offlineController.syncAllOfflineData();
+                                  await offlineController.refreshOfflineData();
+                                },
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.primaryColor,
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Text(
+                                    'Sync Now',
+                                    style: TextThemes(context).getTextStyle(
+                                      fontSize: 12,
+                                      color: AppColors.white,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      }
+                    } catch (e) {
+                      // OfflineSalesController not initialized yet
+                    }
+                    return const SizedBox.shrink();
+                  }),
+
                   Text(
                     'Sales Data',
                     style: TextThemes(context).getTextStyle(

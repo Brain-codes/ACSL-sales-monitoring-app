@@ -1,0 +1,144 @@
+Name	Format	Type	
+id	
+uuid
+
+string	
+transaction_id	
+text
+
+string	
+stove_serial_no	
+text
+
+string	
+sales_date	
+date
+
+string	
+contact_person	
+text
+
+string	
+contact_phone	
+text
+
+string	
+end_user_name	
+text
+
+string	
+aka	
+text
+
+string	
+state_backup	
+text
+
+string	
+lga_backup	
+text
+
+string	
+phone	
+text
+
+string	
+other_phone	
+text
+
+string	
+partner_name	
+text
+
+string	
+amount	
+numeric
+
+number	
+signature	
+text
+
+string	
+status	
+text
+
+string	
+created_by	
+uuid
+
+string	
+organization_id	
+uuid
+
+string	
+address_id	
+uuid
+
+string	
+stove_image_id	
+uuid
+
+string	
+agreement_image_id	
+uuid
+
+string	
+created_at	
+timestamp without time zone
+
+string
+
+
+
+// SQL DEFINITION
+
+create table public.sales (
+  id uuid not null default gen_random_uuid (),
+  transaction_id text null,
+  stove_serial_no text null,
+  sales_date date null,
+  contact_person text null,
+  contact_phone text null,
+  end_user_name text null,
+  aka text null,
+  state_backup text null,
+  lga_backup text null,
+  phone text null,
+  other_phone text null,
+  partner_name text null,
+  amount numeric null,
+  signature text null,
+  status text null default 'incomplete',
+  created_by uuid null,
+  organization_id uuid null,
+  address_id uuid null,
+  stove_image_id uuid null,
+  agreement_image_id uuid null,
+  created_at timestamp without time zone null default now(),
+  constraint sales_pkey primary key (id),
+  constraint sales_status_check check (status = any (array['incomplete'::text, 'completed'::text, 'pending'::text, 'assigned'::text])),
+  constraint sales_address_id_fkey foreign KEY (address_id) references addresses (id),
+  constraint sales_agreement_image_id_fkey foreign KEY (agreement_image_id) references uploads (id),
+  constraint sales_created_by_fkey foreign KEY (created_by) references profiles (id) on delete set null,
+  constraint sales_organization_id_fkey foreign KEY (organization_id) references organizations (id) on delete CASCADE,
+  constraint sales_stove_image_id_fkey foreign KEY (stove_image_id) references uploads (id)
+) TABLESPACE pg_default;
+
+
+
+
+
+// POLICIES
+
+INSERT
+UPDATE
+UPDATE
+SELECT
+Allow for org
+Applied to: authenticated role
+Allow update for
+Applied to: authenticated role
+Allow updates for
+Applied to: authenticated role
+Users view Sales from their Org
+Applied to: authenticated role

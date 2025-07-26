@@ -1,0 +1,42 @@
+Name	Format	Type
+id	
+uuid
+
+string	
+name	
+text
+
+string	
+created_at	
+timestamp with time zone
+
+string	
+partner_email	
+text
+
+string
+
+
+
+// SQL DEFINITION
+
+create table public.organizations (
+  id uuid not null default gen_random_uuid (),
+  name text not null,
+  created_at timestamp with time zone null default now(),
+  partner_email text not null default 'email'::text,
+  constraint organizations_pkey primary key (id),
+  constraint organizations_partner_email_key unique (partner_email)
+) TABLESPACE pg_default;
+
+
+
+
+
+
+// POLICIES
+
+
+SELECT
+Allow public read
+Applied to: public role

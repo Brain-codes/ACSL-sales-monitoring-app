@@ -1,0 +1,68 @@
+Name	Format	Type
+id	
+uuid
+
+string	
+created_at	
+timestamp with time zone
+
+string	
+email	
+text
+
+string	
+full_name	
+text
+
+string	
+phone	
+text
+
+string	
+role	
+text
+
+string	
+has_changed_password	
+boolean
+
+boolean	
+organization_id	
+uuid
+
+string
+
+
+// SQL DEFINITION
+
+
+create table public.profiles (
+  id uuid not null default gen_random_uuid (),
+  created_at timestamp with time zone not null default now(),
+  email text null,
+  full_name text null,
+  phone text null,
+  role text null,
+  has_changed_password boolean null,
+  organization_id uuid null,
+  constraint profiles_pkey primary key (id),
+  constraint profiles_email_key unique (email)
+) TABLESPACE pg_default;
+
+
+
+
+// POLICIES
+
+
+
+
+SELECT
+UPDATE
+SELECT
+Users Cm read their
+Applied to: authenticated role
+update their
+Applied to: authenticated role
+Users view from thü org
+Applied to: ajthenticated role

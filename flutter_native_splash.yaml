@@ -1,0 +1,25 @@
+flutter_native_splash:
+  # Background color (hex or named color)
+  color: "#FFFFFF"
+
+  # Splash screen image (comment out since we don't have the image yet)
+  # image: "assets/images/splash/splash-icon.png"
+
+  # Android specific settings
+  android: true
+  android_gravity: center
+
+  # iOS specific settings
+  ios: true
+  ios_content_mode: center
+
+  # Web specific settings
+  web: true
+
+  # Android 12+ specific
+  android_12:
+    # image: "assets/images/splash/splash-icon.png"
+    color: "#FFFFFF"
+
+  # Fullscreen mode
+  fullscreen: true

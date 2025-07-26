@@ -1,0 +1,77 @@
+Name	Format	Type	
+id	
+uuid
+
+string	
+full_address	
+text
+
+string	
+street	
+text
+
+string	
+city	
+text
+
+string	
+state	
+text
+
+string	
+country	
+text
+
+string	
+latitude	
+double precision
+
+number	
+longitude	
+double precision
+
+number	
+created_at	
+timestamp without time zone
+
+string
+
+
+
+// SQL DEFINITION
+
+
+create table public.addresses (
+  id uuid not null default gen_random_uuid (),
+  full_address text null,
+  street text null,
+  city text null,
+  state text null,
+  country text null,
+  latitude double precision null,
+  longitude double precision null,
+  created_at timestamp without time zone null default now(),
+  constraint addresses_pkey primary key (id)
+) TABLESPACE pg_default;
+
+
+
+
+
+// POLICIES
+
+INSERT
+SELECT
+SELECT
+UPDATE
+INSERT
+Allow insert Of addresses for Org
+Applied to: authenticated role
+Allow select on addresses for org users
+Applied to: authenticated role
+Allow select on addresses if linked to
+Applied to: authenticated role
+Allow update Of addresses linked to user'S Sales
+Applied to: authenticated role
+Users in Can insert
+Applied to: authenticated role

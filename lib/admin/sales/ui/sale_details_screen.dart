@@ -1,6 +1,9 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:get/get.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 // Removed unused import
 
 import 'package:stove_transaction/admin/sales/controller/sales_controller.dart';
@@ -120,41 +123,10 @@ class SaleDetailsScreen extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 16),
-            Column(
-              children: [
-                Container(
-                  padding: EdgeInsets.symmetric(horizontal: 16),
-                  width: double.infinity,
-                  child: Text(
-                    'MAP PREVIEW',
-                    textAlign: TextAlign.end,
-                    style: TextThemes(context).getTextStyle(
-                      fontSize: 13,
-                      color: AppColors.primaryTextColor,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-                SizedBox(
-                  height: 10,
-                ),
-                Container(
-                  clipBehavior: Clip.hardEdge,
-                  height: 200,
-                  width: double.infinity,
-                  decoration: BoxDecoration(
-                      color: AppColors.bgGrey,
-                      border: Border.all(
-                        color: const Color(0xFFCDCDCD),
-                        width: 0.5,
-                      )),
-                  child: Image.network(
-                    sale.stoveImageId?.url ?? '',
-                    fit: BoxFit.cover,
-                  ),
-                )
-              ],
-            ),
+            // Map Preview
+            if (sale.address?.latitude != null &&
+                sale.address?.longitude != null)
+              _buildMapPreview(context),
 
             const SizedBox(height: 16),
 
@@ -177,9 +149,9 @@ class SaleDetailsScreen extends StatelessWidget {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 4),
               decoration: BoxDecoration(
-                color: _getStatusBackgroundColor(sale.status),
+                color: _getStatusBackgroundColor(sale.status ?? 'N/A'),
                 border: Border.all(
-                    color: _getStatusBorderColor(sale.status), width: 0.5),
+                    color: _getStatusBorderColor(sale.status ?? 'N/A'), width: 0.5),
                 borderRadius: BorderRadius.circular(200),
               ),
               child: Row(
@@ -189,7 +161,7 @@ class SaleDetailsScreen extends StatelessWidget {
                     sale.status ?? 'N/A',
                     style: TextThemes(context).getTextStyle(
                       fontSize: 14,
-                      color: _getStatusTextColor(sale.status),
+                      color: _getStatusTextColor(sale.status ?? 'N/A'),
                     ),
                   ),
                 ],
@@ -362,6 +334,71 @@ class SaleDetailsScreen extends StatelessWidget {
     );
   }
 
+  Widget _buildMapPreview(BuildContext context) {
+    final latitude = sale.address!.latitude!;
+    final longitude = sale.address!.longitude!;
+    final location = LatLng(latitude, longitude);
+
+    return Column(
+      children: [
+        Container(
+          padding: EdgeInsets.symmetric(horizontal: 16),
+          width: double.infinity,
+          child: Text(
+            'MAP PREVIEW',
+            textAlign: TextAlign.end,
+            style: TextThemes(context).getTextStyle(
+              fontSize: 13,
+              color: AppColors.primaryTextColor,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+        SizedBox(height: 10),
+        Container(
+          clipBehavior: Clip.hardEdge,
+          height: 200,
+          width: double.infinity,
+          decoration: BoxDecoration(
+            color: AppColors.bgGrey,
+            border: Border.all(
+              color: const Color(0xFFCDCDCD),
+              width: 0.5,
+            ),
+          ),
+          child: GoogleMap(
+            onMapCreated: (GoogleMapController controller) {
+              // Map is created, no need to store controller since we don't need to control it
+            },
+            initialCameraPosition: CameraPosition(
+              target: location,
+              zoom: 16.0, // Good zoom level to see the location clearly
+            ),
+            markers: {
+              Marker(
+                markerId: const MarkerId('stove_location'),
+                position: location,
+                infoWindow: InfoWindow(
+                  title: 'Stove Location',
+                  snippet: sale.address?.fullAddress ?? 'Location address',
+                ),
+              ),
+            },
+            // Disable user interactions to make it non-draggable
+            scrollGesturesEnabled: false,
+            zoomGesturesEnabled: false,
+            tiltGesturesEnabled: false,
+            rotateGesturesEnabled: false,
+            mapToolbarEnabled: false,
+            zoomControlsEnabled: false,
+            myLocationButtonEnabled: false,
+            mapType: MapType.normal,
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildAttachmentsSection(BuildContext context) {
     final hasStoveImage = sale.stoveImageId != null;
     final hasAgreementImage = sale.agreementImageId != null;
@@ -451,14 +488,83 @@ class SaleDetailsScreen extends StatelessWidget {
                   color: const Color(0xFFCDCDCD),
                   width: 0.5,
                 )),
-            child: Image.network(
-              sale.stoveImageId?.url ?? '',
-              fit: BoxFit.cover,
-            ),
+            child: _buildAttachmentImage(attachment),
           )
         ],
       ),
     );
+  }
+
+  Widget _buildAttachmentImage(dynamic attachment) {
+    if (attachment is String) {
+      // This is a base64 signature
+      try {
+        final bytes = base64Decode(attachment);
+        return Image.memory(
+          bytes,
+          fit: BoxFit.contain,
+          errorBuilder: (context, error, stackTrace) {
+            return Center(
+              child: Text(
+                'Error loading signature',
+                style: TextThemes(Get.context!).getTextStyle(
+                  fontSize: 12,
+                  color: AppColors.secondaryTextColor,
+                ),
+              ),
+            );
+          },
+        );
+      } catch (e) {
+        return Center(
+          child: Text(
+            'Invalid signature format',
+            style: TextThemes(Get.context!).getTextStyle(
+              fontSize: 12,
+              color: AppColors.secondaryTextColor,
+            ),
+          ),
+        );
+      }
+    } else if (attachment != null && attachment.url != null) {
+      // This is an image with URL (stove image or agreement document)
+      return Image.network(
+        attachment.url,
+        fit: BoxFit.cover,
+        errorBuilder: (context, error, stackTrace) {
+          return Center(
+            child: Text(
+              'Error loading image',
+              style: TextThemes(Get.context!).getTextStyle(
+                fontSize: 12,
+                color: AppColors.secondaryTextColor,
+              ),
+            ),
+          );
+        },
+        loadingBuilder: (context, child, loadingProgress) {
+          if (loadingProgress == null) return child;
+          return Center(
+            child: CircularProgressIndicator(
+              value: loadingProgress.expectedTotalBytes != null
+                  ? loadingProgress.cumulativeBytesLoaded /
+                      loadingProgress.expectedTotalBytes!
+                  : null,
+            ),
+          );
+        },
+      );
+    } else {
+      return Center(
+        child: Text(
+          'No attachment available',
+          style: TextThemes(Get.context!).getTextStyle(
+            fontSize: 12,
+            color: AppColors.secondaryTextColor,
+          ),
+        ),
+      );
+    }
   }
 }
 

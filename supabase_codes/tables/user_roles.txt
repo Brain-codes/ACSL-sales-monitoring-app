@@ -1,0 +1,25 @@
+Name	Format	Type
+id	
+uuid
+
+string	
+role	
+text
+
+string
+
+
+// SQL DEFINITION
+
+create view public.user_roles as
+select
+  id,
+  role
+from
+  profiles;
+
+
+
+
+// POLICIES
+

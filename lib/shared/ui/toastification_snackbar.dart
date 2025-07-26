@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:toastification/toastification.dart';
 
 void showErrorToast({
-
   required String message,
   String? title,
+  int? duration = 6,
 }) {
   toastification.show(
     type: ToastificationType.error,
@@ -12,7 +12,7 @@ void showErrorToast({
     title: Text(title ?? 'Error'),
     description: Text(message),
     alignment: Alignment.topCenter,
-    autoCloseDuration: const Duration(seconds: 4),
+    autoCloseDuration: Duration(seconds: duration ?? 6),
     showProgressBar: false,
     applyBlurEffect: true,
   );
@@ -21,6 +21,7 @@ void showErrorToast({
 void showSuccessToast({
   required String message,
   String? title,
+  int? duration = 6,
 }) {
   toastification.show(
     type: ToastificationType.success,
@@ -28,7 +29,7 @@ void showSuccessToast({
     title: Text(title ?? 'Success'),
     description: Text(message),
     alignment: Alignment.topCenter,
-    autoCloseDuration: const Duration(seconds: 4),
+    autoCloseDuration: Duration(seconds: duration ?? 6),
     showProgressBar: false,
     applyBlurEffect: true,
   );
@@ -37,6 +38,7 @@ void showSuccessToast({
 void showInfoToast({
   required String message,
   String? title,
+  int? duration = 6,
 }) {
   toastification.show(
     icon: const Icon(Icons.info),
@@ -45,7 +47,7 @@ void showInfoToast({
     title: Text(title ?? 'Info'),
     description: Text(message),
     alignment: Alignment.topCenter,
-    autoCloseDuration: const Duration(seconds: 4),
+    autoCloseDuration: Duration(seconds: duration ?? 6),
     showProgressBar: false,
     applyBlurEffect: true,
   );

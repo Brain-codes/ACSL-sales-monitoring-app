@@ -1,0 +1,167 @@
+Name	Format	Type	
+id	
+uuid
+
+string	
+transaction_id	
+text
+
+string	
+stove_serial_no	
+text
+
+string	
+sales_date	
+date
+
+string	
+contact_person	
+text
+
+string	
+contact_person	
+text
+
+string	
+contact_phone	
+text
+
+string	
+end_user_name	
+text
+
+string	
+aka	
+text
+
+string	
+state_backup	
+text
+
+string	
+lga_backup	
+text
+
+string	
+phone	
+text
+
+string	
+other_phone	
+text
+
+string	
+partner_name	
+text
+
+string	
+amount	
+numeric
+
+number	
+signature	
+text
+
+string	
+status	
+text
+
+string	
+created_by	
+uuid
+
+string	
+organization_id	
+uuid
+
+string	
+address_id	
+uuid
+
+string	
+stove_image_id	
+uuid
+
+string	
+agreement_image_id	
+uuid
+
+string	
+created_at	
+timestamp without time zone
+
+string
+
+
+
+// SQL DEFINITION (Updated with Auto-Status Calculation)
+
+CREATE TABLE public.sales (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  transaction_id text NULL,
+  stove_serial_no text NULL,
+  sales_date date NULL,
+  contact_person text NULL,
+  contact_phone text NULL,
+  end_user_name text NULL,
+  aka text NULL,
+  state_backup text NULL,
+  lga_backup text NULL,
+  phone text NULL,
+  other_phone text NULL,
+  partner_name text NULL,
+  amount numeric NULL,
+  signature text NULL,
+  status text NOT NULL DEFAULT 'incomplete',
+  created_by uuid NULL,
+  organization_id uuid NULL,
+  address_id uuid NULL,
+  stove_image_id uuid NULL,
+  agreement_image_id uuid NULL,
+  created_at timestamp without time zone NULL DEFAULT now(),
+  
+  -- Constraints
+  CONSTRAINT sales_pkey PRIMARY KEY (id),
+  CONSTRAINT sales_status_check CHECK (status = ANY (ARRAY['incomplete'::text, 'pending'::text, 'completed'::text, 'assigned'::text])),
+  CONSTRAINT sales_address_id_fkey FOREIGN KEY (address_id) REFERENCES addresses (id),
+  CONSTRAINT sales_agreement_image_id_fkey FOREIGN KEY (agreement_image_id) REFERENCES uploads (id),
+  CONSTRAINT sales_created_by_fkey FOREIGN KEY (created_by) REFERENCES profiles (id) ON DELETE SET NULL,
+  CONSTRAINT sales_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES organizations (id) ON DELETE CASCADE,
+  CONSTRAINT sales_stove_image_id_fkey FOREIGN KEY (stove_image_id) REFERENCES uploads (id)
+) TABLESPACE pg_default;
+
+-- Status Field Documentation
+-- 'incomplete' - Default status when sale is created with missing required fields or attachments
+-- 'pending'    - Sale has most required fields but missing some attachments or signature
+-- 'completed'  - Sale has all required fields, signature, and both image attachments
+-- 'assigned'   - Sale has been assigned to a specific agent (admin action)
+
+-- Required fields for status calculation:
+-- - transaction_id, stove_serial_no, sales_date, contact_person, contact_phone
+-- - end_user_name, phone, partner_name, amount (> 0)
+-- 
+-- Additional requirements for 'completed' status:
+-- - signature present
+-- - stove_image_id present
+-- - agreement_image_id present
+
+-- Status is automatically calculated via database triggers on INSERT/UPDATE operations
+
+// POLICIES
+
+INSERT
+UPDATE
+UPDATE
+SELECT
+Allow for org
+Applied to: authenticated role
+Allow update for
+Applied to: authenticated role
+Allow updates for
+Applied to: authenticated role
+Users view Sales from their Org
+Applied to: authenticated role
+
+// TRIGGERS
+- sales_status_calculation_insert: Automatically calculates status before INSERT
+- sales_status_calculation_update: Automatically calculates status before UPDATE

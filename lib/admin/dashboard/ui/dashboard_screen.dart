@@ -5,6 +5,8 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:get/get.dart';
 import 'package:stove_transaction/admin/dashboard/controller/dashboard_controller.dart';
 import 'package:stove_transaction/admin/sales/ui/manage_sales_screen.dart';
+import 'package:stove_transaction/admin/sales/ui/offline_sales_screen.dart';
+import 'package:stove_transaction/admin/sync/ui/sync_offline_screen.dart';
 import 'package:stove_transaction/core/constants/app_colors.dart';
 import 'package:stove_transaction/core/constants/text_theme.dart';
 import 'package:stove_transaction/core/routes/app_routes.dart';
@@ -258,7 +260,14 @@ class DashboardScreen extends GetView<DashboardController> {
                         title: 'Sync Offline Data',
                         description:
                             'Synchronize local offline data with the server.',
-                        onTap: () => Get.toNamed(AppRoutes.USER_FORM),
+                        onTap: () => Get.to(() => SyncOfflineScreen()),
+                      ),
+                      DashboardActionTile(
+                        icon: Icons.storage,
+                        title: 'Offline Records',
+                        description:
+                            'View and manage all offline sales records.',
+                        onTap: () => Get.to(() => OfflineSalesScreen()),
                       ),
                     ],
                   ),

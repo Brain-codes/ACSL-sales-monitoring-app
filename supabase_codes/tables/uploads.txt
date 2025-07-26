@@ -1,0 +1,53 @@
+Name	Format	Type
+id	
+uuid
+
+string	
+public_id	
+text
+
+string	
+url	
+text
+
+string	
+type	
+text
+
+string	
+created_by	
+uuid
+
+string	
+created_at	
+timestamp without time zone
+
+string
+
+
+// SQL DEFINITION
+
+
+create table public.uploads (
+  id uuid not null default gen_random_uuid (),
+  public_id text null,
+  url text null,
+  type text null,
+  created_by uuid null,
+  created_at timestamp without time zone null default now(),
+  constraint uploads_pkey primary key (id),
+  constraint uploads_created_by_fkey foreign KEY (created_by) references profiles (id) on delete set null
+) TABLESPACE pg_default;
+
+
+
+
+
+// POLICIES
+
+INSERT
+SELECT
+Allow user to insert uploads
+Applied to: authenticated role
+Allow user to select own
+Applied to: authenticated role
