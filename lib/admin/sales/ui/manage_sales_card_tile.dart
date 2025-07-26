@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:get/get.dart';
 import 'package:stove_transaction/admin/sales/model/sale_model.dart';
+import 'package:stove_transaction/admin/sales/controller/update_sale_controller.dart';
+import 'package:stove_transaction/admin/sales/ui/update_sale_screen.dart';
 import 'package:stove_transaction/core/constants/app_colors.dart';
 import 'package:stove_transaction/core/constants/app_icons.dart';
 import 'package:stove_transaction/core/constants/text_theme.dart';
@@ -37,7 +39,16 @@ class ManageSalesCardTile extends StatelessWidget {
               icon: AppIcons.editPenIcon,
               title: 'Update Sales Data',
               subtitle: 'Update details of your this sale',
-              onTap: () {},
+              onTap: () {
+                Get.back(); // Close bottom sheet
+
+                // Remove existing controller if it exists to ensure fresh state
+                if (Get.isRegistered<UpdateSaleController>()) {
+                  Get.delete<UpdateSaleController>();
+                }
+
+                Get.to(() => UpdateSaleScreen(), arguments: {'sale': saleData});
+              },
             ),
             BottomSheetItem(
               icon: AppIcons.trashIconFilled,

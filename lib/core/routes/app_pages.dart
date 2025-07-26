@@ -104,7 +104,7 @@ class AppPages {
     ),
     GetPage(
       name: AppRoutes.AGENT_HISTORY,
-      page: () => const HistoryScreen(),
+      page: () =>  HistoryScreen(),
     ),
     GetPage(
       name: AppRoutes.SETTINGS,

@@ -1,0 +1,46 @@
+Name	Format	Type
+id	
+uuid
+
+string	
+type	
+text
+
+string	
+public_id	
+text
+
+string	
+url	
+text
+
+string	
+created_at	
+timestamp without time zone
+
+string
+
+
+// SQL DEFINITION
+
+create table public.sales_images (
+  id uuid not null default gen_random_uuid (),
+  type text null,
+  public_id text null,
+  url text null,
+  created_at timestamp without time zone null default now(),
+  constraint sales_images_pkey primary key (id),
+  constraint sales_images_type_check check (
+    (
+      type = any (array['stove'::text, 'agreement'::text])
+    )
+  )
+) TABLESPACE pg_default;
+
+
+
+
+// POLICIES
+
+Row Level Security is enabled, but policies exist. NO data will be selectable via Supabase APIs-
+NO policies created yet

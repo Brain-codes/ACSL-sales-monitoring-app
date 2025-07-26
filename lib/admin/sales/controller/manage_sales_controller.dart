@@ -14,7 +14,7 @@ class ManageSalesController extends GetxController {
   var isAgent = false.obs;
 
   var sales = <SaleModel>[].obs;
-  var isLoading = false.obs;
+  var isLoading = true.obs; // Change this from false.obs to true.obs
   var isLoadingMore = false.obs;
   var hasMoreData = true.obs;
   var errorMessage = ''.obs;
@@ -33,7 +33,7 @@ class ManageSalesController extends GetxController {
     super.onInit();
     isAdmin.value = _sessionManager.isAdmin;
     isAgent.value = _sessionManager.isAgent;
-    fetchSales();
+    fetchSales(refresh: true); // Add refresh: true here
     debounce(endUserNameFilter, (_) => applyFilters(),
         time: const Duration(milliseconds: 500));
   }

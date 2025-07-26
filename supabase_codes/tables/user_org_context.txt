@@ -1,0 +1,26 @@
+Name	Format	Type
+user_id	
+uuid
+
+string	
+organization_id	
+uuid
+
+string
+
+
+// SQL DEFINITION
+
+
+create view public.user_org_context as
+select
+  id as user_id,
+  organization_id
+from
+  profiles;
+
+
+
+
+
+// POLICIES

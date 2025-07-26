@@ -20,6 +20,7 @@ class SaleModel {
   final String? partnerName;
   final double amount;
   final String? signature;
+  final String? status; // Database-managed status
   final String? createdBy;
   final String? organizationId;
   final String? addressId;
@@ -44,6 +45,7 @@ class SaleModel {
     this.partnerName,
     required this.amount,
     this.signature,
+    this.status,
     this.createdBy,
     this.organizationId,
     this.addressId,
@@ -52,32 +54,6 @@ class SaleModel {
     this.address,
     this.createdAt,
   });
-
-  /// ✅ Dynamic status getter
-  String get status {
-    final requiredFields = [
-      stoveSerialNo,
-      salesDate?.toIso8601String(),
-      contactPerson,
-      contactPhone,
-      endUserName,
-      stateBackup,
-      lgaBackup,
-      phone,
-      partnerName,
-      signature,
-      stoveImageId?.url,
-      agreementImageId?.url,
-      address?.fullAddress,
-    ];
-
-    // Check if any required field is missing or empty
-    bool hasIncompleteField = requiredFields.any(
-      (field) => field == null || field.toString().trim().isEmpty,
-    );
-
-    return hasIncompleteField ? 'pending' : 'completed';
-  }
 
   /// Factory to create from JSON
   factory SaleModel.fromJson(Map<String, dynamic> json) => SaleModel(
@@ -98,6 +74,7 @@ class SaleModel {
         partnerName: json["partner_name"],
         amount: json["amount"]?.toDouble() ?? 0.0,
         signature: json["signature"],
+        status: json["status"],
         createdBy: json["created_by"],
         organizationId: json["organization_id"],
         addressId: json["address_id"],
@@ -131,6 +108,7 @@ class SaleModel {
         "partner_name": partnerName,
         "amount": amount,
         "signature": signature,
+        "status": status,
         "created_by": createdBy,
         "organization_id": organizationId,
         "address_id": addressId,
@@ -138,7 +116,6 @@ class SaleModel {
         "agreement_image_id": agreementImageId?.toJson(),
         "address": address?.toJson(),
         "created_at": createdAt?.toIso8601String(),
-        // ✅ No status field in JSON because it's computed dynamically
       };
 }
 

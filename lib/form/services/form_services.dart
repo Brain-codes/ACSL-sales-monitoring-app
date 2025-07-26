@@ -30,16 +30,22 @@ class FormService {
   }
 
   Future<SupabaseApiResponse<UploadFileModel>> uploadImage(
-      File file, String type) async {
+    File file,
+    String type,
+  ) async {
     final response = await _supabaseService.callEdgeFunction(
       'upload-image',
-      body: {},
+      body: {
+        'type': type,
+        'file': file,
+      },
       isFormData: true,
-    ); // Pass the file and type to the function
+    );
 
-    (file: file, type: type);
     if (response.success) {
-      return SupabaseApiResponse.success(response.data as UploadFileModel);
+      // Extract the "upload" field from the response data
+      final uploadFileModel = UploadFileModel.fromJson(response.data['upload']);
+      return SupabaseApiResponse.success(uploadFileModel);
     } else {
       return SupabaseApiResponse.error(response.message, code: response.code);
     }

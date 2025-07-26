@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:stove_transaction/admin/sales/model/sale_model.dart';
 import 'package:stove_transaction/core/model/supabase_api_response.dart';
 import 'package:stove_transaction/core/services/supabase_service.dart';
@@ -46,8 +47,40 @@ class SaleApiService {
     }
   }
 
-}
+  Future<SupabaseApiResponse<dynamic>> updateSale({
+    required String saleId,
+    required Map<String, dynamic> saleData,
+  }) async {
+    final response = await _supabaseService.callEdgeFunction(
+      'update-sale',
+      body: saleData,
+      requireAuth: true,
+      queryParams: {'id': saleId},
+    );
 
+    if (response.success) {
+      return SupabaseApiResponse.success(response.data);
+    } else {
+      return SupabaseApiResponse.error(response.message, code: response.code);
+    }
+  }
+
+  Future<SupabaseApiResponse<dynamic>> uploadImage({
+    required File file,
+    required String type,
+  }) async {
+    final result = await _supabaseService.callEdgeFunction(
+      'upload-image',
+      body: {
+        'type': type,
+        'image': file,
+      },
+      isFormData: true, // Set this flag to true for form-data requests
+    );
+
+    return result;
+  }
+}
 
 class PaginatedSales {
   final List<SaleModel> sales;

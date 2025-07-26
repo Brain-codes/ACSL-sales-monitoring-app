@@ -2,6 +2,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:stove_transaction/core/config/env_config.dart';
 import 'package:stove_transaction/core/constants/text_theme.dart';
 import 'package:stove_transaction/form/controller/form_controller.dart';
 import 'package:stove_transaction/core/constants/app_colors.dart';
@@ -29,7 +30,7 @@ class _AddressInputScreenState extends State<AddressInputScreen> {
   @override
   void initState() {
     super.initState();
-    googlePlace = GooglePlace("AIzaSyBGfmkwRY4D3GHDJftLoDo0rOHkiMfEGeg");
+    googlePlace = GooglePlace(EnvConfig.googlePlacesApiKey);
   }
 
   void autoCompleteSearch(String value) async {

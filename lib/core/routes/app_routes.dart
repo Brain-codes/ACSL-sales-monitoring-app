@@ -12,6 +12,7 @@ abstract class AppRoutes {
   static const String UPDATE_STOVE_GEO = '/update_stove_geo';
   static const String SYNC_OFFLINE_DATA = '/sync_offline_data';
   static const String USER_FORM = '/user-form';
+  static const String UPDATE_SALE = '/update-sale';
   static const String MANAGE_SALES = '/manage_sales';
   static const AGENT_SALES_FORM = '/agent-sales-form';
   static const SALES_FORM = '/sales-form';

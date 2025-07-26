@@ -24,7 +24,7 @@ class SupabaseService {
   }) async {
     try {
       final session = _client.auth.currentSession;
-  
+
       // Ensure user is logged in if required
       if (requireAuth && session?.accessToken == null) {
         return SupabaseApiResponse.error(
@@ -32,13 +32,13 @@ class SupabaseService {
           code: 401,
         );
       }
-  
+
       // Prepare headers
       Map<String, String> headers = {};
       if (requireAuth && session?.accessToken != null) {
         headers['Authorization'] = 'Bearer ${session!.accessToken}';
       }
-  
+
       if (isFormData) {
         // Handle form-data requests
         return _callEdgeFunctionWithFormData(
@@ -51,11 +51,13 @@ class SupabaseService {
         // Standard JSON request using Supabase SDK
         // If we have query parameters, we need to build the URL manually
         if (queryParams != null && queryParams.isNotEmpty) {
-          final baseUrl = '${AppConfig.acslSupabaseURL}/functions/v1/$functionName';
-          final uri = Uri.parse(baseUrl).replace(queryParameters: queryParams.map(
+          final baseUrl =
+              '${AppConfig.acslSupabaseURL}/functions/v1/$functionName';
+          final uri = Uri.parse(baseUrl).replace(
+              queryParameters: queryParams.map(
             (key, value) => MapEntry(key, value.toString()),
           ));
-          
+
           final response = await http.post(
             uri,
             headers: {
@@ -64,7 +66,7 @@ class SupabaseService {
             },
             body: json.encode(body),
           );
-          
+
           if (response.statusCode == 200) {
             return SupabaseApiResponse.success(json.decode(response.body));
           } else if (response.statusCode == 401) {
@@ -143,33 +145,33 @@ class SupabaseService {
     required Map<String, String> headers,
     Map<String, dynamic>? queryParams,
   }) async {
+    _logger.e('UPLOAD BEGAN');
     try {
-      String baseUrl = '${AppConfig.acslSupabaseURL}/functions/v1/$functionName';
+      String baseUrl =
+          '${AppConfig.acslSupabaseURL}/functions/v1/$functionName';
       Uri uri = Uri.parse(baseUrl);
-      
+
       // Add query parameters if provided
       if (queryParams != null && queryParams.isNotEmpty) {
-        uri = uri.replace(queryParameters: queryParams.map(
+        uri = uri.replace(
+            queryParameters: queryParams.map(
           (key, value) => MapEntry(key, value.toString()),
         ));
       }
-  
+
       // Create multipart request
       final request = http.MultipartRequest('POST', uri);
-  
+
       // Add headers
       request.headers.addAll(headers);
-      if (!request.headers.containsKey('Content-Type')) {
-        request.headers['Content-Type'] = 'multipart/form-data';
-      }
-  
+
       // Add form fields and files
       for (var entry in body.entries) {
         if (entry.value is File) {
           final file = entry.value as File;
           final fileName = file.path.split('/').last;
           final contentType = _getContentType(fileName);
-  
+
           request.files.add(
             await http.MultipartFile.fromPath(
               entry.key,
@@ -184,7 +186,7 @@ class SupabaseService {
           for (var file in entry.value) {
             final fileName = file.path.split('/').last;
             final contentType = _getContentType(fileName);
-  
+
             request.files.add(
               await http.MultipartFile.fromPath(
                 '${entry.key}[]',
@@ -198,11 +200,14 @@ class SupabaseService {
           request.fields[entry.key] = entry.value.toString();
         }
       }
-  
+
       // Send the request
       final streamedResponse = await request.send();
       final response = await http.Response.fromStream(streamedResponse);
-  
+
+      _logger.e('UPLOAD FILE RESPONSE BODY: ${response.body}');
+      _logger.e('UPLOAD FILE RESPONSE CODE: ${response.statusCode}');
+      _logger.e('UPLOAD FILE RESPONSE HEADERS: ${response.headers}');
       if (response.statusCode == 200) {
         final responseData = json.decode(response.body);
         return SupabaseApiResponse.success(responseData);

@@ -18,14 +18,14 @@ class SalesListTile extends StatelessWidget {
   }) : super(key: key);
 
   Color _getStatusColor(String status) {
-    switch (status) {
-      case 'Completed':
+    switch (status.toLowerCase()) {
+      case 'completed':
         return AppColors.successColor;
-      case 'Assigned':
+      case 'assigned':
         return AppColors.primaryColor;
-      case 'Pending':
+      case 'pending':
         return Color(0xFFC59400);
-      case 'Incomplete':
+      case 'incomplete':
         return AppColors.errorColor;
       default:
         return AppColors.primaryTextColor;
@@ -90,25 +90,26 @@ class SalesListTile extends StatelessWidget {
                       fontWeight: FontWeight.w600,
                     ),
                   ),
-                  // Container(
-                  //   padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  //   decoration: BoxDecoration(
-                  //     color: _getStatusColor(sale.status).withOpacity(0.2),
-                  //     border: Border.all(
-                  //       color: _getStatusColor(sale.status),
-                  //       width: 0.5,
-                  //     ),
-                  //     borderRadius: BorderRadius.circular(100),
-                  //   ),
-                  //   child: Text(
-                  //     sale.status,
-                  //     style: TextThemes(context).getTextStyle(
-                  //       fontSize: 12,
-                  //       color: _getStatusColor(sale.status),
-                  //     ),
-                  //     textAlign: TextAlign.center,
-                  //   ),
-                  // ),
+                  Container(
+                    padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: _getStatusColor(sale.status ?? 'incomplete')
+                          .withOpacity(0.2),
+                      border: Border.all(
+                        color: _getStatusColor(sale.status ?? 'incomplete'),
+                        width: 0.5,
+                      ),
+                      borderRadius: BorderRadius.circular(100),
+                    ),
+                    child: Text(
+                      (sale.status ?? 'incomplete').toUpperCase(),
+                      style: TextThemes(context).getTextStyle(
+                        fontSize: 12,
+                        color: _getStatusColor(sale.status ?? 'incomplete'),
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
                 ],
               ),
             ],
