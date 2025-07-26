@@ -19,6 +19,7 @@ import 'package:stove_transaction/admin/sales/ui/manage_sales_screen.dart';
 import 'package:stove_transaction/agent/sales_form/ui/sales_form_screen.dart';
 import 'package:stove_transaction/agent/history/history_screen.dart';
 import 'package:stove_transaction/shared/ui/settings_screen.dart';
+import 'package:stove_transaction/shared/ui/profile_screen.dart';
 
 import 'package:stove_transaction/core/routes/app_routes.dart';
 
@@ -82,7 +83,7 @@ class AppPages {
     ),
     GetPage(
       name: AppRoutes.MANAGE_SALES,
-      page: () =>  ManageSalesScreen(),
+      page: () => ManageSalesScreen(),
     ),
     GetPage(
       name: AppRoutes.AGENT_SALES_FORM,
@@ -104,11 +105,15 @@ class AppPages {
     ),
     GetPage(
       name: AppRoutes.AGENT_HISTORY,
-      page: () =>  HistoryScreen(),
+      page: () => HistoryScreen(),
     ),
     GetPage(
       name: AppRoutes.SETTINGS,
       page: () => const SettingsScreen(),
+    ),
+    GetPage(
+      name: AppRoutes.PROFILE,
+      page: () => ProfileScreen(),
     ),
   ];
 }

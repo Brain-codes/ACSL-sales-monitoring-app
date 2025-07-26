@@ -2,10 +2,9 @@
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:flutter/material.dart';
 import 'package:stove_transaction/core/routes/app_routes.dart';
-import 'package:stove_transaction/core/services/auth_service.dart';
 import 'package:stove_transaction/core/services/session_manager.dart';
+import 'package:stove_transaction/core/services/profile_service.dart';
 import 'package:stove_transaction/login/model/user_model.dart';
 import 'package:stove_transaction/shared/ui/toastification_snackbar.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -18,8 +17,8 @@ class LoginController extends GetxController {
   final RxBool rememberMe = false.obs;
   final RxBool isPasswordObscured = true.obs;
   final _supabaseAuth = Supabase.instance.client.auth;
-  final AuthService _authService = Get.find<AuthService>();
-  Logger logger = Logger();
+  final ProfileService _profileService = ProfileService();
+  final Logger logger = Logger();
   final SessionManager _sessionManager = Get.find<SessionManager>();
   final userData = RawUserMetaData().obs;
   void login(
@@ -37,16 +36,51 @@ class LoginController extends GetxController {
             RawUserMetaData.fromJson(response.user?.userMetadata ?? {});
         userData.value = result;
 
-        // Save all user details using the saveUser method
-        _sessionManager.saveUser(
-          userId: response.user!.id,
-          role: userData.value.role ??
-              'agent', // Default to 'agent' if role is null
-          token: response.session?.accessToken ?? '',
-          userName: userData.value.fullName ??
-              '', // Assuming fullName is available in userMetadata
-          timeLoggedIn: DateTime.now().toIso8601String(),
-        );
+        // Fetch complete user profile with organization data
+        try {
+          final profileResult =
+              await _profileService.fetchUserProfileWithOrganization(
+            response.user!.id,
+          );
+
+          if (profileResult.success && profileResult.data != null) {
+            final profile = profileResult.data!;
+
+            // Save complete user data including profile and organization
+            _sessionManager.saveCompleteUserData(
+              userId: response.user!.id,
+              role: userData.value.role ?? 'agent',
+              token: response.session?.accessToken ?? '',
+              userName: profile.fullName ?? userData.value.fullName ?? '',
+              timeLoggedIn: DateTime.now().toIso8601String(),
+              profile: profile.toJson(),
+            );
+
+            logger.d(
+                'User profile with organization saved: ${profile.organization?.name}');
+          } else {
+            // Fallback to basic user data if profile fetch fails
+            logger.w('Failed to fetch user profile: ${profileResult.message}');
+            _sessionManager.saveUser(
+              userId: response.user!.id,
+              role: userData.value.role ?? 'agent',
+              token: response.session?.accessToken ?? '',
+              userName: userData.value.fullName ?? '',
+              timeLoggedIn: DateTime.now().toIso8601String(),
+            );
+          }
+        } catch (e) {
+          logger.e('Error fetching user profile: $e');
+          // Fallback to basic user data
+          _sessionManager.saveUser(
+            userId: response.user!.id,
+            role: userData.value.role ?? 'agent',
+            token: response.session?.accessToken ?? '',
+            userName: userData.value.fullName ?? '',
+            timeLoggedIn: DateTime.now().toIso8601String(),
+          );
+        }
+
         logger.d(response.session?.accessToken);
         //SAVE USER SESSION FROM SUPABASE
         if (response.session != null) {
@@ -111,22 +145,57 @@ class LoginController extends GetxController {
 
   Future<bool> refreshToken(BuildContext context) async {
     isLoading.value = true;
-    final SessionManager _sessionManager = Get.find<SessionManager>();
     final response = await _supabaseAuth.refreshSession(
       _sessionManager.getSupabaseSession()?.refreshToken,
     );
 
     if (response.user != null) {
-      // Save all user details using the saveUser method
-      _sessionManager.saveUser(
-        userId: response.user!.id,
-        role: userData.value.role ??
-            'agent', // Default to 'agent' if role is null
-        token: response.session?.accessToken ?? '',
-        userName: userData.value.fullName ??
-            '', // Assuming fullName is available in userMetadata
-        timeLoggedIn: DateTime.now().toIso8601String(),
-      );
+      // Fetch complete user profile with organization data on token refresh
+      try {
+        final profileResult =
+            await _profileService.fetchUserProfileWithOrganization(
+          response.user!.id,
+        );
+
+        if (profileResult.success && profileResult.data != null) {
+          final profile = profileResult.data!;
+
+          // Save complete user data including profile and organization
+          _sessionManager.saveCompleteUserData(
+            userId: response.user!.id,
+            role: userData.value.role ?? 'agent',
+            token: response.session?.accessToken ?? '',
+            userName: profile.fullName ?? userData.value.fullName ?? '',
+            timeLoggedIn: DateTime.now().toIso8601String(),
+            profile: profile.toJson(),
+          );
+
+          logger.d(
+              'User profile with organization refreshed: ${profile.organization?.name}');
+        } else {
+          // Fallback to basic user data if profile fetch fails
+          logger.w(
+              'Failed to fetch user profile on refresh: ${profileResult.message}');
+          _sessionManager.saveUser(
+            userId: response.user!.id,
+            role: userData.value.role ?? 'agent',
+            token: response.session?.accessToken ?? '',
+            userName: userData.value.fullName ?? '',
+            timeLoggedIn: DateTime.now().toIso8601String(),
+          );
+        }
+      } catch (e) {
+        logger.e('Error fetching user profile on refresh: $e');
+        // Fallback to basic user data
+        _sessionManager.saveUser(
+          userId: response.user!.id,
+          role: userData.value.role ?? 'agent',
+          token: response.session?.accessToken ?? '',
+          userName: userData.value.fullName ?? '',
+          timeLoggedIn: DateTime.now().toIso8601String(),
+        );
+      }
+
       //SAVE USER SESSION FROM SUPABASE
       if (response.session != null) {
         _sessionManager.saveSupabaseSession(response.session);
@@ -139,10 +208,10 @@ class LoginController extends GetxController {
       isLoading.value = false;
       return true;
     } else {
-      logger.d('${response}');
+      logger.d('$response');
       isLoading.value = false;
 
-      print('refresh not done');
+      logger.d('refresh not done');
       // await localDatabaseService.delete(DbKeyStrings.userDetailsKey);
       Get.offAllNamed(AppRoutes.LOGIN);
       return false;

@@ -66,10 +66,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             children: [
                               InkWell(
                                 onTap: () {
-                                  // Navigator.pushNamed(
-                                  //   context,
-                                  //   ScreenConstant.editProfileScreen,
-                                  // );
+                                  Get.toNamed(AppRoutes.PROFILE);
                                 },
                                 child: SettingsTiles(
                                   buttonValue: 'Profile',

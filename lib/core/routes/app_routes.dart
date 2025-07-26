@@ -18,4 +18,5 @@ abstract class AppRoutes {
   static const SALES_FORM = '/sales-form';
   static const AGENT_HISTORY = '/agent-history';
   static const SETTINGS = '/settings';
+  static const PROFILE = '/profile';
 }

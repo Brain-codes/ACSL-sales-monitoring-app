@@ -8,14 +8,16 @@ import 'package:stove_transaction/core/constants/text_theme.dart';
 
 class PrimaryButton extends StatelessWidget {
   final String text;
-  final VoidCallback onPressed;
+  final VoidCallback? onPressed;
   final bool isLoading;
+  final IconData? icon;
 
   const PrimaryButton({
     Key? key,
     required this.text,
     required this.onPressed,
     this.isLoading = false,
+    this.icon,
   }) : super(key: key);
 
   @override
@@ -42,12 +44,25 @@ class PrimaryButton extends StatelessWidget {
                   strokeWidth: 1.5,
                 ),
               )
-            : Text(
-                text,
-                style: TextThemes(context).getTextStyle(
-                  color: AppColors.white,
-                  fontSize: 16,
-                ),
+            : Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  if (icon != null) ...[
+                    Icon(
+                      icon,
+                      color: AppColors.white,
+                      size: 18,
+                    ),
+                    const SizedBox(width: 8),
+                  ],
+                  Text(
+                    text,
+                    style: TextThemes(context).getTextStyle(
+                      color: AppColors.white,
+                      fontSize: 16,
+                    ),
+                  ),
+                ],
               ),
       ),
     );

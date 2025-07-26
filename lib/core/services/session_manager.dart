@@ -1,21 +1,28 @@
 import 'package:get/get.dart';
 import 'package:get_storage/get_storage.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:stove_transaction/core/model/profile_model.dart';
 
 class SessionManager extends GetxService {
+  final GetStorage _box = GetStorage();
+
+  /// Initialize the SessionManager service
   Future<SessionManager> init() async {
+    // Any initialization logic can go here
     return this;
   }
 
-  final _box = GetStorage();
-
+  // Storage keys
   static const String _userIdKey = 'userId';
   static const String _roleKey = 'role';
   static const String _tokenKey = 'token';
   static const String _userNameKey = 'userName';
   static const String _supabaseSessionKey = 'supabaseSession';
   static const String _timeLoggedInKey = 'timeLoggedIn';
+  static const String _userProfileKey = 'userProfile';
+  static const String _organizationKey = 'organization';
 
+  // Basic getters
   String? get userId => _box.read(_userIdKey);
   String? get role => _box.read(_roleKey);
   String? get token => _box.read(_tokenKey);
@@ -25,6 +32,72 @@ class SessionManager extends GetxService {
 
   bool get isAdmin => role == 'admin';
   bool get isAgent => role == 'agent';
+
+  // User profile methods
+  Map<String, dynamic>? getUserProfile() {
+    final profile = _box.read(_userProfileKey);
+    if (profile != null && profile is Map<String, dynamic>) {
+      return Map<String, dynamic>.from(profile);
+    }
+    return null;
+  }
+
+  /// Get user profile as ProfileModel (strongly typed)
+  ProfileModel? getUserProfileModel() {
+    final profile = getUserProfile();
+    if (profile != null) {
+      try {
+        return ProfileModel.fromJson(profile);
+      } catch (e) {
+        return null;
+      }
+    }
+    return null;
+  }
+
+  // Organization methods
+  Map<String, dynamic>? getOrganization() {
+    final org = _box.read(_organizationKey);
+    if (org != null && org is Map<String, dynamic>) {
+      return Map<String, dynamic>.from(org);
+    }
+    return null;
+  }
+
+  String? get organizationId {
+    final org = getOrganization();
+    return org?['id']?.toString();
+  }
+
+  String? get organizationName {
+    final org = getOrganization();
+    return org?['name']?.toString();
+  }
+
+  String? get partnerEmail {
+    final org = getOrganization();
+    return org?['partner_email']?.toString();
+  }
+
+  String? get userEmail {
+    final profile = getUserProfile();
+    return profile?['email']?.toString();
+  }
+
+  String? get userFullName {
+    final profile = getUserProfile();
+    return profile?['full_name']?.toString();
+  }
+
+  String? get userPhone {
+    final profile = getUserProfile();
+    return profile?['phone']?.toString();
+  }
+
+  bool get hasChangedPassword {
+    final profile = getUserProfile();
+    return profile?['has_changed_password'] ?? false;
+  }
 
   Map<String, dynamic>? getUser() {
     if (userId != null && role != null && token != null) {
@@ -62,6 +135,36 @@ class SessionManager extends GetxService {
     _box.write(_timeLoggedInKey, timeLoggedIn);
   }
 
+  void saveUserProfile(Map<String, dynamic> profile) {
+    _box.write(_userProfileKey, profile);
+
+    // Extract and save organization data if present
+    if (profile['organization'] != null) {
+      _box.write(_organizationKey, profile['organization']);
+    }
+  }
+
+  void saveCompleteUserData({
+    required String userId,
+    required String role,
+    required String token,
+    required String userName,
+    required String timeLoggedIn,
+    required Map<String, dynamic> profile,
+  }) {
+    // Save basic user data
+    saveUser(
+      userId: userId,
+      role: role,
+      token: token,
+      userName: userName,
+      timeLoggedIn: timeLoggedIn,
+    );
+
+    // Save complete profile with organization
+    saveUserProfile(profile);
+  }
+
   void saveSupabaseSession(Session? sessionData) {
     if (sessionData != null) {
       _box.write(_supabaseSessionKey, sessionData.toJson());
@@ -82,5 +185,7 @@ class SessionManager extends GetxService {
     _box.remove(_tokenKey);
     _box.remove(_supabaseSessionKey);
     _box.remove(_timeLoggedInKey);
+    _box.remove(_userProfileKey);
+    _box.remove(_organizationKey);
   }
 }
