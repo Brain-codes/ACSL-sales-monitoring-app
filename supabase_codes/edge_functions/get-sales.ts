@@ -31,7 +31,7 @@ serve(async (req) => {
   try {
     const url = new URL(req.url);
     const params = url.searchParams;
-    const endUserName = params.get("endUserName") || "";
+    const queryParam = params.get("query") || "";
     const fromDate = params.get("from");
     const toDate = params.get("to");
     const state = params.get("state");
@@ -39,22 +39,19 @@ serve(async (req) => {
     const page = parseInt(params.get("page") || "1");
     const limit = parseInt(params.get("limit") || "10");
     const offset = (page - 1) * limit;
+
     // Authenticate user
     const { data: userData, error: authError } = await supabase.auth.getUser();
     if (authError || !userData?.user) {
       return withCors(
         new Response(
-          JSON.stringify({
-            success: false,
-            message: "Unauthorized",
-          }),
-          {
-            status: 401,
-          }
+          JSON.stringify({ success: false, message: "Unauthorized" }),
+          { status: 401 }
         )
       );
     }
     const userId = userData.user.id;
+
     // Get organization
     const { data: profile, error: profileError } = await supabase
       .from("profiles")
@@ -64,18 +61,14 @@ serve(async (req) => {
     if (profileError || !profile?.organization_id) {
       return withCors(
         new Response(
-          JSON.stringify({
-            success: false,
-            message: "No organization found",
-          }),
-          {
-            status: 403,
-          }
+          JSON.stringify({ success: false, message: "No organization found" }),
+          { status: 403 }
         )
       );
     }
-    // Build dynamic query
-    let query = supabase
+
+    // Build query
+    let salesQuery = supabase
       .from("sales")
       .select(
         `
@@ -84,29 +77,35 @@ serve(async (req) => {
         agreement_image_id:agreement_image_id (*),
         address:address_id (*)
       `,
-        {
-          count: "exact",
-        }
+        { count: "exact" }
       )
       .eq("organization_id", profile.organization_id);
-    if (endUserName) {
-      query = query.ilike("end_user_name", `%${endUserName}%`);
+
+    // Search by transaction_id or stove_serial_no
+    if (queryParam) {
+      salesQuery = salesQuery.or(
+        `transaction_id.ilike.%${queryParam}%,stove_serial_no.ilike.%${queryParam}%`
+      );
     }
-    if (fromDate && toDate) {
-      query = query.gte("sales_date", fromDate).lte("sales_date", toDate);
+    if (fromDate) {
+      salesQuery = salesQuery.gte("sales_date", fromDate);
+    }
+    if (toDate) {
+      salesQuery = salesQuery.lte("sales_date", toDate);
     }
     if (state) {
-      query = query.eq("state_backup", state);
+      salesQuery = salesQuery.eq("state_backup", state);
     }
     if (lga) {
-      query = query.eq("lga_backup", lga);
+      salesQuery = salesQuery.eq("lga_backup", lga);
     }
-    query = query
-      .order("created_at", {
-        ascending: false,
-      })
+
+    salesQuery = salesQuery
+      .order("created_at", { ascending: false })
       .range(offset, offset + limit - 1);
-    const { data: sales, count, error: queryError } = await query;
+
+    const { data: sales, count, error: queryError } = await salesQuery;
+
     if (queryError?.code === "PGRST103") {
       return withCors(
         new Response(
@@ -120,9 +119,7 @@ serve(async (req) => {
               totalPages: 1,
             },
           }),
-          {
-            status: 200,
-          }
+          { status: 200 }
         )
       );
     }
@@ -134,12 +131,11 @@ serve(async (req) => {
             message: "Failed to fetch sales",
             error: queryError,
           }),
-          {
-            status: 500,
-          }
+          { status: 500 }
         )
       );
     }
+
     return withCors(
       new Response(
         JSON.stringify({
@@ -152,9 +148,7 @@ serve(async (req) => {
             totalPages: count ? Math.ceil(count / limit) : 1,
           },
         }),
-        {
-          status: 200,
-        }
+        { status: 200 }
       )
     );
   } catch (err) {

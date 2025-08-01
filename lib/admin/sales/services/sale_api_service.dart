@@ -14,7 +14,7 @@ class SaleApiService {
   Future<SupabaseApiResponse<PaginatedSales>> fetchSales({
     int page = 1,
     int limit = 50,
-    String? endUserName,
+    String? query, // Can be stoveSerialNo or transactionId
     String? from,
     String? to,
     String? state,
@@ -23,8 +23,7 @@ class SaleApiService {
     final queryParams = {
       'page': page.toString(),
       'limit': limit.toString(),
-      if (endUserName != null && endUserName.isNotEmpty)
-        'endUserName': endUserName,
+      if (query != null && query.isNotEmpty) 'query': query,
       if (from != null && from.isNotEmpty) 'from': from,
       if (to != null && to.isNotEmpty) 'to': to,
       if (state != null && state.isNotEmpty) 'state': state,

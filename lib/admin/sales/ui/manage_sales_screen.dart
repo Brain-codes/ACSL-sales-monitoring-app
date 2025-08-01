@@ -98,7 +98,7 @@ class ManageSalesScreen extends StatelessWidget {
               CustomTextField(
                 inputType: TextInputType.text,
                 actionKeyboard: TextInputAction.done,
-                label: 'Search by Customer\'s Name',
+                label: 'Search by Stove Serial No. or Transaction ID',
                 controller: searchText,
                 prefixIcon: SizedBox(
                   width: 20,
@@ -107,7 +107,7 @@ class ManageSalesScreen extends StatelessWidget {
                       fit: BoxFit.scaleDown),
                 ),
                 onChanged: (value) {
-                  controller.endUserNameFilter.value = value;
+                  controller.searchQuery.value = value;
                 },
               ),
               const SizedBox(height: 10),

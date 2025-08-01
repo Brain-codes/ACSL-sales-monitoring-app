@@ -19,7 +19,7 @@ class ManageSalesController extends GetxController {
   var hasMoreData = true.obs;
   var errorMessage = ''.obs;
 
-  var endUserNameFilter = ''.obs;
+  var searchQuery = ''.obs;
   var selectedState = ''.obs;
   var selectedLGA = ''.obs;
   Rx<DateRange?> dateRangeFilter = Rx<DateRange?>(null);
@@ -34,7 +34,7 @@ class ManageSalesController extends GetxController {
     isAdmin.value = _sessionManager.isAdmin;
     isAgent.value = _sessionManager.isAgent;
     fetchSales(refresh: true); // Add refresh: true here
-    debounce(endUserNameFilter, (_) => applyFilters(),
+    debounce(searchQuery, (_) => applyFilters(),
         time: const Duration(milliseconds: 500));
   }
 
@@ -59,7 +59,7 @@ class ManageSalesController extends GetxController {
       final response = await _apiService.fetchSales(
         page: page,
         limit: limit,
-        endUserName: endUserNameFilter.value,
+        query: searchQuery.value,
         from: dateRangeFilter.value?.start.toIso8601String(),
         to: dateRangeFilter.value?.end.toIso8601String(),
         state: selectedState.value.isNotEmpty ? selectedState.value : null,

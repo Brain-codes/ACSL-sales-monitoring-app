@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:get/get.dart';
 import 'package:flutter/material.dart';
 import 'package:logger/logger.dart';
+import 'package:stove_transaction/core/services/session_manager.dart';
 import 'package:stove_transaction/core/services/supabase_service.dart';
 import 'package:stove_transaction/core/services/image_compression_service.dart';
 import 'package:stove_transaction/core/services/offline_storage_service.dart';
@@ -180,7 +181,7 @@ class FormController extends GetxController {
       "lgaBackup": lgaController.text,
       "phone": phoneController.text,
       "otherPhone": otherPhoneController.text,
-      "partnerName": "Partner Corp",
+      "partnerName": Get.find<SessionManager>().organizationName,
       "amount":
           double.tryParse(amountController.text.replaceAll(',', '')) ?? 0.0,
       "signature": signature,
@@ -305,7 +306,7 @@ class FormController extends GetxController {
       "lgaBackup": lgaController.text,
       "phone": phoneController.text,
       "otherPhone": otherPhoneController.text,
-      "partnerName": "Partner Corp",
+      "partnerName": Get.find<SessionManager>().organizationName,
       "amount":
           double.tryParse(amountController.text.replaceAll(',', '')) ?? 0.0,
       "signature": signature,

@@ -4,8 +4,8 @@ import 'package:stove_transaction/admin/dashboard/ui/dashboard_screen.dart';
 import 'package:stove_transaction/admin/monitoring/monitoring_screen.dart';
 import 'package:stove_transaction/admin/sales/sales_screen.dart';
 import 'package:stove_transaction/admin/sales/ui/admin_sales_screen.dart';
-import 'package:stove_transaction/agent/history/history_screen.dart';
-import 'package:stove_transaction/agent/sales_form/ui/sales_form_screen.dart';
+import 'package:stove_transaction/agent/dashboard/agent_dashboard_screen.dart';
+import 'package:stove_transaction/agent/history/agent_history_screen.dart';
 import 'package:stove_transaction/core/constants/app_colors.dart';
 import 'package:stove_transaction/core/constants/app_icons.dart';
 import 'package:stove_transaction/core/services/session_manager.dart';
@@ -43,15 +43,16 @@ class MainLayout extends StatelessWidget {
           : isAgent
               ? BaseBottomNavigation(
                   pages: [
-                    SalesScreen(
-                      showBackArrow: false,
-                    ),
-                    HistoryScreen(),
+                    AgentDashboardScreen(),
+                    AgentHistoryScreen(),
+                    SalesScreen(showBackArrow: false),
                     SettingsScreen(),
                   ],
                   navItems: [
-                    NavItem(iconPath: AppIcons.salesIcon, label: "Sales"),
+                    NavItem(
+                        iconPath: AppIcons.dashboardIcon, label: "Dashboard"),
                     NavItem(iconPath: AppIcons.historyIcon, label: "History"),
+                    NavItem(iconPath: AppIcons.salesIcon, label: "Sales"),
                     NavItem(iconPath: AppIcons.settingsIcon, label: "Settings"),
                   ],
                 )

@@ -13,12 +13,12 @@ import 'package:stove_transaction/core/services/session_manager.dart';
 import 'package:stove_transaction/form/ui/user_form.dart';
 import 'package:stove_transaction/shared/widgets/base_app_bar.dart';
 import 'package:stove_transaction/admin/sales/controller/manage_sales_controller.dart';
+import 'package:stove_transaction/admin/sales/controller/offline_sales_controller.dart';
 import 'package:stove_transaction/admin/sales/ui/sales_list_tile.dart';
 import 'package:stove_transaction/admin/sales/ui/shimmer_sale_card.dart';
 import 'package:stove_transaction/admin/sales/ui/sale_details_screen.dart';
 import 'package:stove_transaction/agent/sales_form/widgets/custom_textfield.dart';
 import 'package:stove_transaction/core/constants/app_icons.dart';
-import 'package:stove_transaction/admin/sales/controller/offline_sales_controller.dart';
 
 class SalesScreen extends StatelessWidget {
   final bool showBackArrow;
@@ -31,6 +31,12 @@ class SalesScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final ManageSalesController controller = Get.put(ManageSalesController());
     final SessionManager _sessionManager = Get.find<SessionManager>();
+
+    // Initialize OfflineSalesController only for agents
+    OfflineSalesController? offlineController;
+    if (_sessionManager.isAgent) {
+      offlineController = Get.put(OfflineSalesController());
+    }
 
     return Scaffold(
       appBar: !controller.isAdmin.value
@@ -97,11 +103,10 @@ class SalesScreen extends StatelessWidget {
                   SizedBox(height: 30),
 
                   // Offline Status Banner for Agents
-                  Obx(() {
-                    try {
-                      final offlineController =
-                          Get.find<OfflineSalesController>();
-                      final stats = offlineController.statistics;
+                  if (offlineController != null)
+                    Obx(() {
+                      final controller = offlineController!;
+                      final stats = controller.statistics;
                       final pendingCount = stats['pending'] ?? 0;
 
                       if (pendingCount > 0) {
@@ -130,8 +135,8 @@ class SalesScreen extends StatelessWidget {
                               ),
                               GestureDetector(
                                 onTap: () async {
-                                  await offlineController.syncAllOfflineData();
-                                  await offlineController.refreshOfflineData();
+                                  await controller.syncAllOfflineData();
+                                  await controller.refreshOfflineData();
                                 },
                                 child: Container(
                                   padding: const EdgeInsets.symmetric(
@@ -154,11 +159,8 @@ class SalesScreen extends StatelessWidget {
                           ),
                         );
                       }
-                    } catch (e) {
-                      // OfflineSalesController not initialized yet
-                    }
-                    return const SizedBox.shrink();
-                  }),
+                      return const SizedBox.shrink();
+                    }),
 
                   Text(
                     'Sales Data',
@@ -188,7 +190,7 @@ class SalesScreen extends StatelessWidget {
                                       fit: BoxFit.scaleDown),
                                 ),
                                 onChanged: (value) {
-                                  controller.endUserNameFilter.value = value;
+                                  controller.searchQuery.value = value;
                                 },
                               ),
                             ),

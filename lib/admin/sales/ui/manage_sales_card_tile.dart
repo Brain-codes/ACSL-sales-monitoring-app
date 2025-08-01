@@ -109,7 +109,7 @@ class ManageSalesCardTile extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            saleData.stoveSerialNo ?? '',
+                            saleData.stoveSerialNo ?? 'N/A',
                             style: TextThemes(context).getTextStyle(
                               fontSize: 14,
                               color: AppColors.primaryTextColor,
@@ -122,7 +122,10 @@ class ManageSalesCardTile extends StatelessWidget {
                             padding: EdgeInsets.symmetric(
                                 horizontal: 8, vertical: 4),
                             decoration: BoxDecoration(
-                              color: AppColors.primaryColor.withOpacity(0.1),
+                              color: (saleData.status?.toLowerCase() ==
+                                      'completed')
+                                  ? AppColors.green.withOpacity(0.1)
+                                  : AppColors.red.withOpacity(0.1),
                               border: Border.all(
                                 color: AppColors.white,
                                 width: 0.5,
@@ -130,10 +133,13 @@ class ManageSalesCardTile extends StatelessWidget {
                               borderRadius: BorderRadius.circular(100),
                             ),
                             child: Text(
-                              '${saleData.partnerName}',
+                              '${saleData.status}',
                               style: TextThemes(context).getTextStyle(
                                 fontSize: 10,
-                                color: AppColors.secondaryTextColor,
+                                color: (saleData.status?.toLowerCase() ==
+                                        'completed')
+                                    ? AppColors.green
+                                    : AppColors.red,
                               ),
                             ),
                           ),
