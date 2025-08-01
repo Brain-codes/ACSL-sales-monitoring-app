@@ -118,11 +118,7 @@ class _UserFormState extends State<UserForm> with CameraHandlerMixin {
             ? () => Navigator.pop(context)
             : () => setState(() => isSearchingAddress = !isSearchingAddress),
       ),
-      body: Obx(() {
-        return controller.partnerNames.isEmpty
-            ? Center(child: CircularProgressIndicator())
-            : _buildBodyContent();
-      }),
+      body: _buildBodyContent(),
     );
   }
 

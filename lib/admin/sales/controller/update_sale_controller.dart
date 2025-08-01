@@ -7,6 +7,7 @@ import 'package:stove_transaction/admin/sales/model/sale_model.dart';
 import 'package:stove_transaction/admin/sales/services/sale_api_service.dart';
 import 'package:stove_transaction/admin/sales/controller/manage_sales_controller.dart';
 import 'package:stove_transaction/admin/sales/controller/offline_sales_controller.dart';
+import 'package:stove_transaction/core/services/session_manager.dart';
 import 'package:stove_transaction/core/services/supabase_service.dart';
 import 'package:stove_transaction/core/services/image_compression_service.dart';
 import 'package:stove_transaction/core/services/offline_storage_service.dart';
@@ -278,7 +279,7 @@ class UpdateSaleController extends GetxController {
       "lgaBackup": selectedLGA.value,
       "phone": phoneController.text,
       "otherPhone": otherPhoneController.text,
-      "partnerName": "Updated Partner",
+      "partnerName": Get.find<SessionManager>().organizationName,
       "amount": double.tryParse(amountController.text) ?? 0.0,
       "signature": signature ?? originalSale.signature,
       "addressData": {

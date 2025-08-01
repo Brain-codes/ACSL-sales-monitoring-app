@@ -1,8 +1,262 @@
 # GitHub Copilot - Coding Instructions for Stove Transaction App
 
+## 🔄 Refactoring and Rule Enforcement
+
+Whenever you make an update or change to the Flutter app, always ensure that the code strictly follows the rules and patterns described in this instruction. If you encounter any code that does not comply, refactor it to match these standards. Be careful to avoid breaking existing functionality—refactor only what is necessary to achieve compliance while preserving logic and behavior.
+
+This approach guarantees consistency, maintainability, and reliability across the entire codebase.
+
+---
+
 ## Project Overview
 
 This is a Flutter-based **Sales Monitoring Application** using **GetX state management** with **Supabase** as the backend. The app supports both **Admin** and **Agent** roles with offline-first capabilities.
+
+---
+
+## Architecture & Patterns
+
+### Project Structure
+
+```
+lib/
+├── core/                    # Core functionality
+│   ├── constants/          # App colors, themes, icons
+│   ├── config/            # Environment configurations
+│   ├── interceptor/       # API interceptors
+│   ├── model/            # Core models (ProfileModel, BaseApiResponse)
+│   ├── routes/           # App routing (AppRoutes, AppPages)
+│   └── services/         # Core services (SessionManager, ApiService)
+├── admin/                  # Admin-specific features
+│   ├── dashboard/
+│   ├── sales/
+│   └── sub_accounts/
+├── agent/                  # Agent-specific features
+├── form/                   # Form-related functionality
+├── login/                  # Authentication
+├── main_layout/           # Layout controllers and UI
+├── shared/                # Shared widgets and services
+│   ├── ui/               # Reusable UI components
+│   ├── widgets/          # Custom widgets
+│   └── services/         # Shared services
+└── supabase_codes/        # Supabase development tracking
+    ├── edge_functions/    # TypeScript edge functions (.ts files)
+    ├── sql_queries/       # SQL query files for operations
+    └── tables/           # Table schemas, policies & documentation
+```
+
+### File Naming Conventions
+
+...
+
+### Controller Pattern
+
+...
+
+### Model Structure
+
+...
+
+### Service Layer Pattern
+
+...
+
+### UI Widget Patterns
+
+...
+
+### Routing Pattern
+
+...
+
+### Constants and Styling
+
+...
+
+### Error Handling & Logging
+
+...
+
+### Toast Notifications
+
+...
+
+### Authentication & Session Management
+
+...
+
+### Offline-First Architecture
+
+...
+
+### Code Style Guidelines
+
+...
+
+### API Response Handling
+
+...
+
+### Form Validation
+
+...
+
+### Supabase Development Workflow
+
+...
+
+## Key Dependencies
+
+...
+
+## Checklist for Widget Extraction
+
+- [ ] All custom widgets are in their own files in `shared/widgets/` or feature-specific `widgets/` folders
+- [ ] No multiple widget classes in a single file (except private helpers)
+- [ ] Screen files only contain main screen widget and logic
+- [ ] All widgets are imported from their own files
+
+---
+
+## Important Notes
+
+1. **Always** use GetX patterns for state management
+2. **Always** include error handling and loading states
+3. **Always** dispose controllers and text controllers properly
+4. **Always** use the established service layer pattern
+5. **Always** follow the offline-first architecture for data operations
+6. **Never** directly manipulate UI from services - use controllers
+7. **Never** hardcode strings - use constants or localization
+8. **Prefer** composition over inheritance
+9. **Use** meaningful variable and function names
+10. **Follow** the established folder structure and naming conventions
+
+This codebase prioritizes **maintainability**, **scalability**, and **offline-first functionality** while maintaining clean architecture principles with GetX state management.
+
+## 📦 Import Organization
+
+Always order imports as follows:
+
+1. Standard Flutter imports
+2. Third-party packages
+3. Local/project-specific imports
+   Separate each group with a blank line.
+4. Third-party packages
+5. Local/project-specific imports
+
+- Separate each group with a blank line.
+
+## 📝 File Headers for Linting
+
+Add `// ignore_for_file:` comments at the top of files when you need to suppress specific lints.
+
+## 🎨 Consistent UI Patterns
+
+Always wrap main content in `SafeArea` and use `Padding` for screen edges.
+Use a consistent `Scaffold` structure for all screens.
+
+## ⏳ Loading and Empty States
+
+Use reusable widgets for loading (e.g., shimmer, skeleton, or progress indicators) and empty states.
+Place these widgets in `shared/widgets` for reuse.
+
+## 🚦 Navigation Pattern
+
+Use a single navigation helper (e.g., `createPageRoute`) for all navigation transitions.
+This keeps navigation consistent and easy to update globally.
+
+## 📝 Method Comments and TODOs
+
+Add a short comment above each method describing its purpose.
+Use `// TODO:` comments for future work or reminders.
+
+## ⚠️ Error Handling
+
+Always show user-facing errors with a bottom sheet or toast, not just a `print` or `logger`.
+Use a consistent error display widget or function.
+
+## 🎨 Consistent Naming for Constants and Styles
+
+Always use centralized color, text, and icon constants (e.g., `AppColors`, `TextThemes`, `AppIcons`).
+Never hardcode colors or styles in widgets.
+
+## ✅ Checklist for New Features
+
+- [ ] Controller extends `GetxController`
+- [ ] Service layer for API calls
+- [ ] Models with `fromJson`/`toJson`
+- [ ] Proper folder structure (`feature/controller`, `feature/ui`, etc.)
+- [ ] Loading states implemented
+- [ ] Error handling with bottom sheets or toasts
+- [ ] Consistent naming conventions
+- [ ] Reactive state management with GetX
+- [ ] Navigation using a helper (e.g., `createPageRoute()`)
+- [ ] Consistent UI patterns (SafeArea, Padding, etc.)
+- [ ] All custom widgets in their own files
+- [ ] No multiple widget classes in a single file (except private helpers)
+- [ ] Screen files only contain main screen widget and logic
+- [ ] All widgets are imported from their own files
+
+## 🕒 Post-Frame Callbacks for Background Processes
+
+Use `WidgetsBinding.instance.addPostFrameCallback` for background or initial data loading, to avoid build-time side effects.
+
+# GitHub Copilot - Coding Instructions for Stove Transaction App
+
+## Project Overview
+
+This is a Flutter-based **Sales Monitoring Application** using **GetX state management** with **Supabase** as the backend. The app supports both **Admin** and **Agent** roles with offline-first capabilities.
+
+## 🧩 Widget Extraction & File Organization
+
+- **All custom widgets, even small ones, must be placed in their own files** within the appropriate `shared/widgets/` or feature-specific `widgets/` folder.
+- **Do not define multiple widget classes in a single Dart file** (except for private helper widgets used only within that file).
+- **File Naming:** Each widget file should be named after the widget in `snake_case` (e.g., `activity_list_item.dart`).
+- **Folder Structure Example:**
+  ```
+  lib/
+    shared/
+      widgets/
+        primary_button.dart
+        summary_box.dart
+        dashboard_action_tile.dart
+    agent/
+      history/
+        widgets/
+          activity_list_item.dart
+  ```
+- **Import widgets** from their own files, not from the same screen file.
+- **Screen files** (e.g., `history_screen.dart`) should only contain the main screen widget and logic, importing all sub-widgets as needed.
+
+### Example Refactor
+
+Instead of:
+
+```dart
+class HistoryScreen extends StatelessWidget {
+  // ...existing code...
+}
+
+class ActivityListItem extends StatelessWidget {
+  // ...widget code...
+}
+```
+
+Do:
+
+- In `history_screen.dart`:
+  ```dart
+  import 'widgets/activity_list_item.dart';
+  // ...existing code...
+  ```
+- In `widgets/activity_list_item.dart`:
+  ```dart
+  class ActivityListItem extends StatelessWidget {
+    // ...widget code...
+  }
+  ```
+
+---
 
 ## Architecture & Patterns
 
@@ -313,84 +567,87 @@ if (response.code == 200) {
 }
 ```
 
-### 16. **Form Validation**
+## 📦 Import Organization
 
-```dart
-String? validateEmail(String? value) {
-  if (value == null || value.isEmpty) {
-    return 'Email cannot be empty';
-  }
-  if (!GetUtils.isEmail(value)) {
-    return 'Enter a valid email';
-  }
-  return null;
+Always order imports as follows:
+
+1. Standard Flutter imports
+2. Third-party packages
+3. Local/project-specific imports
+   Separate each group with a blank line.
+
+## 📝 File Headers for Linting
+
+Add `// ignore_for_file:` comments at the top of files when you need to suppress specific lints.
+
+## 🎨 Consistent UI Patterns
+
+Always wrap main content in `SafeArea` and use `Padding` for screen edges.
+Use a consistent `Scaffold` structure for all screens.
+
+## ⏳ Loading and Empty States
+
+Use reusable widgets for loading (e.g., shimmer, skeleton, or progress indicators) and empty states.
+Place these widgets in `shared/widgets` for reuse.
+
+## 🚦 Navigation Pattern
+
+Use a single navigation helper (e.g., `createPageRoute`) for all navigation transitions.
+This keeps navigation consistent and easy to update globally.
+
+## 📝 Method Comments and TODOs
+
+Add a short comment above each method describing its purpose.
+Use `// TODO:` comments for future work or reminders.
+
+## ⚠️ Error Handling
+
+Always show user-facing errors with a bottom sheet or toast, not just a `print` or `logger`.
+Use a consistent error display widget or function.
+
+## 🎨 Consistent Naming for Constants and Styles
+
+Always use centralized color, text, and icon constants (e.g., `AppColors`, `TextThemes`, `AppIcons`).
+Never hardcode colors or styles in widgets.
+
+## 🕒 Post-Frame Callbacks for Background Processes
+
+Use `WidgetsBinding.instance.addPostFrameCallback` for background or initial data loading, to avoid build-time side effects.
+
+---
+
+const supabase = createClient(
+Deno.env.get("SUPABASE_URL"),
+Deno.env.get("SUPABASE_ANON_KEY"),
+{
+global: {
+headers: { Authorization: req.headers.get("Authorization") ?? "" },
+},
 }
-```
+);
 
-### 17. **Supabase Development Workflow**
-
-**IMPORTANT:** All Supabase-related code must be created in `supabase_codes/` for vibe coding workflow:
-
-**Edge Functions (`supabase_codes/edge_functions/`):**
-
-- File naming determines API endpoint: `update-sale.ts` → `/functions/v1/update-sale`
-- Always use TypeScript with CORS handling via `withCors()` helper
-- Include proper authentication checking with `supabase.auth.getUser()`
-- Return structured JSON responses with `success`, `message`, and `data` properties
-
-**Example Edge Function Pattern:**
-
-```typescript
-// supabase_codes/edge_functions/update-sale.ts
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js";
-
-function withCors(res) {
-  res.headers.set("Access-Control-Allow-Origin", "*");
-  res.headers.set("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.headers.set(
-    "Access-Control-Allow-Headers",
-    "Content-Type, Authorization"
-  );
-  return res;
+// Authentication
+const { data: userData, error: authError } = await supabase.auth.getUser();
+if (authError || !userData?.user) {
+return withCors(
+new Response(
+JSON.stringify({ success: false, message: "Unauthorized" }),
+{ status: 401 }
+)
+);
 }
 
-serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return withCors(new Response("ok", { status: 200 }));
-  }
+// Business logic here
 
-  const supabase = createClient(
-    Deno.env.get("SUPABASE_URL"),
-    Deno.env.get("SUPABASE_ANON_KEY"),
-    {
-      global: {
-        headers: { Authorization: req.headers.get("Authorization") ?? "" },
-      },
-    }
-  );
-
-  // Authentication
-  const { data: userData, error: authError } = await supabase.auth.getUser();
-  if (authError || !userData?.user) {
-    return withCors(
-      new Response(
-        JSON.stringify({ success: false, message: "Unauthorized" }),
-        { status: 401 }
-      )
-    );
-  }
-
-  // Business logic here
-
-  return withCors(
-    new Response(
-      JSON.stringify({ success: true, message: "Operation successful" }),
-      { status: 200 }
-    )
-  );
+return withCors(
+new Response(
+JSON.stringify({ success: true, message: "Operation successful" }),
+{ status: 200 }
+)
+);
 });
-```
+
+````
 
 **Flutter Integration:**
 
@@ -401,7 +658,7 @@ final response = await _supabaseService.callEdgeFunction(
   body: { 'saleId': '123', 'status': 'completed' },
   requireAuth: true,
 );
-```
+````
 
 **Tables (`supabase_codes/tables/`):**
 
@@ -426,6 +683,25 @@ final response = await _supabaseService.callEdgeFunction(
 - `google_maps_flutter`: Maps integration
 - `image_picker`: Image selection
 - `permission_handler`: Device permissions
+
+## ✅ Checklist for New Features
+
+- [ ] Controller extends `GetxController`
+- [ ] Service layer for API calls
+- [ ] Models with `fromJson`/`toJson`
+- [ ] Proper folder structure (`feature/controller`, `feature/ui`, etc.)
+- [ ] Loading states implemented
+- [ ] Error handling with bottom sheets or toasts
+- [ ] Consistent naming conventions
+- [ ] Reactive state management with GetX
+- [ ] Navigation using a helper (e.g., `createPageRoute()`)
+- [ ] Consistent UI patterns (SafeArea, Padding, etc.)
+- [ ] All custom widgets in their own files
+- [ ] No multiple widget classes in a single file (except private helpers)
+- [ ] Screen files only contain main screen widget and logic
+- [ ] All widgets are imported from their own files
+
+---
 
 ## Important Notes
 
