@@ -11,6 +11,7 @@ import 'package:stove_transaction/shared/controller/settings_controller.dart';
 import 'package:stove_transaction/core/constants/app_colors.dart';
 import 'package:stove_transaction/core/constants/text_theme.dart';
 import 'package:stove_transaction/shared/widgets/settings_tile.dart';
+import 'package:stove_transaction/shared/widgets/offline_data_widget.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -129,6 +130,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               descripionValue: 'Report any issue or complaint',
                             ),
                           ),
+
+                          SizedBox(height: 20),
+
+                          // Offline Data Widget
+                          OfflineDataWidget(controller: _settingsController),
 
                           //LOGOUT
                           InkWell(

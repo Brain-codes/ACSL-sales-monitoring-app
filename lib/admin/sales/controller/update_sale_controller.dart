@@ -175,61 +175,69 @@ class UpdateSaleController extends GetxController {
 
     isLoading.value = true;
     submissionStatus.value = 'Starting update...';
-    logger.d("Sale update started - Offline-first approach.");
+    logger.d("Sale update started.");
 
     try {
-      // ALWAYS save offline edit first (offline-first approach)
-      await _saveOfflineEdit(stoveImage, agreedDocumentImage, signature);
-
-      // Then try to sync immediately if online (optional)
+      // Check internet connectivity first
       final isOnline = await _checkConnectivity();
+
       if (isOnline && !isOfflineMode.value) {
-        submissionStatus.value = 'Attempting immediate sync...';
-        logger.d("Attempting immediate sync after offline save...");
+        // Device has internet - try to update online first
+        submissionStatus.value = 'Updating online...';
+        logger.d("Device is online, attempting direct update...");
 
         try {
-          // Get the last saved offline edit and try to sync it
-          final offlineEdits = _offlineStorage.getOfflineSaleEdits();
-          if (offlineEdits.isNotEmpty) {
-            final lastEdit = offlineEdits.last;
-            final editId = lastEdit['edit_id'];
+          // Try to update directly online
+          await _submitOnlineDirectly(
+              stoveImage, agreedDocumentImage, signature);
 
-            // Try to sync this specific edit immediately
-            await _submitOnlineEditFromOffline(lastEdit);
-            await _offlineStorage.markSaleEditAsSynced(editId);
-
-            submissionStatus.value = 'Updated and synced successfully!';
-            showSuccessToast(
-              title: 'Success',
-              message: 'Sale updated and synced successfully!',
-            );
-          }
-        } catch (e) {
-          logger.w('Immediate sync failed, edit saved offline: $e');
-          submissionStatus.value = 'Updated offline successfully!';
+          submissionStatus.value = 'Updated successfully!';
           showSuccessToast(
-            title: 'Updated Offline',
-            message: 'Changes saved locally and will sync when online',
+            title: 'Success',
+            message: 'Sale updated successfully!',
           );
+
+          // Refresh the sales list
+          try {
+            final ManageSalesController manageSalesController =
+                Get.find<ManageSalesController>();
+            manageSalesController.fetchSales(refresh: true);
+          } catch (e) {
+            logger.d(
+                "ManageSalesController not found, continuing without refresh");
+          }
+
+          Get.back(); // Go back to previous screen
+        } catch (e) {
+          // Online update failed even with internet - save offline for later sync
+          logger.w('Online update failed despite internet connection: $e');
+          submissionStatus.value = 'Saving offline due to update failure...';
+
+          await _saveOfflineEdit(stoveImage, agreedDocumentImage, signature);
+
+          showInfoToast(
+            title: 'Saved Offline',
+            message:
+                'Update failed but saved locally. Will sync when possible.',
+          );
+
+          Get.back(); // Go back to previous screen
         }
       } else {
-        submissionStatus.value = 'Updated offline successfully!';
+        // No internet connection - save offline
+        logger.d("No internet connection detected, saving offline...");
+        submissionStatus.value = 'No internet - saving offline...';
+
+        await _saveOfflineEdit(stoveImage, agreedDocumentImage, signature);
+
         showSuccessToast(
-          title: 'Updated Offline',
-          message: 'Changes saved locally and will sync when online',
+          title: 'Saved Offline',
+          message:
+              'No internet connection. Changes saved locally and will sync when online.',
         );
-      }
 
-      // Refresh the sales list
-      try {
-        final ManageSalesController manageSalesController =
-            Get.find<ManageSalesController>();
-        manageSalesController.fetchSales(refresh: true);
-      } catch (e) {
-        logger.d("ManageSalesController not found, continuing without refresh");
+        Get.back(); // Go back to previous screen
       }
-
-      Get.back(); // Go back to previous screen
     } catch (e) {
       logger.e('Sale update error: $e');
       submissionStatus.value = 'Update failed';
@@ -313,6 +321,95 @@ class UpdateSaleController extends GetxController {
     } else {
       throw Exception('Failed to save edit offline');
     }
+  }
+
+  /// Submit sale update directly online
+  Future<void> _submitOnlineDirectly(
+    File? stoveImage,
+    File? agreedDocumentImage,
+    String? signature,
+  ) async {
+    submissionStatus.value = 'Updating online...';
+    logger.d("Updating sale directly online...");
+
+    String? stoveImagePublicId;
+    String? agreementImagePublicId;
+
+    // Upload stove image if provided
+    if (stoveImage != null) {
+      submissionStatus.value = 'Uploading stove image...';
+      final compressedStoveImage =
+          await _compressImageOptimally(stoveImage, 'stove');
+      if (compressedStoveImage != null) {
+        final stoveImageResponse = await _apiService.uploadImage(
+            file: compressedStoveImage, type: 'stove');
+        if (stoveImageResponse.success) {
+          stoveImagePublicId = stoveImageResponse.data['public_id'];
+        }
+      }
+    } else {
+      // Use original image ID if no new image
+      stoveImagePublicId = originalSale.stoveImageId?.id;
+    }
+
+    // Upload agreement image if provided
+    if (agreedDocumentImage != null) {
+      submissionStatus.value = 'Uploading agreement document...';
+      final compressedAgreementImage =
+          await _compressImageOptimally(agreedDocumentImage, 'agreement');
+      if (compressedAgreementImage != null) {
+        final agreementImageResponse = await _apiService.uploadImage(
+            file: compressedAgreementImage, type: 'agreement');
+        if (agreementImageResponse.success) {
+          agreementImagePublicId = agreementImageResponse.data['public_id'];
+        }
+      }
+    } else {
+      // Use original image ID if no new image
+      agreementImagePublicId = originalSale.agreementImageId?.id;
+    }
+
+    // Prepare update data
+    final updateData = {
+      "transactionId": transactionIdController.text,
+      "stoveSerialNo": stoveSerialController.text,
+      "salesDate": salesDateController.text,
+      "contactPerson": contactPersonController.text,
+      "contactPhone": contactPhoneController.text,
+      "endUserName": endUserName.text,
+      "aka": akaController.text,
+      "stateBackup": selectedState.value,
+      "lgaBackup": selectedLGA.value,
+      "phone": phoneController.text,
+      "otherPhone": otherPhoneController.text,
+      "partnerName": Get.find<SessionManager>().organizationName,
+      "amount": double.tryParse(amountController.text) ?? 0.0,
+      "signature": signature ?? originalSale.signature,
+      "addressData": {
+        "fullAddress": addressController.text,
+        "street": street,
+        "city": city,
+        "state": state,
+        "country": country,
+        "latitude": latitude,
+        "longitude": longitude,
+      },
+      "stoveImageId": stoveImagePublicId,
+      "agreementImageId": agreementImagePublicId,
+    };
+
+    // Submit to server
+    submissionStatus.value = 'Finalizing update...';
+    final response =
+        await _apiService.updateSale(saleId: saleId!, saleData: updateData);
+
+    if (!response.success) {
+      throw Exception(
+          response.message.isNotEmpty ? response.message : 'Update failed');
+    }
+
+    submissionStatus.value = 'Update successful!';
+    logger.d("Sale update successful.");
   }
 
   /// Submit offline edit online (for immediate sync)

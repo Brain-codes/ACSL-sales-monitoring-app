@@ -11,17 +11,36 @@ class AgentService {
   Logger logger = Logger();
 
   Future<SupabaseApiResponse<List<SalesAgentModel>>> fetchSalesAgents() async {
-    final response = await _supabaseService.selectWhere(
-      table: 'profiles',
-      column: 'role',
-      value: 'agent',
+    // Use edge function instead of direct table access to avoid RLS policy issues
+    final response = await _supabaseService.callEdgeFunction(
+      'get-sales-agents',
+      body: {},
+      requireAuth: true,
     );
+
+    logger.d(response);
     logger.d(response.message);
 
     if (response.success) {
-      final agents = (response.data as List)
-          .map((json) => SalesAgentModel.fromJson(json))
-          .toList();
+      // Edge function returns data in the 'data' field of the response
+      final responseData = response.data;
+
+      // Check if responseData is a Map with 'data' field (edge function format)
+      List<dynamic> agentsList;
+      if (responseData is Map<String, dynamic> &&
+          responseData.containsKey('data')) {
+        agentsList = responseData['data'] as List<dynamic>;
+      } else if (responseData is List<dynamic>) {
+        // Direct list format
+        agentsList = responseData;
+      } else {
+        logger.e('Unexpected response format: ${responseData.runtimeType}');
+        return SupabaseApiResponse.error(
+            'Unexpected response format from server');
+      }
+
+      final agents =
+          agentsList.map((json) => SalesAgentModel.fromJson(json)).toList();
       return SupabaseApiResponse.success(agents);
     } else {
       return SupabaseApiResponse.error(response.message, code: response.code);

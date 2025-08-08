@@ -81,45 +81,50 @@ class FormController extends GetxController {
     logger.d("Sale submission started.");
 
     try {
-      // ALWAYS save offline first (offline-first approach)
-      await _saveOffline(stoveImage, agreedDocumentImage, signature);
-
-      // Then try to sync immediately if online (optional)
+      // Check internet connectivity first
       final isOnline = await _checkConnectivity();
+
       if (isOnline && !isOfflineMode.value) {
-        submissionStatus.value = 'Attempting immediate sync...';
-        logger.d("Attempting immediate sync after offline save...");
+        // Device has internet - try to submit online first
+        submissionStatus.value = 'Submitting online...';
+        logger.d("Device is online, attempting direct submission...");
 
         try {
-          // Get the last saved offline sale and try to sync it
-          final offlineSales = _offlineStorage.getOfflineSales();
-          if (offlineSales.isNotEmpty) {
-            final lastSale = offlineSales.last;
-            final offlineId = lastSale['offline_id'];
+          // Try to submit directly online
+          await _submitOnline(stoveImage, agreedDocumentImage, signature);
 
-            // Try to sync this specific sale immediately
-            await _submitOnlineFromOffline(lastSale);
-            await _offlineStorage.markSaleAsSynced(offlineId, null);
-
-            submissionStatus.value = 'Saved and synced successfully!';
-            showSuccessToast(
-              title: 'Success',
-              message: 'Sale saved and synced successfully!',
-            );
-          }
-        } catch (e) {
-          logger.w('Immediate sync failed, sale saved offline: $e');
-          submissionStatus.value = 'Saved offline successfully!';
+          submissionStatus.value = 'Submitted successfully!';
           showSuccessToast(
+            title: 'Success',
+            message: 'Sale submitted successfully!',
+          );
+
+          _clearForm();
+        } catch (e) {
+          // Online submission failed even with internet - save offline for later sync
+          logger.w('Online submission failed despite internet connection: $e');
+          submissionStatus.value =
+              'Saving offline due to submission failure...';
+
+          await _saveOffline(stoveImage, agreedDocumentImage, signature);
+
+          showInfoToast(
             title: 'Saved Offline',
-            message: 'Sale saved locally and will sync when online',
+            message:
+                'Submission failed but saved locally. Will sync when possible.',
           );
         }
       } else {
-        submissionStatus.value = 'Saved offline successfully!';
+        // No internet connection - save offline
+        logger.d("No internet connection detected, saving offline...");
+        submissionStatus.value = 'No internet - saving offline...';
+
+        await _saveOffline(stoveImage, agreedDocumentImage, signature);
+
         showSuccessToast(
           title: 'Saved Offline',
-          message: 'Sale saved locally and will sync when online',
+          message:
+              'No internet connection. Sale saved locally and will sync when online.',
         );
       }
     } catch (e) {
@@ -203,10 +208,6 @@ class FormController extends GetxController {
     if (success) {
       submissionStatus.value = 'Saved offline successfully!';
       logger.d("Sale saved offline successfully.");
-      showSuccessToast(
-        title: 'Saved Offline',
-        message: 'Sale saved locally and will sync when online',
-      );
 
       // Get the offline sales controller and refresh data
       if (Get.isRegistered<OfflineSalesController>()) {
@@ -339,7 +340,9 @@ class FormController extends GetxController {
     } else {
       submissionStatus.value = 'Submission failed';
       logger.e("Sale submission failed. Error: ${response.message}");
-      throw Exception(response.message ?? 'Online submission failed');
+      throw Exception(response.message.isNotEmpty
+          ? response.message
+          : 'Online submission failed');
     }
   }
 

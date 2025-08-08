@@ -40,31 +40,30 @@ class SyncOfflineScreen extends StatelessWidget {
                     children: [
                       Icon(
                         (isSyncing == true) ? Icons.sync : Icons.cloud_upload,
-                        size: 64,
+                        size: 60,
                         color: (isSyncing == true)
                             ? AppColors.primaryColor
                             : AppColors.secondaryTextColor,
                       ),
-                      const SizedBox(height: 16.0),
+                      const SizedBox(height: 10.0),
                       Text(
                         (isSyncing == true)
                             ? 'Syncing Data...'
                             : 'Offline Data Status',
                         style: TextThemes(context).getTextStyle(
-                          fontSize: 20,
+                          fontSize: 18,
                           fontWeight: FontWeight.bold,
                           color: AppColors.primaryTextColor,
                         ),
                         textAlign: TextAlign.center,
                       ),
-                      const SizedBox(height: 8.0),
                       Text(
                         totalUnsynced > 0
                             ? 'You have $totalUnsynced unsynced record${totalUnsynced == 1 ? '' : 's'}.'
                             : 'All data is synchronized.',
                         textAlign: TextAlign.center,
                         style: TextThemes(context).getTextStyle(
-                          fontSize: 16,
+                          fontSize: 12,
                           color: AppColors.primaryTextColor,
                         ),
                       ),
@@ -180,22 +179,30 @@ class SyncOfflineScreen extends StatelessWidget {
                     const SizedBox(height: 16.0),
                   ],
 
-                  OutlinedButton(
-                    onPressed: () => Get.to(() => OfflineSalesScreen()),
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      side: BorderSide(color: AppColors.primaryColor),
+                  InkWell(
+                    onTap: () => Get.to(
+                      () => OfflineSalesScreen(),
                     ),
-                    child: Text(
-                      'View Offline Records',
-                      style: TextThemes(context).getTextStyle(
-                        fontSize: 16,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        vertical: 8,
+                        horizontal: 15,
+                      ),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(1000),
+                        border: Border.all(color: AppColors.white),
                         color: AppColors.primaryColor,
-                        fontWeight: FontWeight.w600,
+                      ),
+                      child: Text(
+                        'View Offline Records',
+                        style: TextThemes(context).getTextStyle(
+                          fontSize: 12,
+                          color: AppColors.white,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
                   ),
-
                   const SizedBox(height: 16.0),
 
                   // Retry Failed Syncs Button

@@ -19,6 +19,7 @@ import 'package:stove_transaction/admin/sales/ui/shimmer_sale_card.dart';
 import 'package:stove_transaction/admin/sales/ui/sale_details_screen.dart';
 import 'package:stove_transaction/agent/sales_form/widgets/custom_textfield.dart';
 import 'package:stove_transaction/core/constants/app_icons.dart';
+import 'package:stove_transaction/shared/widgets/page_header_tile.dart';
 
 class SalesScreen extends StatelessWidget {
   final bool showBackArrow;
@@ -68,45 +69,19 @@ class SalesScreen extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  SizedBox(height: 16),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        'Hi, ${_sessionManager.userName ?? 'Agent'}',
-                        style: TextThemes(context).getTextStyle(
-                          fontWeight: FontWeight.w700,
-                          fontSize: 25,
-                          color: AppColors.primaryTextColor,
-                        ),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: Color.fromARGB(255, 156, 55, 0),
-                          borderRadius: BorderRadius.circular(1000),
-                          border: Border.all(
-                            color: AppColors.white,
-                            width: 0.2,
-                          ),
-                        ),
-                        child: Text(
-                          'AU',
-                          style: TextThemes(context).getTextStyle(
-                            fontSize: 14,
-                            color: AppColors.white,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
                   SizedBox(height: 30),
+                  PageHeaderTile(
+                    title: 'My Sales',
+                    subtitle: 'View your sales records',
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                  ),
+                  SizedBox(height: 10),
 
                   // Offline Status Banner for Agents
                   if (offlineController != null)
                     Obx(() {
-                      final controller = offlineController!;
-                      final stats = controller.statistics;
+                      final offlineCtrl = offlineController!;
+                      final stats = offlineCtrl.statistics;
                       final pendingCount = stats['pending'] ?? 0;
 
                       if (pendingCount > 0) {
@@ -135,8 +110,8 @@ class SalesScreen extends StatelessWidget {
                               ),
                               GestureDetector(
                                 onTap: () async {
-                                  await controller.syncAllOfflineData();
-                                  await controller.refreshOfflineData();
+                                  await offlineCtrl.syncAllOfflineData();
+                                  await offlineCtrl.refreshOfflineData();
                                 },
                                 child: Container(
                                   padding: const EdgeInsets.symmetric(
@@ -162,13 +137,13 @@ class SalesScreen extends StatelessWidget {
                       return const SizedBox.shrink();
                     }),
 
-                  Text(
-                    'Sales Data',
-                    style: TextThemes(context).getTextStyle(
-                      fontSize: 15,
-                      color: AppColors.secondaryTextColor,
-                    ),
-                  ),
+                  // Text(
+                  //   'Sales Data',
+                  //   style: TextThemes(context).getTextStyle(
+                  //     fontSize: 15,
+                  //     color: AppColors.secondaryTextColor,
+                  //   ),
+                  // ),
                   const SizedBox(height: 5.0),
                   Expanded(
                     child: Column(

@@ -23,18 +23,21 @@ class OfflineSalesScreen extends StatelessWidget {
         title: "Offline Sales",
         otherWidgets: Obx(() {
           final stats = controller.statistics;
-          return Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(
-              color: AppColors.primaryColor.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Text(
-              '${stats['pending']} pending',
-              style: TextThemes(context).getTextStyle(
-                fontSize: 12,
-                color: AppColors.primaryColor,
-                fontWeight: FontWeight.w600,
+          return Padding(
+            padding: const EdgeInsets.only(right: 10),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: AppColors.primaryColor.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                '${stats['pending']} pending',
+                style: TextThemes(context).getTextStyle(
+                  fontSize: 12,
+                  color: AppColors.primaryColor,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
           );

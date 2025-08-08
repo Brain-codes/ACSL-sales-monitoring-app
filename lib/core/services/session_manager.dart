@@ -2,6 +2,7 @@ import 'package:get/get.dart';
 import 'package:get_storage/get_storage.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:stove_transaction/core/model/profile_model.dart';
+import 'package:stove_transaction/core/services/offline_storage_service.dart';
 
 class SessionManager extends GetxService {
   final GetStorage _box = GetStorage();
@@ -167,16 +168,56 @@ class SessionManager extends GetxService {
 
   void saveSupabaseSession(Session? sessionData) {
     if (sessionData != null) {
-      _box.write(_supabaseSessionKey, sessionData.toJson());
+      try {
+        _box.write(_supabaseSessionKey, sessionData.toJson());
+      } catch (e) {
+        // If there's an error saving the session, log it
+        print('Error saving Supabase session: $e');
+      }
     }
   }
 
   Session? getSupabaseSession() {
     final data = _box.read(_supabaseSessionKey);
     if (data != null && data is Map<String, dynamic>) {
-      return Session.fromJson(data);
+      try {
+        return Session.fromJson(data);
+      } catch (e) {
+        // If there's an error parsing the session, clear it
+        print('Error parsing saved session, clearing: $e');
+        _box.remove(_supabaseSessionKey);
+        return null;
+      }
     }
     return null;
+  }
+
+  /// Check if the current session is valid (not expired)
+  bool isSessionValid() {
+    final session = getSupabaseSession();
+    if (session == null) return false;
+
+    final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    final expiresAt = session.expiresAt ?? 0;
+
+    // Add a buffer of 5 minutes to account for network delays
+    return expiresAt > (now + 300);
+  }
+
+  /// Check if refresh token is available and valid
+  bool hasValidRefreshToken() {
+    final session = getSupabaseSession();
+    return session?.refreshToken != null && session!.refreshToken!.isNotEmpty;
+  }
+
+  /// Clear only the Supabase session (for refresh token issues)
+  void clearSupabaseSession() {
+    _box.remove(_supabaseSessionKey);
+  }
+
+  /// Check if user is authenticated (has valid session)
+  bool get isAuthenticated {
+    return userId != null && token != null && isSessionValid();
   }
 
   void logout() {
@@ -187,5 +228,19 @@ class SessionManager extends GetxService {
     _box.remove(_timeLoggedInKey);
     _box.remove(_userProfileKey);
     _box.remove(_organizationKey);
+  }
+
+  /// Logout and clear all offline data
+  void logoutAndClearOfflineData() {
+    // Clear session data
+    logout();
+
+    // Clear offline data through service
+    try {
+      final offlineStorage = Get.find<OfflineStorageService>();
+      offlineStorage.clearAllOfflineData();
+    } catch (e) {
+      // If offline storage service is not available, just continue with logout
+    }
   }
 }

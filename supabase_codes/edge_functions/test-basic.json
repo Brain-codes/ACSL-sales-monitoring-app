@@ -1,0 +1,11 @@
+{
+  "includeAddress": true,
+  "includeCreator": true,
+  "includeOrganization": true,
+  "includeImages": true,
+  "includeSalesHistory": true,
+  "page": 1,
+  "limit": 10,
+  "sortBy": "created_at",
+  "sortOrder": "desc"
+}

@@ -243,6 +243,30 @@ class OfflineStorageService extends GetxService {
     _logger.d('All offline data cleared');
   }
 
+  /// Delete a specific offline sale
+  Future<bool> deleteOfflineSale(String offlineId) async {
+    try {
+      final offlineSales = getOfflineSales();
+      final originalLength = offlineSales.length;
+
+      // Remove the sale with the specified offline_id
+      offlineSales.removeWhere((sale) => sale['offline_id'] == offlineId);
+
+      if (offlineSales.length < originalLength) {
+        // Sale was found and removed, save the updated list
+        await _storage.write(_salesKey, offlineSales);
+        _logger.d('Deleted offline sale: $offlineId');
+        return true;
+      } else {
+        _logger.w('Offline sale not found: $offlineId');
+        return false;
+      }
+    } catch (e) {
+      _logger.e('Error deleting offline sale: $e');
+      return false;
+    }
+  }
+
   /// Get sync statistics
   Map<String, dynamic> getSyncStatistics() {
     final offlineSales = getOfflineSales();

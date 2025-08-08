@@ -1,0 +1,8 @@
+{
+  "lastNDays": 30,
+  "includeOrganization": true,
+  "includeImages": true,
+  "limit": 5,
+  "sortBy": "created_at",
+  "sortOrder": "desc"
+}

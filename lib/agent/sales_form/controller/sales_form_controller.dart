@@ -96,7 +96,7 @@ class SalesFormController extends GetxController {
   void submitForm() {
     if (validateForm() && hasSigned.value) {
       isLoading.value = true;
-      _saveOfflineSale(); // Always save offline first
+      _handleSaleSubmission(); // Check connectivity and submit accordingly
     } else if (!hasSigned.value) {
       showErrorToast(message: 'Please provide a digital signature.');
     } else {
@@ -107,11 +107,120 @@ class SalesFormController extends GetxController {
   void updateSale() {
     if (validateForm() && hasSigned.value) {
       isLoading.value = true;
-      _saveOfflineSaleEdit(); // Always save offline first for edits too
+      _handleSaleUpdate(); // Check connectivity and update accordingly
     } else if (!hasSigned.value) {
       showErrorToast(message: 'Please provide a digital signature.');
     } else {
       showErrorToast(message: 'Please fill all required fields.');
+    }
+  }
+
+  /// Handle sale submission with connectivity-aware logic
+  Future<void> _handleSaleSubmission() async {
+    try {
+      _logger.d('Starting sale submission...');
+
+      // Check internet connectivity first
+      final isOnline = await _checkConnectivity();
+
+      if (isOnline && !isOfflineMode.value) {
+        // Device has internet - try to submit online first
+        _logger.d("Device is online, attempting direct submission...");
+
+        try {
+          // Try to submit directly online (implement actual online submission)
+          await _submitOnline(); // This would need to be implemented
+
+          showSuccessToast(
+            title: 'Success',
+            message: 'Sale submitted successfully!',
+          );
+
+          _clearForm();
+          Get.back(); // Navigate back
+        } catch (e) {
+          // Online submission failed even with internet - save offline for later sync
+          _logger.w('Online submission failed despite internet connection: $e');
+
+          await _saveOfflineSale();
+
+          showInfoToast(
+            title: 'Saved Offline',
+            message:
+                'Submission failed but saved locally. Will sync when possible.',
+          );
+        }
+      } else {
+        // No internet connection - save offline
+        _logger.d("No internet connection detected, saving offline...");
+
+        await _saveOfflineSale();
+
+        showSuccessToast(
+          title: 'Saved Offline',
+          message:
+              'No internet connection. Sale saved locally and will sync when online.',
+        );
+      }
+    } catch (e) {
+      _logger.e('Sale submission error: $e');
+      showErrorToast(message: 'Failed to save sale: $e');
+    } finally {
+      isLoading.value = false;
+    }
+  }
+
+  /// Handle sale update with connectivity-aware logic
+  Future<void> _handleSaleUpdate() async {
+    try {
+      _logger.d('Starting sale update...');
+
+      // Check internet connectivity first
+      final isOnline = await _checkConnectivity();
+
+      if (isOnline && !isOfflineMode.value) {
+        // Device has internet - try to update online first
+        _logger.d("Device is online, attempting direct update...");
+
+        try {
+          // Try to update directly online (implement actual online update)
+          await _updateOnline(); // This would need to be implemented
+
+          showSuccessToast(
+            title: 'Success',
+            message: 'Sale updated successfully!',
+          );
+
+          Get.back(); // Navigate back
+        } catch (e) {
+          // Online update failed even with internet - save edit offline for later sync
+          _logger.w('Online update failed despite internet connection: $e');
+
+          await _saveOfflineSaleEdit();
+
+          showInfoToast(
+            title: 'Saved Offline',
+            message:
+                'Update failed but saved locally. Will sync when possible.',
+          );
+        }
+      } else {
+        // No internet connection - save edit offline
+        _logger.d("No internet connection detected, saving edit offline...");
+
+        await _saveOfflineSaleEdit();
+
+        showSuccessToast(
+          title: 'Saved Offline',
+          message:
+              'No internet connection. Changes saved locally and will sync when online.',
+        );
+      }
+    } catch (e) {
+      _logger.e('Sale update error: $e');
+      showErrorToast(message: 'Failed to save changes: $e');
+    } finally {
+      isLoading.value = false;
     }
   }
 
@@ -169,32 +278,6 @@ class SalesFormController extends GetxController {
       if (success) {
         _logger.d('Sale saved offline successfully');
 
-        // Try immediate sync if online
-        final isOnline = await _checkConnectivity();
-        if (isOnline && !isOfflineMode.value) {
-          try {
-            _logger.d('Attempting immediate sync...');
-            // Here you could implement immediate sync logic
-            // For now, just show success message
-            showSuccessToast(
-              title: 'Sale Saved',
-              message:
-                  'Sale saved offline successfully! Will sync when possible.',
-            );
-          } catch (e) {
-            _logger.w('Immediate sync failed: $e');
-            showSuccessToast(
-              title: 'Sale Saved',
-              message: 'Sale saved locally and will sync when online',
-            );
-          }
-        } else {
-          showSuccessToast(
-            title: 'Sale Saved',
-            message: 'Sale saved locally and will sync when online',
-          );
-        }
-
         // Get the offline sales controller and refresh data
         if (Get.isRegistered<OfflineSalesController>()) {
           final offlineController = Get.find<OfflineSalesController>();
@@ -204,13 +287,11 @@ class SalesFormController extends GetxController {
         _clearForm();
         Get.back(); // Navigate back
       } else {
-        showErrorToast(message: 'Failed to save sale offline');
+        throw Exception('Failed to save sale offline');
       }
     } catch (e) {
       _logger.e('Error saving sale offline: $e');
-      showErrorToast(message: 'Failed to save sale: $e');
-    } finally {
-      isLoading.value = false;
+      throw e; // Re-throw to let calling method handle
     }
   }
 
@@ -220,8 +301,7 @@ class SalesFormController extends GetxController {
       _logger.d('Saving sale edit offline...');
 
       if (!isEditMode.value) {
-        showErrorToast(message: 'Not in edit mode');
-        return;
+        throw Exception('Not in edit mode');
       }
 
       // Save images locally if they exist
@@ -274,31 +354,6 @@ class SalesFormController extends GetxController {
       if (success) {
         _logger.d('Sale edit saved offline successfully');
 
-        // Try immediate sync if online
-        final isOnline = await _checkConnectivity();
-        if (isOnline && !isOfflineMode.value) {
-          try {
-            _logger.d('Attempting immediate edit sync...');
-            // Here you could implement immediate sync logic for edits
-            showSuccessToast(
-              title: 'Changes Saved',
-              message:
-                  'Changes saved offline successfully! Will sync when possible.',
-            );
-          } catch (e) {
-            _logger.w('Immediate sync failed: $e');
-            showSuccessToast(
-              title: 'Changes Saved',
-              message: 'Changes saved locally and will sync when online',
-            );
-          }
-        } else {
-          showSuccessToast(
-            title: 'Changes Saved',
-            message: 'Changes saved locally and will sync when online',
-          );
-        }
-
         // Get the offline sales controller and refresh data
         if (Get.isRegistered<OfflineSalesController>()) {
           final offlineController = Get.find<OfflineSalesController>();
@@ -307,13 +362,11 @@ class SalesFormController extends GetxController {
 
         Get.back(); // Navigate back
       } else {
-        showErrorToast(message: 'Failed to save changes offline');
+        throw Exception('Failed to save changes offline');
       }
     } catch (e) {
       _logger.e('Error saving edit offline: $e');
-      showErrorToast(message: 'Failed to save changes: $e');
-    } finally {
-      isLoading.value = false;
+      throw e; // Re-throw to let calling method handle
     }
   }
 
@@ -325,6 +378,23 @@ class SalesFormController extends GetxController {
     } catch (e) {
       return false;
     }
+  }
+
+  /// Submit sale online directly (placeholder - implement actual online submission)
+  Future<void> _submitOnline() async {
+    _logger.d('Direct online submission not yet implemented');
+    // TODO: Implement direct online submission for agent sales
+    // This would involve calling the appropriate API service to submit the sale directly
+    throw Exception(
+        'Direct online submission not yet implemented for agent sales');
+  }
+
+  /// Update sale online directly (placeholder - implement actual online update)
+  Future<void> _updateOnline() async {
+    _logger.d('Direct online update not yet implemented');
+    // TODO: Implement direct online update for agent sales
+    // This would involve calling the appropriate API service to update the sale directly
+    throw Exception('Direct online update not yet implemented for agent sales');
   }
 
   /// Toggle offline mode

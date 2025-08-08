@@ -1,0 +1,9 @@
+{
+  "includeAddress": true,
+  "includeCreator": true,
+  "includeOrganization": true,
+  "includeImages": true,
+  "limit": 10,
+  "sortBy": "created_at",
+  "sortOrder": "desc"
+}

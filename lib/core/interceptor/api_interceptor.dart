@@ -89,6 +89,14 @@ class ExpiredTokenRetryPolicy extends RetryPolicy {
   @override
   Future<bool> shouldAttemptRetryOnResponse(ResponseData response) async {
     if (response.statusCode == 401) {
+      // Session expired, logout and clear data
+      try {
+        final sessionManager = Get.find<SessionManager>();
+        sessionManager.logoutAndClearOfflineData();
+      } catch (e) {
+        // If services are not available, just navigate to login
+      }
+
       Get.offAllNamed(AppRoutes.LOGIN);
       return false;
     } else if (response.statusCode == 403) {
