@@ -144,77 +144,116 @@ class LoginController extends GetxController {
   }
 
   Future<bool> refreshToken(BuildContext context) async {
+    if (isLoading.value) {
+      logger.d('Refresh already in progress, skipping...');
+      return false;
+    }
+
     isLoading.value = true;
-    final response = await _supabaseAuth.refreshSession(
-      _sessionManager.getSupabaseSession()?.refreshToken,
-    );
 
-    if (response.user != null) {
-      // Fetch complete user profile with organization data on token refresh
-      try {
-        final profileResult =
-            await _profileService.fetchUserProfileWithOrganization(
-          response.user!.id,
-        );
+    try {
+      // Get the current saved session
+      final savedSession = _sessionManager.getSupabaseSession();
 
-        if (profileResult.success && profileResult.data != null) {
-          final profile = profileResult.data!;
+      if (savedSession?.refreshToken == null ||
+          savedSession!.refreshToken!.isEmpty) {
+        logger.e('No valid refresh token available in session');
+        isLoading.value = false;
+        _handleRefreshFailure();
+        return false;
+      }
 
-          // Save complete user data including profile and organization
-          _sessionManager.saveCompleteUserData(
-            userId: response.user!.id,
-            role: userData.value.role ?? 'agent',
-            token: response.session?.accessToken ?? '',
-            userName: profile.fullName ?? userData.value.fullName ?? '',
-            timeLoggedIn: DateTime.now().toIso8601String(),
-            profile: profile.toJson(),
+      logger.d('Attempting to refresh session...');
+      final response =
+          await _supabaseAuth.refreshSession(savedSession.refreshToken!);
+
+      if (response.user != null &&
+          response.session != null &&
+          response.session!.accessToken.isNotEmpty) {
+        // Update user metadata
+        var result =
+            RawUserMetaData.fromJson(response.user?.userMetadata ?? {});
+        userData.value = result;
+
+        // Fetch complete user profile with organization data on token refresh
+        try {
+          final profileResult =
+              await _profileService.fetchUserProfileWithOrganization(
+            response.user!.id,
           );
 
-          logger.d(
-              'User profile with organization refreshed: ${profile.organization?.name}');
-        } else {
-          // Fallback to basic user data if profile fetch fails
-          logger.w(
-              'Failed to fetch user profile on refresh: ${profileResult.message}');
+          if (profileResult.success && profileResult.data != null) {
+            final profile = profileResult.data!;
+
+            // Save complete user data including profile and organization
+            _sessionManager.saveCompleteUserData(
+              userId: response.user!.id,
+              role: userData.value.role ?? 'agent',
+              token: response.session!.accessToken,
+              userName: profile.fullName ?? userData.value.fullName ?? '',
+              timeLoggedIn: DateTime.now().toIso8601String(),
+              profile: profile.toJson(),
+            );
+
+            logger.d(
+                'User profile with organization refreshed: ${profile.organization?.name}');
+          } else {
+            // Fallback to basic user data if profile fetch fails
+            logger.w(
+                'Failed to fetch user profile on refresh: ${profileResult.message}');
+            _sessionManager.saveUser(
+              userId: response.user!.id,
+              role: userData.value.role ?? 'agent',
+              token: response.session!.accessToken,
+              userName: userData.value.fullName ?? '',
+              timeLoggedIn: DateTime.now().toIso8601String(),
+            );
+          }
+        } catch (e) {
+          logger.e('Error fetching user profile on refresh: $e');
+          // Fallback to basic user data
           _sessionManager.saveUser(
             userId: response.user!.id,
             role: userData.value.role ?? 'agent',
-            token: response.session?.accessToken ?? '',
+            token: response.session!.accessToken,
             userName: userData.value.fullName ?? '',
             timeLoggedIn: DateTime.now().toIso8601String(),
           );
         }
-      } catch (e) {
-        logger.e('Error fetching user profile on refresh: $e');
-        // Fallback to basic user data
-        _sessionManager.saveUser(
-          userId: response.user!.id,
-          role: userData.value.role ?? 'agent',
-          token: response.session?.accessToken ?? '',
-          userName: userData.value.fullName ?? '',
-          timeLoggedIn: DateTime.now().toIso8601String(),
-        );
-      }
 
-      //SAVE USER SESSION FROM SUPABASE
-      if (response.session != null) {
+        // Save updated Supabase session
         _sessionManager.saveSupabaseSession(response.session);
-      }
-      if (userData.value.role == 'admin') {
-        Get.offAllNamed(AppRoutes.ADMIN_HOME);
+
+        logger.d('Token refresh successful');
+        isLoading.value = false;
+        return true;
       } else {
-        Get.offAllNamed(AppRoutes.AGENT_HOME);
+        logger.e('Token refresh failed: No user or session returned');
+        isLoading.value = false;
+        _handleRefreshFailure();
+        return false;
       }
-      isLoading.value = false;
-      return true;
-    } else {
-      logger.d('$response');
+    } catch (e) {
+      logger.e('Token refresh error: $e');
       isLoading.value = false;
 
-      logger.d('refresh not done');
-      // await localDatabaseService.delete(DbKeyStrings.userDetailsKey);
-      Get.offAllNamed(AppRoutes.LOGIN);
+      // Handle specific refresh token errors
+      final errorString = e.toString().toLowerCase();
+      if (errorString.contains('refresh_token_not_found') ||
+          errorString.contains('invalid refresh token') ||
+          errorString.contains('refresh token not found') ||
+          errorString.contains('session_not_found')) {
+        logger.e('Invalid refresh token detected, forcing re-authentication');
+      }
+
+      _handleRefreshFailure();
       return false;
     }
+  }
+
+  /// Handle refresh token failure
+  void _handleRefreshFailure() {
+    _sessionManager.logout();
+    Get.offAllNamed(AppRoutes.LOGIN);
   }
 }

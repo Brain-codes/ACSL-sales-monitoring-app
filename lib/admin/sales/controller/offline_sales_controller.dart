@@ -360,12 +360,12 @@ class OfflineSalesController extends GetxController {
         return;
       }
 
-      await _offlineStorage.cleanupSyncedSales(daysOld: 0);
+      await _offlineStorage.clearAllOfflineData();
       await refreshOfflineData();
 
       showSuccessToast(
-        title: 'Cleared',
-        message: 'Synced data cleared successfully',
+        title: 'Data Cleared',
+        message: 'All synced offline data has been cleared',
       );
     } catch (e) {
       _logger.e('Error clearing synced data: $e');
@@ -373,6 +373,26 @@ class OfflineSalesController extends GetxController {
         title: 'Clear Error',
         message: 'Failed to clear synced data: $e',
       );
+    }
+  }
+
+  /// Check if there's any offline data (for logout warning)
+  bool hasOfflineData() {
+    try {
+      return _offlineStorage.getUnsyncedRecordsCount() > 0;
+    } catch (e) {
+      _logger.e('Error checking offline data: $e');
+      return false;
+    }
+  }
+
+  /// Get count of unsynced offline records
+  int getUnsyncedCount() {
+    try {
+      return _offlineStorage.getUnsyncedRecordsCount();
+    } catch (e) {
+      _logger.e('Error getting unsynced count: $e');
+      return 0;
     }
   }
 

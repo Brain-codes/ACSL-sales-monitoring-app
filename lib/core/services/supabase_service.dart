@@ -1,9 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/widgets.dart';
+import 'package:get/get.dart';
 import 'package:logger/logger.dart';
 import 'package:stove_transaction/core/constants/app_config.dart';
 import 'package:stove_transaction/core/model/supabase_api_response.dart';
+import 'package:stove_transaction/core/services/session_manager.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:stove_transaction/shared/ui/toastification_snackbar.dart';
 import 'package:http/http.dart' as http;
@@ -12,6 +15,7 @@ import 'package:http_parser/http_parser.dart';
 class SupabaseService {
   final SupabaseClient _client = Supabase.instance.client;
   final Logger _logger = Logger();
+  final SessionManager _sessionManager = Get.find<SessionManager>();
 
   // This is the reusable Edge Function handler
   // Add this to the callEdgeFunction method parameters
@@ -21,9 +25,18 @@ class SupabaseService {
     bool requireAuth = true,
     bool isFormData = false,
     Map<String, dynamic>? queryParams,
+    bool isRetryAfterRefresh = false, // Flag to prevent infinite recursion
   }) async {
     try {
-      final session = _client.auth.currentSession;
+      var session = _client.auth.currentSession;
+
+      // If no current session but we have a saved session, try to restore it
+      if (requireAuth && session == null) {
+        final savedSession = _sessionManager.getSupabaseSession();
+        if (savedSession != null && _sessionManager.isSessionValid()) {
+          session = savedSession;
+        }
+      }
 
       // Ensure user is logged in if required
       if (requireAuth && session?.accessToken == null) {
@@ -69,7 +82,7 @@ class SupabaseService {
 
           if (response.statusCode == 200) {
             return SupabaseApiResponse.success(json.decode(response.body));
-          } else if (response.statusCode == 401) {
+          } else if (response.statusCode == 401 && !isRetryAfterRefresh) {
             // Try refresh once
             final refreshed = await _refreshToken();
             if (refreshed) {
@@ -79,6 +92,7 @@ class SupabaseService {
                 requireAuth: requireAuth,
                 isFormData: isFormData,
                 queryParams: queryParams,
+                isRetryAfterRefresh: true,
               );
             } else {
               return SupabaseApiResponse.error(
@@ -103,7 +117,7 @@ class SupabaseService {
 
           if (response.status == 200) {
             return SupabaseApiResponse.success(response.data);
-          } else if (response.status == 401) {
+          } else if (response.status == 401 && !isRetryAfterRefresh) {
             // Try refresh once
             final refreshed = await _refreshToken();
             if (refreshed) {
@@ -112,6 +126,7 @@ class SupabaseService {
                 body: body,
                 requireAuth: requireAuth,
                 isFormData: isFormData,
+                isRetryAfterRefresh: true,
               );
             } else {
               return SupabaseApiResponse.error(
@@ -127,6 +142,34 @@ class SupabaseService {
             );
           }
         }
+      }
+    } on FunctionException catch (e) {
+      _logger.e('FunctionException: $e');
+
+      // Check if it's a 401 unauthorized error
+      if (e.status == 401 && !isRetryAfterRefresh) {
+        // Try refresh once
+        final refreshed = await _refreshToken();
+        if (refreshed) {
+          return await callEdgeFunction(
+            functionName,
+            body: body,
+            requireAuth: requireAuth,
+            isFormData: isFormData,
+            queryParams: queryParams,
+            isRetryAfterRefresh: true,
+          );
+        } else {
+          return SupabaseApiResponse.error(
+            'Session expired. Please login again.',
+            code: 401,
+          );
+        }
+      } else {
+        return SupabaseApiResponse.error(
+          'Function error: ${e.details?['message'] ?? e.reasonPhrase ?? 'Unknown error'}',
+          code: e.status,
+        );
       }
     } on TimeoutException {
       return SupabaseApiResponse.error('Request timed out. Try again.');
@@ -271,15 +314,88 @@ class SupabaseService {
   /// Refresh token manually
   Future<bool> _refreshToken() async {
     try {
-      final oldSession = _client.auth.currentSession;
-      if (oldSession?.refreshToken == null) return false;
+      _logger.d('Attempting to refresh token...');
 
-      final result = await _client.auth.refreshSession();
-      _logger.d(result);
-      return result.session != null;
+      // First try to get the session from Supabase client
+      var currentSession = _client.auth.currentSession;
+
+      // If no current session, try to restore from storage
+      if (currentSession == null) {
+        _logger.d('No current session, trying to restore from storage...');
+        final savedSession = _sessionManager.getSupabaseSession();
+
+        if (savedSession?.refreshToken != null) {
+          _logger.d('Found saved session with refresh token');
+          currentSession = savedSession;
+        } else {
+          _logger.e('No refresh token available in storage');
+          _handleRefreshFailure();
+          return false;
+        }
+      }
+
+      if (currentSession?.refreshToken == null) {
+        _logger.e('No refresh token available');
+        _handleRefreshFailure();
+        return false;
+      }
+
+      // Validate refresh token before attempting refresh
+      if (currentSession!.refreshToken!.isEmpty) {
+        _logger.e('Refresh token is empty');
+        _handleRefreshFailure();
+        return false;
+      }
+
+      _logger.d('Refreshing session with refresh token...');
+      final result =
+          await _client.auth.refreshSession(currentSession.refreshToken!);
+
+      if (result.session != null && result.session!.accessToken.isNotEmpty) {
+        _logger.d('Token refresh successful');
+
+        // Update session manager with new session
+        _sessionManager.saveSupabaseSession(result.session);
+
+        // Update token in session manager for compatibility
+        _sessionManager.setToken(result.session!.accessToken);
+
+        _logger.d('Session data updated in storage');
+        return true;
+      } else {
+        _logger.e('Token refresh failed: No valid session returned');
+        _handleRefreshFailure();
+        return false;
+      }
     } catch (e) {
       _logger.e('Token refresh failed: $e');
+
+      // Handle specific refresh token errors
+      final errorString = e.toString().toLowerCase();
+      if (errorString.contains('refresh_token_not_found') ||
+          errorString.contains('invalid refresh token') ||
+          errorString.contains('refresh token not found') ||
+          errorString.contains('session_not_found')) {
+        _logger
+            .e('Invalid or expired refresh token, forcing re-authentication');
+        _handleRefreshFailure();
+      }
+
       return false;
     }
+  }
+
+  /// Handle refresh token failure by clearing session and redirecting to login
+  void _handleRefreshFailure() {
+    _logger.d(
+        'Handling refresh failure - clearing session and redirecting to login');
+    _sessionManager.logout();
+
+    // Use Get.offAllNamed to ensure proper navigation stack clearing
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (Get.currentRoute != '/login') {
+        Get.offAllNamed('/login');
+      }
+    });
   }
 }

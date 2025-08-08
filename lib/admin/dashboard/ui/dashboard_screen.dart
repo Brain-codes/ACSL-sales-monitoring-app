@@ -85,11 +85,11 @@ class DashboardScreen extends GetView<DashboardController> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 24.0),
+                  const SizedBox(height: 18.0),
 
                   // Optional Alert Banner (Reactive)
                   Obx(() {
-                    if (controller.stovesWithLandmark.value < 300) {
+                    if (controller.pendingSales.value > 0) {
                       return Container(
                         margin: const EdgeInsets.only(bottom: 16.0),
                         padding: const EdgeInsets.all(12.0),
@@ -105,7 +105,7 @@ class DashboardScreen extends GetView<DashboardController> {
                             const SizedBox(width: 8.0),
                             Expanded(
                               child: Text(
-                                'You have ${300 - controller.stovesWithLandmark.value} stoves with pending GPS updates.',
+                                'You have ${controller.pendingSales.value} sales requiring attention.',
                                 style: TextThemes(context).getTextStyle(
                                   fontSize: 14,
                                   color: AppColors.primaryTextColor,
@@ -113,10 +113,17 @@ class DashboardScreen extends GetView<DashboardController> {
                               ),
                             ),
                             GestureDetector(
-                              onTap: () =>
-                                  Get.toNamed(AppRoutes.UPDATE_STOVE_GEO),
+                              onTap: () => {
+                                Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (context) => ManageSalesScreen(
+                                      showBackButton: true,
+                                    ),
+                                  ),
+                                )
+                              },
                               child: Text(
-                                '[Fix Now]',
+                                '[View Now]',
                                 style: TextThemes(context).getTextStyle(
                                   fontSize: 14,
                                   fontWeight: FontWeight.bold,
@@ -131,7 +138,7 @@ class DashboardScreen extends GetView<DashboardController> {
                       return const SizedBox.shrink();
                     }
                   }),
-                  const SizedBox(height: 24.0),
+                  const SizedBox(height: 10.0),
 
                   // Metrics Summary (Reactive)
                   Text(
@@ -144,45 +151,102 @@ class DashboardScreen extends GetView<DashboardController> {
                   ),
                   const SizedBox(height: 5.0),
                   Obx(
-                    () => SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: Row(
-                        children: [
-                          SummaryBox(
-                            width: MediaQuery.of(context).size.width / 1.8 - 24,
-                            icon: Icons.receipt_long,
-                            backgroundColor: Color.fromARGB(255, 0, 121, 24),
-                            title: 'Total Sales',
-                            value: '\$${controller.totalSales.value}',
+                    () => controller.isLoading.value
+                        ? const Center(
+                            child: Padding(
+                              padding: EdgeInsets.all(20.0),
+                              child: CircularProgressIndicator(),
+                            ),
+                          )
+                        : SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            child: Row(
+                              children: [
+                                SummaryBox(
+                                  width:
+                                      MediaQuery.of(context).size.width / 1.8 -
+                                          24,
+                                  icon: Icons.attach_money,
+                                  backgroundColor:
+                                      Color.fromARGB(255, 0, 121, 24),
+                                  title: 'Total Amount',
+                                  value:
+                                      'NGN${controller.totalSalesAmount.value.toStringAsFixed(2)}',
+                                ),
+                                const SizedBox(width: 16.0),
+                                SummaryBox(
+                                  width:
+                                      MediaQuery.of(context).size.width / 1.8 -
+                                          24,
+                                  icon: Icons.sync,
+                                  backgroundColor:
+                                      Color.fromARGB(255, 121, 0, 0),
+                                  title: 'Pending Sync',
+                                  value:
+                                      controller.pendingSync.value.toString(),
+                                ),
+                                const SizedBox(width: 16.0),
+                                SummaryBox(
+                                  width:
+                                      MediaQuery.of(context).size.width / 1.8 -
+                                          24,
+                                  icon: Icons.people,
+                                  backgroundColor:
+                                      Color.fromARGB(255, 164, 148, 0),
+                                  title: 'Sales Agents',
+                                  value:
+                                      controller.salesAgents.value.toString(),
+                                ),
+                                const SizedBox(width: 16.0),
+                                SummaryBox(
+                                  width:
+                                      MediaQuery.of(context).size.width / 1.8 -
+                                          24,
+                                  icon: Icons.location_on,
+                                  backgroundColor:
+                                      Color.fromARGB(255, 0, 52, 121),
+                                  title: 'Stoves with Landmark',
+                                  value: controller.stovesWithLandmark.value
+                                      .toString(),
+                                ),
+                                const SizedBox(width: 16.0),
+                                SummaryBox(
+                                  width:
+                                      MediaQuery.of(context).size.width / 1.8 -
+                                          24,
+                                  icon: Icons.check_circle,
+                                  backgroundColor:
+                                      Color.fromARGB(255, 76, 175, 80),
+                                  title: 'Completed Sales',
+                                  value: controller.completedSales.value
+                                      .toString(),
+                                ),
+                                const SizedBox(width: 16.0),
+                                SummaryBox(
+                                  width:
+                                      MediaQuery.of(context).size.width / 1.8 -
+                                          24,
+                                  icon: Icons.pending,
+                                  backgroundColor:
+                                      Color.fromARGB(255, 255, 152, 0),
+                                  title: 'Pending Sales',
+                                  value:
+                                      controller.pendingSales.value.toString(),
+                                ),
+                                const SizedBox(width: 16.0),
+                                SummaryBox(
+                                  width:
+                                      MediaQuery.of(context).size.width / 1.8 -
+                                          24,
+                                  icon: Icons.receipt_long,
+                                  backgroundColor:
+                                      Color.fromARGB(255, 139, 69, 19),
+                                  title: 'Total Sales',
+                                  value: controller.totalSales.value.toString(),
+                                ),
+                              ],
+                            ),
                           ),
-                          const SizedBox(width: 16.0),
-                          SummaryBox(
-                            width: MediaQuery.of(context).size.width / 1.8 - 24,
-                            icon: Icons.sync,
-                            backgroundColor: Color.fromARGB(255, 121, 0, 0),
-                            title: 'Offline Records',
-                            value: controller.pendingSync.value.toString(),
-                          ),
-                          const SizedBox(width: 16.0),
-                          SummaryBox(
-                            width: MediaQuery.of(context).size.width / 1.8 - 24,
-                            icon: Icons.people,
-                            backgroundColor: Color.fromARGB(255, 164, 148, 0),
-                            title: 'Sales Agents',
-                            value: controller.salesAgents.value.toString(),
-                          ),
-                          const SizedBox(width: 16.0),
-                          SummaryBox(
-                            width: MediaQuery.of(context).size.width / 1.8 - 24,
-                            icon: Icons.location_on,
-                            backgroundColor: Color.fromARGB(255, 0, 52, 121),
-                            title: 'Stoves with Landmark',
-                            value:
-                                controller.stovesWithLandmark.value.toString(),
-                          ),
-                        ],
-                      ),
-                    ),
                   ),
                   const SizedBox(height: 24.0),
 
