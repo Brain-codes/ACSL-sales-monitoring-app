@@ -12,27 +12,59 @@ export async function buildQuery(
   userRole: string,
   userOrgId: string | null
 ): Promise<QueryResult> {
-  console.log("🔍 Building sales query...");
+  console.log("🔍 Building optimized sales query with joins...");
 
   // Test basic table access first
   console.log("🧪 Testing table access...");
   const { data: testData, error: testError } = await supabase
     .from("sales")
     .select("id, created_at, organization_id")
-    .limit(3);
+    .limit(1);
 
   if (testError) {
     console.log("❌ Table access test failed:", testError.message);
-    console.log("❌ Full error details:", JSON.stringify(testError, null, 2));
     throw new Error(`Table access failed: ${testError.message}`);
   }
 
+  console.log("✅ Table accessible");
+
+  // Build optimized select with LEFT JOINs to reduce separate queries
+  const selectFields = buildOptimizedSelectFields(filters);
+  console.log("📋 Using optimized fields with joins");
+
+  // Start building query with joins
+  let query = supabase.from("sales").select(selectFields, { count: "exact" });
+
+  // Apply all filters
+  query = applyAllFilters(query, filters, userRole, userOrgId);
+
+  console.log("🚀 Executing optimized query with joins...");
+
+  // Execute query with pagination
+  const limit = Math.min(filters.limit || 100, 500);
+  const offset = filters.offset || ((filters.page || 1) - 1) * limit;
+
+  const {
+    data: sales,
+    error,
+    count: totalRecords,
+  } = await query.range(offset, offset + limit - 1);
+
+  if (error) {
+    console.error("❌ Main query failed:", error.message);
+    throw new Error(`Database query failed: ${error.message}`);
+  }
+
   console.log(
-    `✅ Table accessible, found ${testData?.length || 0} test records`
+    `✅ Query successful: ${sales?.length || 0} records, ${totalRecords} total`
   );
 
-  // Build select fields - basic fields only, related data fetched separately
-  const selectFields = [
+  return { sales, totalRecords };
+}
+
+function buildOptimizedSelectFields(filters: Filters): string {
+  // Base sales fields
+  const baseFields = [
     "id",
     "transaction_id",
     "stove_serial_no",
@@ -57,45 +89,58 @@ export async function buildQuery(
     "status",
   ];
 
-  console.log("📋 Using basic fields only, related data fetched separately");
+  // Add joins based on what's requested to avoid N+1 queries
+  const joinFields: string[] = [];
 
-  // Start building query
-  let query = supabase.from("sales").select(selectFields.join(", "));
+  // Always include basic organization info since it's commonly needed
+  joinFields.push("organizations!inner(id, name, partner_email)");
 
-  // Apply filters
+  // Include address if specifically requested
+  if (filters.includeAddress) {
+    joinFields.push(
+      "addresses(id, city, state, street, country, latitude, longitude, full_address)"
+    );
+  }
+
+  // Include creator/profile if specifically requested
+  if (filters.includeCreator) {
+    joinFields.push("profiles(id, full_name, email, phone, role)");
+  }
+
+  // Include images if specifically requested
+  if (
+    filters.includeImages ||
+    filters.includeStoveImage ||
+    filters.includeAgreementImage
+  ) {
+    joinFields.push(
+      "stove_image:uploads!stove_image_id(id, public_id, url, type)",
+      "agreement_image:uploads!agreement_image_id(id, public_id, url, type)"
+    );
+  }
+
+  return [...baseFields, ...joinFields].join(", ");
+}
+
+function applyAllFilters(
+  query: any,
+  filters: Filters,
+  userRole: string,
+  userOrgId: string | null
+) {
+  // Apply filters in order of selectivity (most selective first)
+  query = applyOrganizationFilters(query, filters, userRole, userOrgId);
   query = applyDateFilters(query, filters);
-  query = applyLocationFilters(query, filters);
   query = applyStoveFilters(query, filters);
+  query = applyStatusFilters(query, filters);
+  query = applyLocationFilters(query, filters);
   query = applyPeopleFilters(query, filters);
   query = applyAmountFilters(query, filters);
-  query = applyStatusFilters(query, filters);
-  query = applyOrganizationFilters(query, filters, userRole, userOrgId);
   query = applyBooleanFilters(query, filters);
   query = applySearchFilter(query, filters);
   query = applySorting(query, filters);
-  query = applyPagination(query, filters);
 
-  console.log("🚀 Executing main query...");
-
-  // Execute query
-  const { data: sales, error } = await query;
-
-  if (error) {
-    console.error("❌ Main query failed:", error.message);
-    throw new Error(`Database query failed: ${error.message}`);
-  }
-
-  console.log(`✅ Query successful: ${sales?.length || 0} records`);
-
-  // Get total count
-  console.log("📊 Getting total count...");
-  const { count: totalRecords } = await supabase
-    .from("sales")
-    .select("*", { count: "exact", head: true });
-
-  console.log(`📊 Total records in table: ${totalRecords}`);
-
-  return { sales, totalRecords };
+  return query;
 }
 
 function applyDateFilters(query: any, filters: Filters) {
@@ -265,15 +310,4 @@ function applySorting(query: any, filters: Filters) {
   }
 
   return query;
-}
-
-function applyPagination(query: any, filters: Filters) {
-  console.log("📄 Applying pagination...");
-
-  const limit = Math.min(filters.limit || 100, 1000);
-  const offset = filters.offset || ((filters.page || 1) - 1) * limit;
-
-  console.log(`📄 Limit: ${limit}, Offset: ${offset}`);
-
-  return query.range(offset, offset + limit - 1);
 }
