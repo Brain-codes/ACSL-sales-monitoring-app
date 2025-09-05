@@ -8,10 +8,12 @@ import 'package:stove_transaction/shared/controller/settings_controller.dart';
 
 class OfflineDataWidget extends StatelessWidget {
   final SettingsController controller;
+  final VoidCallback? onOfflineModeEnabled;
 
   const OfflineDataWidget({
     Key? key,
     required this.controller,
+    this.onOfflineModeEnabled,
   }) : super(key: key);
 
   @override
@@ -108,10 +110,30 @@ class OfflineDataWidget extends StatelessWidget {
                             ],
                           ),
                         ),
+                        // Ensure switch is only active and can be ON if offline data is available
                         Switch(
-                          value: controller.isOfflineModeEnabled,
+                          value: controller.hasValidOfflineData
+                              ? (controller.isOfflineModeEnabled is bool
+                                  ? controller.isOfflineModeEnabled
+                                  : (controller.isOfflineModeEnabled as RxBool)
+                                      .value)
+                              : false,
                           onChanged: controller.hasValidOfflineData
-                              ? (value) => controller.toggleOfflineMode()
+                              ? (value) async {
+                                  final wasOffline =
+                                      controller.isOfflineModeEnabled is bool
+                                          ? controller.isOfflineModeEnabled
+                                          : (controller.isOfflineModeEnabled
+                                                  as RxBool)
+                                              .value;
+                                  await controller.toggleOfflineMode();
+                                  // If switching to offline mode, show the banner
+                                  if (!wasOffline &&
+                                      value &&
+                                      onOfflineModeEnabled != null) {
+                                    onOfflineModeEnabled!();
+                                  }
+                                }
                               : null,
                           activeColor: AppColors.primaryColor,
                         ),

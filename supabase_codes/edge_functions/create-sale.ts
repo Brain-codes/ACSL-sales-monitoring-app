@@ -160,31 +160,35 @@ serve(async (req) => {
 
     // Insert sale
     console.log("📝 Inserting main sale with status:", saleStatus);
-    const { error: saleError } = await supabase.from("sales").insert([
-      {
-        transaction_id: transactionId,
-        stove_serial_no: stoveSerialNo,
-        sales_date: salesDate,
-        contact_person: contactPerson,
-        contact_phone: contactPhone,
-        end_user_name: endUserName,
-        aka,
-        state_backup: stateBackup,
-        lga_backup: lgaBackup,
-        phone,
-        other_phone: otherPhone,
-        partner_name: partnerName,
-        amount,
-        signature,
-        status: saleStatus,
-        created_by: userId,
-        organization_id: profile.organization_id,
-        address_id: address.id,
-        stove_image_id: stoveImageId,
-        agreement_image_id: agreementImageId,
-      },
-    ]);
-    if (saleError) {
+    const { data: saleInsertData, error: saleError } = await supabase
+      .from("sales")
+      .insert([
+        {
+          transaction_id: transactionId,
+          stove_serial_no: stoveSerialNo,
+          sales_date: salesDate,
+          contact_person: contactPerson,
+          contact_phone: contactPhone,
+          end_user_name: endUserName,
+          aka,
+          state_backup: stateBackup,
+          lga_backup: lgaBackup,
+          phone,
+          other_phone: otherPhone,
+          partner_name: partnerName,
+          amount,
+          signature,
+          status: saleStatus,
+          created_by: userId,
+          organization_id: profile.organization_id,
+          address_id: address.id,
+          stove_image_id: stoveImageId,
+          agreement_image_id: agreementImageId,
+        },
+      ])
+      .select("id")
+      .maybeSingle();
+    if (saleError || !saleInsertData?.id) {
       console.error("❌ Sales insert failed:", saleError);
       return withCors(
         new Response(
@@ -199,13 +203,90 @@ serve(async (req) => {
         )
       );
     }
-    console.log("✅ Sales saved successfully with status:", saleStatus);
+    const saleId = saleInsertData.id;
+    // Log query params
+    console.log("🔎 Attempting to update stove_ids:", {
+      stove_id: stoveSerialNo,
+      stove_id_type: typeof stoveSerialNo,
+      stove_id_length: stoveSerialNo?.length,
+      organization_id: profile.organization_id,
+      organization_id_type: typeof profile.organization_id,
+      organization_id_length: profile.organization_id?.length,
+      sale_id: saleId,
+    });
+    // Log all stove_ids for this organization
+    const { data: allStoves, error: allStovesError } = await supabase
+      .from("stove_ids")
+      .select("id, stove_id, organization_id, status, sale_id")
+      .eq("organization_id", profile.organization_id);
+    if (allStovesError) {
+      console.error("❌ Error fetching all stove_ids for org:", allStovesError);
+    } else {
+      console.log("📋 All stove_ids for org:", allStoves);
+    }
+    // Log current state before update
+    const { data: stoveBefore, error: stoveBeforeError } = await supabase
+      .from("stove_ids")
+      .select("id, stove_id, status, sale_id, organization_id")
+      .eq("stove_id", stoveSerialNo)
+      .eq("organization_id", profile.organization_id)
+      .maybeSingle();
+    if (stoveBeforeError) {
+      console.error(
+        "❌ Error fetching stove_ids before update:",
+        stoveBeforeError
+      );
+    } else {
+      console.log("🟡 stove_ids row before update:", stoveBefore);
+    }
+    // Perform update
+    const {
+      data: stoveUpdateData,
+      error: stoveUpdateError,
+      count: stoveUpdateCount,
+    } = await supabase
+      .from("stove_ids")
+      .update({ status: "sold", sale_id: saleId })
+      .eq("stove_id", stoveSerialNo)
+      .eq("organization_id", profile.organization_id)
+      .select("id, stove_id, status, sale_id, organization_id");
+    if (stoveUpdateError) {
+      console.error("❌ Failed to update stove_ids:", stoveUpdateError);
+      return withCors(
+        new Response(
+          JSON.stringify({
+            success: false,
+            message: "Failed to update stove_ids",
+            error: stoveUpdateError,
+          }),
+          { status: 500 }
+        )
+      );
+    }
+    console.log("🟢 stove_ids update result:", stoveUpdateData);
+    // Log state after update
+    const { data: stoveAfter, error: stoveAfterError } = await supabase
+      .from("stove_ids")
+      .select("id, stove_id, status, sale_id, organization_id")
+      .eq("stove_id", stoveSerialNo)
+      .eq("organization_id", profile.organization_id)
+      .maybeSingle();
+    if (stoveAfterError) {
+      console.error(
+        "❌ Error fetching stove_ids after update:",
+        stoveAfterError
+      );
+    } else {
+      console.log("🟢 stove_ids row after update:", stoveAfter);
+    }
+    console.log("✅ Sales saved and stove_ids updated with sale_id:", saleId);
     return withCors(
       new Response(
         JSON.stringify({
           success: true,
           message: "Sales saved successfully",
           status: saleStatus,
+          sale_id: saleId,
         }),
         {
           status: 200,

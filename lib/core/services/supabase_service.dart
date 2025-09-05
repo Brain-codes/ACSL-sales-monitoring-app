@@ -37,6 +37,7 @@ class SupabaseService {
           session = savedSession;
         }
       }
+      _logger.d(session?.accessToken);
 
       // Ensure user is logged in if required
       if (requireAuth && session?.accessToken == null) {

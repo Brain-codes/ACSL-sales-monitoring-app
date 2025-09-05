@@ -32,6 +32,7 @@ class _UserFormState extends State<UserForm> with CameraHandlerMixin {
   void initState() {
     super.initState();
     transactionId = UserFormHelper.generateTransactionId();
+    controller.fetchAvailableStoveIds();
     signatureController = SignatureController(
       penStrokeWidth: 3,
       penColor: Colors.black,

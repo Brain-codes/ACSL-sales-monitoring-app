@@ -16,6 +16,15 @@ This is a Flutter-based **Sales Monitoring Application** using **GetX state mana
 
 ## Architecture & Patterns
 
+> **Note:** While the recommended approach is to separate controllers, services, and widgets into their own files for clarity and maintainability, there are cases where you may already have existing files that follow GetX, service, and controller patterns.  
+>  
+> - **Do not recreate files unnecessarily:** If a controller is already using a service, or a widget is already using a controller, you may maintain the current structure as long as it follows the established patterns and does not violate clean architecture principles.
+> - **Minimize excessive file splitting:** For small features or tightly coupled logic, it is acceptable to keep related controllers and services in a single file to reduce unnecessary imports and keep the codebase manageable.
+> - **Prioritize clean code and maintainability:** Only split files when it improves clarity, testability, or reusability. Avoid excessive fragmentation for trivial logic.
+> - **Always follow GetX patterns, error handling, and service separation** as described in this guide, even if combining files for practical reasons.
+
+This approach balances clean architecture with pragmatic file organization, ensuring you do not create excessive files for small or tightly scoped features.
+
 ### Project Structure
 
 ```

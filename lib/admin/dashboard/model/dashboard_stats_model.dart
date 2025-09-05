@@ -14,6 +14,9 @@ class DashboardStatsModel {
   final int pendingSales;
   final double totalSalesAmount;
   final String? organizationId;
+  final int? totalStovesReceived;
+  final int? totalStovesSold;
+  final int? totalStovesAvailable;
 
   DashboardStatsModel({
     required this.totalSales,
@@ -23,6 +26,9 @@ class DashboardStatsModel {
     required this.pendingSales,
     required this.totalSalesAmount,
     this.organizationId,
+    this.totalStovesReceived,
+    this.totalStovesSold,
+    this.totalStovesAvailable,
   });
 
   factory DashboardStatsModel.fromJson(Map<String, dynamic> json) =>
@@ -34,6 +40,9 @@ class DashboardStatsModel {
         pendingSales: json["pendingSales"] ?? 0,
         totalSalesAmount: (json["totalSalesAmount"] ?? 0).toDouble(),
         organizationId: json["organizationId"],
+        totalStovesReceived: json["totalStovesReceived"],
+        totalStovesSold: json["totalStovesSold"],
+        totalStovesAvailable: json["totalStovesAvailable"],
       );
 
   Map<String, dynamic> toJson() => {
@@ -44,6 +53,9 @@ class DashboardStatsModel {
         "pendingSales": pendingSales,
         "totalSalesAmount": totalSalesAmount,
         "organizationId": organizationId,
+        "totalStovesReceived": totalStovesReceived,
+        "totalStovesSold": totalStovesSold,
+        "totalStovesAvailable": totalStovesAvailable,
       };
 
   DashboardStatsModel copyWith({
@@ -54,6 +66,9 @@ class DashboardStatsModel {
     int? pendingSales,
     double? totalSalesAmount,
     String? organizationId,
+    int? totalStovesReceived,
+    int? totalStovesSold,
+    int? totalStovesAvailable,
   }) {
     return DashboardStatsModel(
       totalSales: totalSales ?? this.totalSales,
@@ -63,6 +78,9 @@ class DashboardStatsModel {
       pendingSales: pendingSales ?? this.pendingSales,
       totalSalesAmount: totalSalesAmount ?? this.totalSalesAmount,
       organizationId: organizationId ?? this.organizationId,
+      totalStovesReceived: totalStovesReceived ?? this.totalStovesReceived,
+      totalStovesSold: totalStovesSold ?? this.totalStovesSold,
+      totalStovesAvailable: totalStovesAvailable ?? this.totalStovesAvailable,
     );
   }
 

@@ -1,5 +1,5 @@
 // ignore_for_file: prefer_const_constructors
-// ignore_for_file: prefer_const_constructors, prefer_const_literals_to_create_immutables, avoid_print, unnecessary_new, import_of_legacy_library_into_null_safe
+// ignore_for_file: prefer_const_literals_to_create_immutables, avoid_print, unnecessary_new, import_of_legacy_library_into_null_safe
 
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/svg.dart';
@@ -13,8 +13,11 @@ import 'package:stove_transaction/core/constants/text_theme.dart';
 import 'package:stove_transaction/shared/widgets/settings_tile.dart';
 import 'package:stove_transaction/shared/widgets/offline_data_widget.dart';
 
+typedef OnOfflineModeEnabled = void Function();
+
 class SettingsScreen extends StatefulWidget {
-  const SettingsScreen({super.key});
+  final OnOfflineModeEnabled? onOfflineModeEnabled;
+  const SettingsScreen({Key? key, this.onOfflineModeEnabled}) : super(key: key);
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -134,7 +137,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           SizedBox(height: 20),
 
                           // Offline Data Widget
-                          OfflineDataWidget(controller: _settingsController),
+                          OfflineDataWidget(
+                            controller: _settingsController,
+                            onOfflineModeEnabled: widget.onOfflineModeEnabled,
+                          ),
 
                           //LOGOUT
                           InkWell(

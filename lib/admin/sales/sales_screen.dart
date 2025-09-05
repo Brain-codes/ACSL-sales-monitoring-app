@@ -1,3 +1,4 @@
+import 'package:stove_transaction/shared/ui/toastification_snackbar.dart';
 // ignore_for_file: prefer_const_constructors
 
 import 'package:flutter/material.dart';
@@ -339,9 +340,22 @@ class SalesScreen extends StatelessWidget {
       }),
       floatingActionButton: FloatingActionButton(
         onPressed: () {
-          Get.to(() => UserForm());
+          if (_sessionManager.canStartNewSale()) {
+            Get.to(() => UserForm());
+          } else {
+            showInfoToast(
+              title: 'No Stoves Available',
+              message:
+                  'You cannot start a new sale because there are no available stoves.',
+            );
+          }
         },
-        child: const Icon(Icons.add),
+        backgroundColor: AppColors.primaryColor,
+        elevation: 0,
+        shape: CircleBorder(
+          side: BorderSide(color: Colors.grey, width: 1),
+        ),
+        child: const Icon(Icons.add, color: Colors.white),
       ),
     );
   }

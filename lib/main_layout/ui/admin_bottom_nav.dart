@@ -45,15 +45,15 @@ class AdminBottomNav extends GetView<LayoutController> {
               ),
               label: '',
             ),
-            BottomNavigationBarItem(
-              icon: BottomNavItem(
-                icon: Icons.monitor,
-                label: 'Monitoring',
-                isSelected: controller.tabIndex.value == 2,
-                onTap: () => controller.changeTabIndex(2),
-              ),
-              label: '',
-            ),
+            // BottomNavigationBarItem(
+            //   icon: BottomNavItem(
+            //     icon: Icons.monitor,
+            //     label: 'Monitoring',
+            //     isSelected: controller.tabIndex.value == 2,
+            //     onTap: () => controller.changeTabIndex(2),
+            //   ),
+            //   label: '',
+            // ),
             BottomNavigationBarItem(
               icon: BottomNavItem(
                 icon: Icons.settings,

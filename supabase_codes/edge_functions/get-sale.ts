@@ -60,18 +60,18 @@ serve(async (req) => {
       );
     }
     const userId = userData.user.id;
-    // Get user profile
+    // Get user profile (including role)
     const { data: profile, error: profileError } = await supabase
       .from("profiles")
-      .select("organization_id")
+      .select("organization_id, role")
       .eq("id", userId)
       .maybeSingle();
-    if (profileError || !profile?.organization_id) {
+    if (profileError || (!profile?.organization_id && profile?.role !== "super_admin")) {
       return withCors(
         new Response(
           JSON.stringify({
             success: false,
-            message: "User must belong to an organization",
+            message: "User must belong to an organization or be a super admin",
           }),
           {
             status: 400,
@@ -80,7 +80,7 @@ serve(async (req) => {
       );
     }
     // Fetch sale with joins
-    const { data: sale, error: saleError } = await supabase
+    let saleQuery = supabase
       .from("sales")
       .select(
         `
@@ -90,9 +90,11 @@ serve(async (req) => {
         agreement_image:uploads!sales_agreement_image_id_fkey (*)
         `
       )
-      .eq("id", saleId)
-      .eq("organization_id", profile.organization_id)
-      .maybeSingle();
+      .eq("id", saleId);
+    if (profile.role !== "super_admin") {
+      saleQuery = saleQuery.eq("organization_id", profile.organization_id);
+    }
+    const { data: sale, error: saleError } = await saleQuery.maybeSingle();
     if (saleError || !sale) {
       return withCors(
         new Response(
