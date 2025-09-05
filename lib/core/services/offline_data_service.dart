@@ -3,15 +3,15 @@ import 'package:get/get.dart';
 import 'package:get_storage/get_storage.dart';
 import 'package:logger/logger.dart';
 import 'package:stove_transaction/core/services/session_manager.dart';
-import 'package:stove_transaction/shared/services/googlesheetservices.dart';
+import 'package:stove_transaction/form/services/form_services.dart';
 import 'package:stove_transaction/admin/sales/services/sale_api_service.dart';
 import 'package:stove_transaction/core/services/supabase_service.dart';
 import 'package:stove_transaction/shared/ui/toastification_snackbar.dart';
 
 class OfflineDataService extends GetxService {
   final SessionManager _sessionManager = Get.find<SessionManager>();
-  final GoogleSheetService _googleSheetService = GoogleSheetService();
   final SaleApiService _saleApiService = SaleApiService(SupabaseService());
+  final FormService _formService = FormService(SupabaseService());
   final GetStorage _storage = GetStorage();
   final Logger _logger = Logger();
 
@@ -112,10 +112,10 @@ class OfflineDataService extends GetxService {
     try {
       _logger.d('Starting offline data download...');
 
-      // Step 1: Download Google Sheets data (Stove IDs and Partner Names)
-      downloadStatus.value = 'Downloading Google Sheets data...';
+      // Step 1: Download Stove IDs from Supabase
+      downloadStatus.value = 'Downloading stove IDs...';
       downloadProgress.value = 10;
-      await _downloadGoogleSheetsData();
+      await _downloadStoveIdsData();
 
       // Step 2: Download Sales data
       downloadStatus.value = 'Downloading sales data...';
@@ -168,22 +168,30 @@ class OfflineDataService extends GetxService {
     }
   }
 
-  /// Download Google Sheets data (Stove IDs and Partner Names)
-  Future<void> _downloadGoogleSheetsData() async {
+  /// Download Stove IDs data from Supabase for offline use
+  Future<void> _downloadStoveIdsData() async {
     try {
-      _logger.d('Downloading Google Sheets data...');
-
-      final data = await _googleSheetService.fetchAllData();
-
-      // Store the data in offline storage
-      final offlineData = await _getOfflineData();
-      offlineData['googleSheetsData'] = data;
-      await _saveOfflineData(offlineData);
-
-      _logger.d('Downloaded ${data.length} records from Google Sheets');
+      _logger.d('Downloading stove IDs from Supabase...');
+      final organizationId = _sessionManager.organizationId;
+      if (organizationId == null) {
+        throw Exception('Organization ID not found');
+      }
+      final response =
+          await _formService.fetchStoveIds(organizationId: organizationId);
+      if (response.success && response.data != null) {
+        final offlineData = await _getOfflineData();
+        // Store as a list of maps for offline use
+        offlineData['stoveIdsData'] =
+            response.data!.map((e) => e.toJson()).toList();
+        await _saveOfflineData(offlineData);
+        _logger
+            .d('Downloaded ${response.data!.length} stove IDs from Supabase');
+      } else {
+        throw Exception('Failed to fetch stove IDs: ${response.message}');
+      }
     } catch (e) {
-      _logger.e('Error downloading Google Sheets data: $e');
-      throw Exception('Failed to download Google Sheets data: $e');
+      _logger.e('Error downloading stove IDs: $e');
+      throw Exception('Failed to download stove IDs: $e');
     }
   }
 
@@ -354,20 +362,19 @@ class OfflineDataService extends GetxService {
     }
   }
 
-  /// Get Google Sheets data for offline use
-  List<Map<String, String>> getOfflineGoogleSheetsData() {
+  /// Get stove IDs data for offline use
+  List<Map<String, dynamic>> getOfflineStoveIdsData() {
     try {
       final offlineData = _storage.read(_offlineDataKey);
       if (offlineData != null && offlineData is Map) {
-        final googleSheetsData = offlineData['googleSheetsData'];
-        if (googleSheetsData != null && googleSheetsData is List) {
-          return List<Map<String, String>>.from(
-              googleSheetsData.map((item) => Map<String, String>.from(item)));
+        final stoveIdsData = offlineData['stoveIdsData'];
+        if (stoveIdsData != null && stoveIdsData is List) {
+          return List<Map<String, dynamic>>.from(stoveIdsData);
         }
       }
       return [];
     } catch (e) {
-      _logger.e('Error getting offline Google Sheets data: $e');
+      _logger.e('Error getting offline stove IDs data: $e');
       return [];
     }
   }

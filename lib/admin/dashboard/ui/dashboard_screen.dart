@@ -1,3 +1,5 @@
+import 'package:stove_transaction/shared/widgets/stove_progress_bar.dart';
+import 'package:intl/intl.dart';
 // ignore_for_file: prefer_const_constructors
 
 import 'package:flutter/material.dart';
@@ -11,12 +13,30 @@ import 'package:stove_transaction/core/constants/app_colors.dart';
 import 'package:stove_transaction/core/constants/text_theme.dart';
 import 'package:stove_transaction/core/routes/app_routes.dart';
 import 'package:stove_transaction/core/services/session_manager.dart';
+import 'package:stove_transaction/shared/ui/toastification_snackbar.dart';
 import 'package:stove_transaction/core/constants/app_icons.dart';
 import 'package:stove_transaction/form/ui/user_form.dart';
 import 'package:stove_transaction/shared/widgets/dashboard_action_tile.dart';
 import 'package:stove_transaction/shared/widgets/summary_box.dart';
 
 class DashboardScreen extends GetView<DashboardController> {
+  String formatAmount(num amount) {
+    final formatter = NumberFormat('#,##0.00', 'en_US');
+    return formatter.format(amount);
+  }
+
+  Widget _buildStoveProgressBar(BuildContext context) {
+    // These values should be provided by the DashboardController
+    final int totalReceived = controller.totalStovesReceived.value;
+    final int totalSold = controller.totalStovesSold.value;
+    final int totalAvailable = controller.totalStovesAvailable.value;
+    return StoveProgressBar(
+      totalReceived: totalReceived,
+      totalSold: totalSold,
+      totalAvailable: totalAvailable,
+    );
+  }
+
   DashboardScreen({Key? key}) : super(key: key);
 
   final SessionManager _sessionManager = Get.find<SessionManager>();
@@ -138,7 +158,8 @@ class DashboardScreen extends GetView<DashboardController> {
                       return const SizedBox.shrink();
                     }
                   }),
-                  const SizedBox(height: 10.0),
+
+                  const SizedBox(height: 18.0),
 
                   // Metrics Summary (Reactive)
                   Text(
@@ -171,7 +192,7 @@ class DashboardScreen extends GetView<DashboardController> {
                                       Color.fromARGB(255, 0, 121, 24),
                                   title: 'Total Amount',
                                   value:
-                                      'NGN${controller.totalSalesAmount.value.toStringAsFixed(2)}',
+                                      'NGN${formatAmount(controller.totalSalesAmount.value)}',
                                 ),
                                 const SizedBox(width: 16.0),
                                 SummaryBox(
@@ -197,18 +218,18 @@ class DashboardScreen extends GetView<DashboardController> {
                                   value:
                                       controller.salesAgents.value.toString(),
                                 ),
-                                const SizedBox(width: 16.0),
-                                SummaryBox(
-                                  width:
-                                      MediaQuery.of(context).size.width / 1.8 -
-                                          24,
-                                  icon: Icons.location_on,
-                                  backgroundColor:
-                                      Color.fromARGB(255, 0, 52, 121),
-                                  title: 'Stoves with Landmark',
-                                  value: controller.stovesWithLandmark.value
-                                      .toString(),
-                                ),
+                                // const SizedBox(width: 16.0),
+                                // SummaryBox(
+                                //   width:
+                                //       MediaQuery.of(context).size.width / 1.8 -
+                                //           24,
+                                //   icon: Icons.location_on,
+                                //   backgroundColor:
+                                //       Color.fromARGB(255, 0, 52, 121),
+                                //   title: 'Stoves with Landmark',
+                                //   value: controller.stovesWithLandmark.value
+                                //       .toString(),
+                                // ),
                                 const SizedBox(width: 16.0),
                                 SummaryBox(
                                   width:
@@ -248,6 +269,10 @@ class DashboardScreen extends GetView<DashboardController> {
                             ),
                           ),
                   ),
+                  const SizedBox(height: 10.0),
+
+                  // Stove Progress Bar Section
+                  Obx(() => _buildStoveProgressBar(context)),
                   const SizedBox(height: 24.0),
 
                   // Quick Action Buttons
@@ -290,14 +315,21 @@ class DashboardScreen extends GetView<DashboardController> {
                   Column(
                     children: [
                       DashboardActionTile(
-                          icon: Icons.add_shopping_cart,
-                          title: 'Start New Sale',
-                          description: 'Initiate a new stove sale transaction.',
-                          onTap: () => {
-                                Get.to(
-                                  () => UserForm(),
-                                )
-                              }),
+                        icon: Icons.add_shopping_cart,
+                        title: 'Start New Sale',
+                        description: 'Initiate a new stove sale transaction.',
+                        onTap: () {
+                          if (_sessionManager.canStartNewSale()) {
+                            Get.to(() => UserForm());
+                          } else {
+                            showInfoToast(
+                              title: 'No Stoves Available',
+                              message:
+                                  'You cannot start a new sale because there are no available stoves.',
+                            );
+                          }
+                        },
+                      ),
                       DashboardActionTile(
                           icon: Icons.group,
                           title: 'Manage Sales Agents',

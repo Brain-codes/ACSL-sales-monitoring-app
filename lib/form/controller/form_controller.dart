@@ -10,6 +10,7 @@ import 'package:stove_transaction/core/services/supabase_service.dart';
 import 'package:stove_transaction/core/services/image_compression_service.dart';
 import 'package:stove_transaction/core/services/offline_storage_service.dart';
 import 'package:stove_transaction/admin/sales/controller/offline_sales_controller.dart';
+import 'package:stove_transaction/form/model/stove_id_model.dart';
 import 'package:stove_transaction/shared/services/googlesheetservices.dart';
 import 'package:stove_transaction/form/services/form_services.dart';
 import 'package:stove_transaction/shared/ui/toastification_snackbar.dart';
@@ -41,7 +42,12 @@ class FormController extends GetxController {
   final placesAddressController = TextEditingController();
 
   RxList<String> partnerNames = <String>[].obs;
+
+  /// List of stove ID strings for autocomplete
   RxList<String> stoveIds = <String>[].obs;
+
+  /// List of stove ID models for logic
+  RxList<StoveIdModel> stoveIdModels = <StoveIdModel>[].obs;
 
   final selectedState = ''.obs;
   final selectedLGA = ''.obs;
@@ -53,22 +59,35 @@ class FormController extends GetxController {
   double? latitude;
   double? longitude;
 
-  @override
-  void onInit() {
-    super.onInit();
-    fetchData();
-  }
+  // @override
+  // void onInit() {
+  //   super.onInit();
+  //   fetchAvailableStoveIds();
+  // }
 
-  void fetchData() async {
+  final errorMessage = ''.obs;
+  final SessionManager _sessionManager = Get.find<SessionManager>();
+
+  /// Fetches available stove IDs for the current user's organization
+  Future<void> fetchAvailableStoveIds() async {
+    isLoading.value = true;
+    errorMessage.value = '';
     try {
-      final data = await googleSheetService.fetchAllData();
-      partnerNames
-          .addAll(data.map((item) => item['partnerName']).whereType<String>());
-      stoveIds.addAll(data.map((item) => item['stoveId']).whereType<String>());
-      logger.d('Partner Names: $partnerNames');
+      final orgId = _sessionManager.organizationId;
+      final response = await _apiService.fetchStoveIds(
+        organizationId: orgId.toString(),
+        status: 'available',
+      );
+      if (response.success) {
+        stoveIdModels.value = response.data ?? [];
+        stoveIds.value = stoveIdModels.map((e) => e.stoveId).toList();
+      } else {
+        errorMessage.value = response.message;
+      }
     } catch (e) {
-      Get.snackbar('Error', 'Failed to fetch data: $e');
+      errorMessage.value = 'Failed to fetch stove IDs';
     }
+    isLoading.value = false;
   }
 
   Future<void> handleSaleSubmit(
@@ -336,7 +355,7 @@ class FormController extends GetxController {
         title: 'Success',
         message: 'Form submitted successfully!',
       );
-      _clearForm();
+      // _clearForm();
     } else {
       submissionStatus.value = 'Submission failed';
       logger.e("Sale submission failed. Error: ${response.message}");

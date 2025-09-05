@@ -1,3 +1,4 @@
+// ...existing code...
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js";
 
@@ -83,6 +84,47 @@ serve(async (req) => {
     }
 
     const organizationId = profile.organization_id;
+
+    // Get stove inventory stats for the organization
+    // Total stoves received
+    const { count: totalStovesReceived, error: stovesReceivedError } =
+      await supabase
+        .from("stove_ids")
+        .select("*", { count: "exact", head: true })
+        .eq("organization_id", organizationId);
+
+    if (stovesReceivedError) {
+      console.error(
+        "Error fetching total stoves received:",
+        stovesReceivedError
+      );
+    }
+
+    // Total stoves sold (status = 'sold')
+    const { count: totalStovesSold, error: stovesSoldError } = await supabase
+      .from("stove_ids")
+      .select("*", { count: "exact", head: true })
+      .eq("organization_id", organizationId)
+      .eq("status", "sold");
+
+    if (stovesSoldError) {
+      console.error("Error fetching total stoves sold:", stovesSoldError);
+    }
+
+    // Total stoves available (status = 'available')
+    const { count: totalStovesAvailable, error: stovesAvailableError } =
+      await supabase
+        .from("stove_ids")
+        .select("*", { count: "exact", head: true })
+        .eq("organization_id", organizationId)
+        .eq("status", "available");
+
+    if (stovesAvailableError) {
+      console.error(
+        "Error fetching total stoves available:",
+        stovesAvailableError
+      );
+    }
 
     // Get total sales count for the organization
     const { count: totalSalesCount, error: salesCountError } = await supabase
@@ -199,6 +241,9 @@ serve(async (req) => {
       pendingSales: pendingSalesCount || 0,
       totalSalesAmount: totalSalesAmount,
       organizationId: organizationId,
+      totalStovesReceived: totalStovesReceived || 0,
+      totalStovesSold: totalStovesSold || 0,
+      totalStovesAvailable: totalStovesAvailable || 0,
     };
 
     return withCors(

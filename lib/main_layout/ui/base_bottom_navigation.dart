@@ -9,6 +9,7 @@ class BaseBottomNavigation extends StatefulWidget {
   final List<NavItem> navItems;
   final Color backgroundColor;
   final bool hasTopBorder;
+  final Color? topBorderColor;
 
   const BaseBottomNavigation({
     Key? key,
@@ -17,6 +18,7 @@ class BaseBottomNavigation extends StatefulWidget {
     this.initialIndex = 0,
     this.backgroundColor = Colors.white,
     this.hasTopBorder = true,
+    this.topBorderColor,
   }) : super(key: key);
 
   @override
@@ -53,7 +55,9 @@ class _BaseBottomNavigationState extends State<BaseBottomNavigation> {
               color: widget.backgroundColor,
               border: widget.hasTopBorder
                   ? Border(
-                      top: BorderSide(color: Colors.grey.shade300, width: 1))
+                      top: BorderSide(
+                          color: widget.topBorderColor ?? Colors.grey.shade300,
+                          width: 2))
                   : null,
             ),
             child: SafeArea(

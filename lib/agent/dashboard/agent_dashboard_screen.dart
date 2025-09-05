@@ -1,3 +1,6 @@
+import 'package:stove_transaction/form/services/form_services.dart';
+import 'package:stove_transaction/core/services/supabase_service.dart';
+import 'package:stove_transaction/shared/ui/toastification_snackbar.dart';
 // ignore_for_file: prefer_const_constructors
 
 import 'package:flutter/material.dart';
@@ -13,10 +16,22 @@ import 'package:stove_transaction/shared/widgets/summary_box.dart';
 import 'package:stove_transaction/core/services/session_manager.dart';
 
 class AgentDashboardScreen extends StatelessWidget {
+  Future<void> _fetchAndStoreAvailableStoves(BuildContext context) async {
+    final SessionManager sessionManager = Get.find<SessionManager>();
+    final orgId = sessionManager.organizationId;
+    final formService = FormService(SupabaseService());
+    await formService.fetchAndStoreAvailableStoveCount(
+        organizationId: orgId ?? '');
+  }
+
   const AgentDashboardScreen({Key? key}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
+    // Fetch available stoves on dashboard load
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _fetchAndStoreAvailableStoves(context);
+    });
     final SessionManager _sessionManager = Get.find<SessionManager>();
     final SalesController offlineController = Get.put(SalesController());
     final AgentHistoryController historyController =
@@ -131,6 +146,29 @@ class AgentDashboardScreen extends StatelessWidget {
                 title: 'View Offline Records',
                 description: 'View and manage all your offline sales records.',
                 onTap: () => Get.to(() => OfflineSalesScreen()),
+              ),
+              DashboardActionTile(
+                icon: Icons.add_shopping_cart,
+                title: 'Start New Sale',
+                description: 'Initiate a new stove sale transaction.',
+                onTap: () {
+                  final sessionManager = Get.find<SessionManager>();
+                  if (sessionManager.canStartNewSale()) {
+                    // Navigate to sale form (implement as needed)
+                    // Get.to(() => SaleFormScreen());
+                    showInfoToast(
+                      title: 'Proceed',
+                      message:
+                          'You can start a new sale (implement navigation).',
+                    );
+                  } else {
+                    showInfoToast(
+                      title: 'No Stoves Available',
+                      message:
+                          'You cannot start a new sale because there are no available stoves.',
+                    );
+                  }
+                },
               ),
               Obx(() {
                 final stats = offlineController.statistics;

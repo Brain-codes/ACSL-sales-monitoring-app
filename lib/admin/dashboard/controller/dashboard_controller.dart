@@ -1,3 +1,4 @@
+import 'package:stove_transaction/core/services/session_manager.dart';
 import 'package:get/get.dart';
 import 'package:logger/logger.dart';
 import 'package:stove_transaction/admin/dashboard/services/dashboard_service.dart';
@@ -7,6 +8,11 @@ import 'package:stove_transaction/core/services/supabase_service.dart';
 import 'package:stove_transaction/shared/ui/toastification_snackbar.dart';
 
 class DashboardController extends GetxController {
+  final SessionManager _sessionManager = Get.find<SessionManager>();
+  // Stove inventory progress fields
+  var totalStovesReceived = 0.obs;
+  var totalStovesSold = 0.obs;
+  var totalStovesAvailable = 0.obs;
   final OfflineStorageService _offlineStorage =
       Get.find<OfflineStorageService>();
   final DashboardService _dashboardService =
@@ -51,6 +57,14 @@ class DashboardController extends GetxController {
         completedSales.value = stats.completedSales;
         pendingSales.value = stats.pendingSales;
         totalSalesAmount.value = stats.totalSalesAmount;
+
+        // Update stove inventory progress fields (ensure your API returns these fields)
+        totalStovesReceived.value = stats.totalStovesReceived ?? 0;
+        totalStovesSold.value = stats.totalStovesSold ?? 0;
+        totalStovesAvailable.value = stats.totalStovesAvailable ?? 0;
+
+        // Save available stoves to session manager for centralized checker
+        _sessionManager.saveTotalStoveAvailable(totalStovesAvailable.value);
 
         logger.d('Dashboard data refreshed successfully');
       } else {
@@ -111,6 +125,9 @@ class DashboardController extends GetxController {
     completedSales.value = 0;
     pendingSales.value = 0;
     totalSalesAmount.value = 0.0;
+    totalStovesReceived.value = 0;
+    totalStovesSold.value = 0;
+    totalStovesAvailable.value = 0;
   }
 
   /// Handle authentication errors by navigating to login

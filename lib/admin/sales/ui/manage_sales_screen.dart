@@ -1,3 +1,5 @@
+import 'package:stove_transaction/core/services/session_manager.dart';
+import 'package:stove_transaction/shared/ui/toastification_snackbar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:get/get.dart';
@@ -19,6 +21,7 @@ import 'package:stove_transaction/core/constants/app_colors.dart';
 import 'package:intl/intl.dart';
 
 class ManageSalesScreen extends StatelessWidget {
+  final SessionManager _sessionManager = Get.find<SessionManager>();
   final bool showBackButton; // Set to true to show back button
   final ManageSalesController controller = Get.put(ManageSalesController());
   final TextEditingController searchText = TextEditingController();
@@ -204,9 +207,15 @@ class ManageSalesScreen extends StatelessWidget {
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () {
-          Get.to(
-            () => UserForm(),
-          ); // Navigate to UserForm for new sale
+          if (_sessionManager.canStartNewSale()) {
+            Get.to(() => UserForm());
+          } else {
+            showInfoToast(
+              title: 'No Stoves Available',
+              message:
+                  'You cannot start a new sale because there are no available stoves.',
+            );
+          }
         },
         backgroundColor: AppColors.primaryColor,
         elevation: 0,

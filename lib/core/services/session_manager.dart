@@ -34,6 +34,20 @@ class SessionManager extends GetxService {
   bool get isAdmin => role == 'admin';
   bool get isAgent => role == 'agent';
 
+  // Stove availability keys
+  static const String _stoveAvailableKey = 'totalStoveAvailable';
+
+  /// Store the latest available stove count
+  void saveTotalStoveAvailable(int count) {
+    _box.write(_stoveAvailableKey, count);
+  }
+
+  /// Get the latest available stove count
+  int get totalStoveAvailable => _box.read(_stoveAvailableKey) ?? 0;
+
+  /// Centralized checker: returns true if a new sale can be started
+  bool canStartNewSale() => totalStoveAvailable > 0;
+
   // User profile methods
   Map<String, dynamic>? getUserProfile() {
     final profile = _box.read(_userProfileKey);
