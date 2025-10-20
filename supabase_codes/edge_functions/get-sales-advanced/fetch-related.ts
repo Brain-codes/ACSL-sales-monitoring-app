@@ -77,7 +77,7 @@ async function fetchOrganizations(supabase: any, sales: any[]) {
 
   const { data: organizations, error: orgsError } = await supabase
     .from("organizations")
-    .select("id, name, created_at, partner_email")
+    .select("id, partner_name, branch, state, email, created_at")
     .in("id", orgIds);
 
   if (orgsError) {

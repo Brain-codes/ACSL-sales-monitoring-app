@@ -93,7 +93,9 @@ function buildOptimizedSelectFields(filters: Filters): string {
   const joinFields: string[] = [];
 
   // Always include basic organization info since it's commonly needed
-  joinFields.push("organizations!inner(id, name, partner_email)");
+  joinFields.push(
+    "organizations!inner(id, partner_name, branch, state, email)"
+  );
 
   // Include address if specifically requested
   if (filters.includeAddress) {

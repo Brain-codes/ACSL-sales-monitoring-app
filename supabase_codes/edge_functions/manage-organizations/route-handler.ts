@@ -6,6 +6,8 @@ import {
   deleteOrganization,
   hardDeleteOrganization,
 } from "./delete-operations.ts";
+import { createOrganizationSimple } from "./test-operations.ts";
+import { importCSVData, validateCSVData } from "./csv-import-operations.ts";
 
 export async function handleOrganizationRoute(
   req: Request,
@@ -35,9 +37,33 @@ export async function handleOrganizationRoute(
       }
 
     case "POST":
-      // Create new organization with admin user
+      // Check if this is a CSV import request
+      if (url.searchParams.get("import_csv") === "true") {
+        console.log("📊 Processing CSV import request");
+        const csvData = await req.json();
+
+        // Validate CSV data structure
+        const validation = validateCSVData(csvData);
+        if (!validation.isValid) {
+          throw new Error(
+            `CSV Validation failed: ${validation.errors.join(", ")}`
+          );
+        }
+
+        // Process the CSV import
+        return await importCSVData(supabase, csvData, userId);
+      }
+
+      // Check if this is a test request
       const createData = await req.json();
-      return await createOrganization(supabase, createData, userId);
+      if (url.searchParams.get("test") === "true") {
+        // Use simple organization creation without user management
+        console.log("🧪 Using test mode - simple organization creation");
+        return await createOrganizationSimple(supabase, createData, userId);
+      } else {
+        // Create new organization with admin user
+        return await createOrganization(supabase, createData, userId);
+      }
 
     case "PUT":
     case "PATCH":

@@ -85,7 +85,7 @@ class ProfileModel {
 
   @override
   String toString() {
-    return 'ProfileModel(id: $id, email: $email, fullName: $fullName, organization: ${organization?.name})';
+    return 'ProfileModel(id: $id, email: $email, fullName: $fullName, organization: ${organization?.partnerName})';
   }
 
   @override
@@ -98,25 +98,45 @@ class ProfileModel {
   int get hashCode => id.hashCode;
 }
 
-/// Organization model
+/// Organization model - Updated for 8-field structure
 class OrganizationModel {
   final String id;
-  final String name;
-  final String? partnerEmail;
+  final String partnerName; // Required - Partner name
+  final String branch; // Required - Branch
+  final String state; // Required - State
+  final String? contactPerson; // Optional - Contact person
+  final String? contactPhone; // Optional - Contact phone number
+  final String? alternativePhone; // Optional - Alternative phone number
+  final String? email; // Optional - Email
+  final String? address; // Optional - Address
   final DateTime? createdAt;
 
   OrganizationModel({
     required this.id,
-    required this.name,
-    this.partnerEmail,
+    required this.partnerName,
+    required this.branch,
+    required this.state,
+    this.contactPerson,
+    this.contactPhone,
+    this.alternativePhone,
+    this.email,
+    this.address,
     this.createdAt,
   });
 
   factory OrganizationModel.fromJson(Map<String, dynamic> json) =>
       OrganizationModel(
         id: json["id"],
-        name: json["name"],
-        partnerEmail: json["partner_email"],
+        partnerName: json["partner_name"] ??
+            json["name"] ??
+            "Unknown Partner", // Backward compatibility
+        branch: json["branch"] ?? "Main Branch",
+        state: json["state"] ?? "Unknown State",
+        contactPerson: json["contact_person"],
+        contactPhone: json["contact_phone"],
+        alternativePhone: json["alternative_phone"],
+        email: json["email"] ?? json["partner_email"], // Backward compatibility
+        address: json["address"],
         createdAt: json["created_at"] != null
             ? DateTime.parse(json["created_at"])
             : null,
@@ -124,29 +144,51 @@ class OrganizationModel {
 
   Map<String, dynamic> toJson() => {
         "id": id,
-        "name": name,
-        "partner_email": partnerEmail,
+        "partner_name": partnerName,
+        "branch": branch,
+        "state": state,
+        "contact_person": contactPerson,
+        "contact_phone": contactPhone,
+        "alternative_phone": alternativePhone,
+        "email": email,
+        "address": address,
         "created_at": createdAt?.toIso8601String(),
       };
 
   /// Copy with method for easy updates
   OrganizationModel copyWith({
     String? id,
-    String? name,
-    String? partnerEmail,
+    String? partnerName,
+    String? branch,
+    String? state,
+    String? contactPerson,
+    String? contactPhone,
+    String? alternativePhone,
+    String? email,
+    String? address,
     DateTime? createdAt,
   }) {
     return OrganizationModel(
       id: id ?? this.id,
-      name: name ?? this.name,
-      partnerEmail: partnerEmail ?? this.partnerEmail,
+      partnerName: partnerName ?? this.partnerName,
+      branch: branch ?? this.branch,
+      state: state ?? this.state,
+      contactPerson: contactPerson ?? this.contactPerson,
+      contactPhone: contactPhone ?? this.contactPhone,
+      alternativePhone: alternativePhone ?? this.alternativePhone,
+      email: email ?? this.email,
+      address: address ?? this.address,
       createdAt: createdAt ?? this.createdAt,
     );
   }
 
+  // Backward compatibility getters
+  String get name => partnerName; // For backward compatibility
+  String? get partnerEmail => email; // For backward compatibility
+
   @override
   String toString() {
-    return 'OrganizationModel(id: $id, name: $name, partnerEmail: $partnerEmail)';
+    return 'OrganizationModel(id: $id, partnerName: $partnerName, branch: $branch, state: $state)';
   }
 
   @override

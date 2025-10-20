@@ -1,42 +1,86 @@
 Name	Format	Type
-id	
-uuid
-
-string	
-name	
-text
-
-string	
-created_at	
-timestamp with time zone
-
-string	
-partner_email	
-text
-
-string
-
-
+id	uuid	string	
+partner_id	text	string (optional, unique)
+partner_name	text	string (required)
+branch	text	string (required)
+state	text	string (required)
+contact_person	text	string (optional)
+contact_phone	text	string (optional)
+alternative_phone	text	string (optional)
+email	text	string (optional)
+address	text	string (optional)
+created_at	timestamp with time zone	string
+updated_at	timestamp with time zone	string
+created_by	uuid	string (foreign key to auth.users)
+updated_by	uuid	string (foreign key to auth.users)
 
 // SQL DEFINITION
 
-create table public.organizations (
-  id uuid not null default gen_random_uuid (),
-  name text not null,
-  created_at timestamp with time zone null default now(),
-  partner_email text not null default 'email'::text,
-  constraint organizations_pkey primary key (id),
-  constraint organizations_partner_email_key unique (partner_email)
+CREATE TABLE public.organizations (
+  id UUID NOT NULL DEFAULT gen_random_uuid(),
+  partner_id TEXT NULL, -- Global ID from external CSV system
+  partner_name TEXT NOT NULL, -- Partner/Organization name
+  branch TEXT NOT NULL, -- Branch name  
+  state TEXT NOT NULL, -- State location
+  contact_person TEXT NULL, -- Contact person name
+  contact_phone TEXT NULL, -- Primary phone number
+  alternative_phone TEXT NULL, -- Alternative phone number
+  email TEXT NULL, -- Email address
+  address TEXT NULL, -- Physical address
+  created_at TIMESTAMP WITH TIME ZONE NULL DEFAULT now(),
+  updated_at TIMESTAMP WITH TIME ZONE NULL DEFAULT now(),
+  created_by UUID NULL REFERENCES auth.users(id),
+  updated_by UUID NULL REFERENCES auth.users(id),
+  
+  CONSTRAINT organizations_pkey PRIMARY KEY (id)
 ) TABLESPACE pg_default;
 
+-- Indexes
+CREATE UNIQUE INDEX organizations_partner_id_key 
+  ON public.organizations(partner_id) 
+  WHERE partner_id IS NOT NULL;
 
+-- Trigger for updated_at
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = now();
+    RETURN NEW;
+END;
+$$ language 'plpgsql';
 
+CREATE TRIGGER update_organizations_updated_at
+    BEFORE UPDATE ON public.organizations
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+// FIELD DESCRIPTIONS
 
+- id: Primary key, auto-generated UUID
+- partner_id: Global ID from external CSV system for synchronization (unique when not null)
+- partner_name: Name of the partner/organization (required)
+- branch: Branch name (required)
+- state: State where organization is located (required)
+- contact_person: Name of primary contact person (optional)
+- contact_phone: Primary phone number (optional)
+- alternative_phone: Alternative phone number (optional)
+- email: Email address (optional)
+- address: Physical address (optional)
+- created_at: Record creation timestamp
+- updated_at: Last update timestamp (auto-updated)
+- created_by: User who created the record
+- updated_by: User who last updated the record
+
+// CSV IMPORT FUNCTIONALITY
+
+The partner_id field enables CSV import functionality where:
+1. External system sends CSV with Partner ID
+2. If Partner ID exists in database: UPDATE existing organization
+3. If Partner ID doesn't exist: CREATE new organization
+4. Each Partner ID can only exist once in the database (unique constraint)
 
 // POLICIES
 
-
-SELECT
-Allow public read
-Applied to: public role
+Row Level Security (RLS) policies should be configured based on user roles:
+- Super admins: Full access to all organizations
+- Organization admins: Access to their own organization
+- Agents: Read-only access to their organization

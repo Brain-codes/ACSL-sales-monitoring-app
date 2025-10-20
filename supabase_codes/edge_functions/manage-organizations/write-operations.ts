@@ -1,6 +1,3 @@
-// Create and update operations for organizations
-import { validateOrganizationData } from "./validate.ts";
-
 // Create and update operations for organizations with integrated user management
 import { validateOrganizationData } from "./validate.ts";
 import {
@@ -18,35 +15,19 @@ export async function createOrganization(
 ) {
   console.log("➕ Creating new organization with admin user...");
 
-  // Validate required fields including admin user data
-  const validationResult = validateOrganizationData(data, "create");
-  if (!validationResult.isValid) {
-    throw new Error(`Validation failed: ${validationResult.errors.join(", ")}`);
-  }
+  // Auto-generate admin user details from partner data
+  data.admin_email =
+    data.email ||
+    `${data.partner_name.toLowerCase().replace(/\s+/g, "")}@admin.com`; // Use provided email or generate from partner name
+  data.admin_full_name = `${data.partner_name} Admin`; // Use partner name + "Admin"
 
-  // Check if organization name already exists
-  const { data: existingOrg, error: checkError } = await supabase
-    .from("organizations")
-    .select("id, name")
-    .eq("name", data.name)
-    .single();
+  console.log(`👤 Generated admin email: ${data.admin_email}`);
+  console.log(`👤 Generated admin name: ${data.admin_full_name}`);
 
-  if (existingOrg) {
-    throw new Error(`Organization with name "${data.name}" already exists`);
-  }
-
-  // Check if partner email already exists
-  const { data: existingPartnerEmail, error: partnerCheckError } =
-    await supabase
-      .from("organizations")
-      .select("id, partner_email")
-      .eq("partner_email", data.partner_email)
-      .single();
-
-  if (existingPartnerEmail) {
-    throw new Error(
-      `Organization with partner email "${data.partner_email}" already exists`
-    );
+  // Validate required fields
+  const validation = validateOrganizationData(data, "create");
+  if (!validation.isValid) {
+    throw new Error(`Validation failed: ${validation.errors.join(", ")}`);
   }
 
   // Check if admin email already exists in auth
@@ -68,16 +49,45 @@ export async function createOrganization(
   let organizationId: string;
   let adminUser: any;
   let generatedPassword: string;
+  let newOrganization: any;
 
   try {
-    // Step 1: Generate organization ID first (we'll need it for user creation)
+    // Step 1: Generate organization ID and create organization FIRST
     organizationId = crypto.randomUUID();
+
+    const organizationData = {
+      id: organizationId,
+      partner_name: data.partner_name, // Required - Partner name
+      branch: data.branch, // Required - Branch
+      state: data.state, // Required - State
+      contact_person: data.contact_person || null, // Optional - Contact person
+      contact_phone: data.contact_phone || null, // Optional - Contact phone
+      alternative_phone: data.alternative_phone || null, // Optional - Alternative phone
+      email: data.email || null, // Optional - Email
+      address: data.address || null, // Optional - Address
+      created_by: userId,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    const { data: orgResult, error: orgError } = await supabase
+      .from("organizations")
+      .insert([organizationData])
+      .select()
+      .single();
+
+    if (orgError) {
+      throw new Error(`Failed to create organization: ${orgError.message}`);
+    }
+
+    newOrganization = orgResult;
+    console.log("✅ Organization created successfully");
 
     // Step 2: Generate secure password
     generatedPassword = generateSecurePassword();
     console.log("🔑 Generated secure password for admin user");
 
-    // Step 3: Create admin user in Supabase Auth
+    // Step 3: Create admin user in Supabase Auth (organization now exists)
     adminUser = await createUserInAuth(
       supabase,
       {
@@ -93,7 +103,7 @@ export async function createOrganization(
 
     // Step 4: Send welcome email via external API
     const emailResult = await sendWelcomeEmail(
-      data.name,
+      data.partner_name,
       data.admin_email,
       generatedPassword,
       data.admin_full_name
@@ -109,35 +119,6 @@ export async function createOrganization(
 
     console.log("✅ Welcome email sent successfully");
 
-    // Step 5: Create organization record (only after email success)
-    const organizationData = {
-      id: organizationId, // Use the pre-generated ID
-      name: data.name,
-      partner_email: data.partner_email,
-      contact_phone: data.contact_phone || null,
-      address: data.address || null,
-      city: data.city || null,
-      state: data.state || null,
-      country: data.country || "Nigeria",
-      description: data.description || null,
-      status: data.status || "active",
-      created_by: userId,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    };
-
-    const { data: newOrganization, error: orgError } = await supabase
-      .from("organizations")
-      .insert([organizationData])
-      .select()
-      .single();
-
-    if (orgError) {
-      throw new Error(`Failed to create organization: ${orgError.message}`);
-    }
-
-    console.log("✅ Organization created successfully");
-
     // Return comprehensive response
     return {
       data: {
@@ -148,24 +129,32 @@ export async function createOrganization(
           full_name: data.admin_full_name,
           role: "admin",
           password_sent: true,
-          has_changed_password: false,
         },
-        email_sent: true,
       },
-      message:
-        "Organization and admin user created successfully. Welcome email sent.",
+      message: "Organization and admin user created successfully",
     };
-  } catch (error) {
-    console.error("❌ Error in organization creation process:", error);
+  } catch (error: any) {
+    console.error("❌ Error during organization creation:", error.message);
 
-    // Cleanup: If we got far enough to create a user but failed later, we should clean up
+    // Cleanup: Delete created organization and user if something failed
+    if (newOrganization?.id) {
+      try {
+        await supabase
+          .from("organizations")
+          .delete()
+          .eq("id", newOrganization.id);
+        console.log("🧹 Cleaned up created organization after failure");
+      } catch (cleanupError: any) {
+        console.error("Failed to cleanup organization:", cleanupError.message);
+      }
+    }
+
     if (adminUser?.userId) {
       try {
-        console.log("🧹 Cleaning up created user due to failure...");
         await supabase.auth.admin.deleteUser(adminUser.userId);
-        console.log("✅ User cleanup completed");
-      } catch (cleanupError) {
-        console.error("❌ Failed to cleanup user:", cleanupError);
+        console.log("🧹 Cleaned up created user after failure");
+      } catch (cleanupError: any) {
+        console.error("Failed to cleanup user:", cleanupError.message);
       }
     }
 
@@ -179,188 +168,98 @@ export async function updateOrganization(
   data: any,
   userId: string
 ) {
-  console.log(`✏️ Updating organization: ${organizationId}`);
+  console.log(`📝 Updating organization ${organizationId}...`);
 
-  // Validate data
-  const validationResult = validateOrganizationData(data, "update");
-  if (!validationResult.isValid) {
-    throw new Error(`Validation failed: ${validationResult.errors.join(", ")}`);
+  // Validate the update data
+  const validation = validateOrganizationData(data, "update");
+  if (!validation.isValid) {
+    throw new Error(`Validation failed: ${validation.errors.join(", ")}`);
   }
 
   // Check if organization exists
-  const { data: existingOrg, error: checkError } = await supabase
+  const { data: existingOrg, error: fetchError } = await supabase
     .from("organizations")
-    .select("id, name")
+    .select("*")
     .eq("id", organizationId)
     .single();
 
-  if (checkError || !existingOrg) {
-    throw new Error(`Organization with ID ${organizationId} not found`);
+  if (fetchError || !existingOrg) {
+    throw new Error("Organization not found");
   }
 
-  // Check if new name conflicts with existing organizations (if name is being updated)
-  if (data.name && data.name !== existingOrg.name) {
-    const { data: nameConflict, error: nameError } = await supabase
-      .from("organizations")
-      .select("id, name")
-      .eq("name", data.name)
-      .neq("id", organizationId)
-      .single();
+  // Prepare organization update data - only 8 allowed fields
+  const organizationUpdateData = {
+    ...(data.partner_name && { partner_name: data.partner_name }),
+    ...(data.branch && { branch: data.branch }),
+    ...(data.state && { state: data.state }),
+    ...(data.contact_person !== undefined && {
+      contact_person: data.contact_person,
+    }),
+    ...(data.contact_phone !== undefined && {
+      contact_phone: data.contact_phone,
+    }),
+    ...(data.alternative_phone !== undefined && {
+      alternative_phone: data.alternative_phone,
+    }),
+    ...(data.email !== undefined && { email: data.email }),
+    ...(data.address !== undefined && { address: data.address }),
+    updated_by: userId,
+    updated_at: new Date().toISOString(),
+  };
 
-    if (nameConflict) {
-      throw new Error(`Organization with name "${data.name}" already exists`);
-    }
-  }
+  // Handle admin user updates if provided
+  let adminUser: any = null;
+  if (data.admin_full_name || data.admin_email) {
+    console.log("👤 Updating admin user details...");
 
-  // Handle admin user updates if admin data is provided
-  let adminUserUpdate: any = null;
-  let passwordChanged = false;
-
-  if (data.admin_email || data.admin_full_name) {
-    console.log("🔄 Updating organization admin user...");
-
-    // Find the current admin user for this organization
+    // Find the current admin user
     const currentAdmin = await findOrganizationAdmin(supabase, organizationId);
-
     if (!currentAdmin) {
       throw new Error("No admin user found for this organization");
     }
 
-    // Check if email is changing
-    const emailChanging =
-      data.admin_email && data.admin_email !== currentAdmin.email;
-
-    if (emailChanging) {
-      // Check if new email already exists
-      const { data: existingUser, error: userCheckError } =
-        await supabase.auth.admin.listUsers();
-
-      if (!userCheckError) {
-        const emailExists = existingUser.users.some(
-          (user: any) =>
-            user.email === data.admin_email && user.id !== currentAdmin.id
-        );
-        if (emailExists) {
-          throw new Error(
-            `User with email "${data.admin_email}" already exists`
-          );
-        }
+    // Update the admin user
+    adminUser = await updateUserInAuth(
+      supabase,
+      currentAdmin.id,
+      data.admin_email || currentAdmin.email, // Use new email or keep existing
+      undefined, // Don't change password
+      {
+        ...(data.admin_full_name && { fullName: data.admin_full_name }),
+        role: "admin",
+        organizationId: organizationId,
       }
+    );
 
-      // Generate new password if email is changing
-      const newPassword = generateSecurePassword();
-      passwordChanged = true;
-
-      // Send email notification about the change
-      try {
-        const emailResult = await sendWelcomeEmail(
-          data.name || existingOrg.name,
-          data.admin_email,
-          newPassword,
-          data.admin_full_name || currentAdmin.full_name
-        );
-
-        if (!emailResult.status) {
-          throw new Error(
-            `Failed to send notification email: ${
-              emailResult.error || "Unknown email error"
-            }`
-          );
-        }
-
-        console.log("✅ Admin user notification email sent");
-      } catch (emailError) {
-        throw new Error(
-          `Failed to send admin user notification: ${emailError.message}`
-        );
-      }
-
-      // Update user in auth
-      adminUserUpdate = await updateUserInAuth(
-        supabase,
-        currentAdmin.id,
-        data.admin_email,
-        newPassword,
-        {
-          fullName: data.admin_full_name,
-          organizationId: organizationId,
-          role: "admin",
-        }
-      );
-    } else if (
-      data.admin_full_name &&
-      data.admin_full_name !== currentAdmin.full_name
-    ) {
-      // Only name is changing, no password change needed
-      adminUserUpdate = await updateUserInAuth(
-        supabase,
-        currentAdmin.id,
-        currentAdmin.email,
-        undefined, // No password change
-        {
-          fullName: data.admin_full_name,
-          organizationId: organizationId,
-          role: "admin",
-        }
-      );
-    }
+    console.log("✅ Admin user updated successfully");
   }
 
-  // Prepare organization update data
-  const updateData: any = {
-    updated_at: new Date().toISOString(),
-  };
-
-  // Only update provided fields
-  if (data.name !== undefined) updateData.name = data.name;
-  if (data.partner_email !== undefined)
-    updateData.partner_email = data.partner_email;
-  if (data.contact_phone !== undefined)
-    updateData.contact_phone = data.contact_phone;
-  if (data.address !== undefined) updateData.address = data.address;
-  if (data.city !== undefined) updateData.city = data.city;
-  if (data.state !== undefined) updateData.state = data.state;
-  if (data.country !== undefined) updateData.country = data.country;
-  if (data.description !== undefined) updateData.description = data.description;
-  if (data.status !== undefined) updateData.status = data.status;
-
-  const { data: updatedOrganization, error } = await supabase
+  // Update the organization
+  const { data: updatedOrganization, error: updateError } = await supabase
     .from("organizations")
-    .update(updateData)
+    .update(organizationUpdateData)
     .eq("id", organizationId)
     .select()
     .single();
 
-  if (error) {
-    throw new Error(`Failed to update organization: ${error.message}`);
+  if (updateError) {
+    throw new Error(`Failed to update organization: ${updateError.message}`);
   }
 
-  // Prepare response
-  const response: any = {
+  console.log("✅ Organization updated successfully");
+
+  return {
     data: {
       organization: updatedOrganization,
+      ...(adminUser && {
+        admin_user: {
+          id: adminUser.user.id,
+          email: adminUser.user.email,
+          full_name: adminUser.profile.full_name,
+          role: "admin",
+        },
+      }),
     },
     message: "Organization updated successfully",
   };
-
-  // Include admin user update info if applicable
-  if (adminUserUpdate) {
-    response.data.admin_user = {
-      id: adminUserUpdate.user.id,
-      email: adminUserUpdate.user.email,
-      full_name: adminUserUpdate.profile.full_name,
-      role: adminUserUpdate.profile.role,
-      password_changed: passwordChanged,
-      notification_sent: passwordChanged,
-    };
-
-    if (passwordChanged) {
-      response.message +=
-        " Admin user credentials updated and notification email sent.";
-    } else {
-      response.message += " Admin user information updated.";
-    }
-  }
-
-  return response;
 }

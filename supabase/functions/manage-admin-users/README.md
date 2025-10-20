@@ -1,6 +1,7 @@
 # Manage Admin Users Edge Function
 
 ## Overview
+
 A comprehensive Supabase Edge Function for super admins to manage admin users within the organization. This function provides full CRUD operations with proper authentication, validation, and organization binding.
 
 ## Features
@@ -36,17 +37,20 @@ manage-admin-users/
 ## Quick Start
 
 ### 1. Deploy
+
 ```bash
 supabase functions deploy manage-admin-users
 ```
 
 ### 2. Test
+
 ```bash
 curl -X GET "https://YOUR_PROJECT.supabase.co/functions/v1/manage-admin-users" \
   -H "Authorization: Bearer YOUR_SUPER_ADMIN_TOKEN"
 ```
 
 ### 3. Create Admin User
+
 ```bash
 curl -X POST "https://YOUR_PROJECT.supabase.co/functions/v1/manage-admin-users" \
   -H "Authorization: Bearer YOUR_SUPER_ADMIN_TOKEN" \
@@ -60,13 +64,13 @@ curl -X POST "https://YOUR_PROJECT.supabase.co/functions/v1/manage-admin-users" 
 
 ## API Operations
 
-| Method | Endpoint | Description | Auth Required |
-|--------|----------|-------------|---------------|
-| `GET` | `/manage-admin-users` | List all admin users with pagination | Super Admin |
-| `GET` | `/manage-admin-users/{id}` | Get specific admin user | Super Admin |
-| `POST` | `/manage-admin-users` | Create new admin user | Super Admin |
-| `PUT` | `/manage-admin-users/{id}` | Update admin user | Super Admin |
-| `DELETE` | `/manage-admin-users/{id}` | Delete admin user | Super Admin |
+| Method   | Endpoint                   | Description                          | Auth Required |
+| -------- | -------------------------- | ------------------------------------ | ------------- |
+| `GET`    | `/manage-admin-users`      | List all admin users with pagination | Super Admin   |
+| `GET`    | `/manage-admin-users/{id}` | Get specific admin user              | Super Admin   |
+| `POST`   | `/manage-admin-users`      | Create new admin user                | Super Admin   |
+| `PUT`    | `/manage-admin-users/{id}` | Update admin user                    | Super Admin   |
+| `DELETE` | `/manage-admin-users/{id}` | Delete admin user                    | Super Admin   |
 
 ## Authorization
 
@@ -86,12 +90,14 @@ Admin users are tied to organizations through the `organization_id` foreign key.
 ## Input Validation
 
 ### Create Admin User
+
 - `full_name`: Required, string, max 100 chars, letters/spaces/hyphens/apostrophes only
 - `email`: Required, valid email format, unique, max 255 chars
 - `organization_id`: Required, valid UUID, must reference existing active organization
 - `password`: Optional, min 8 chars, must contain uppercase/lowercase/number
 
 ### Update Admin User
+
 - All fields optional
 - Same validation rules as create
 - Cannot update password (use separate endpoint)
@@ -126,10 +132,12 @@ The function provides comprehensive error handling with appropriate HTTP status 
 ## Database Dependencies
 
 ### Required Tables
+
 - `profiles`: User profiles with role and organization binding
 - `organizations`: Organization master data
 
 ### Required Columns
+
 - `profiles.role`: Must support 'super_admin', 'admin', 'agent'
 - `profiles.organization_id`: Foreign key to organizations table
 - `organizations.status`: Must support 'active', 'inactive', 'suspended'
@@ -137,48 +145,55 @@ The function provides comprehensive error handling with appropriate HTTP status 
 ## Usage Examples
 
 ### List Admin Users with Filtering
+
 ```javascript
-const response = await fetch(`${baseUrl}/manage-admin-users?organization_id=${orgId}&page=1&limit=10`, {
-  headers: {
-    'Authorization': `Bearer ${superAdminToken}`,
+const response = await fetch(
+  `${baseUrl}/manage-admin-users?organization_id=${orgId}&page=1&limit=10`,
+  {
+    headers: {
+      Authorization: `Bearer ${superAdminToken}`,
+    },
   }
-});
+);
 ```
 
 ### Create Admin User
+
 ```javascript
 const response = await fetch(`${baseUrl}/manage-admin-users`, {
-  method: 'POST',
+  method: "POST",
   headers: {
-    'Authorization': `Bearer ${superAdminToken}`,
-    'Content-Type': 'application/json',
+    Authorization: `Bearer ${superAdminToken}`,
+    "Content-Type": "application/json",
   },
   body: JSON.stringify({
-    full_name: 'Jane Smith',
-    email: 'jane.smith@acme.com',
-    organization_id: 'org-uuid-here'
-  })
+    full_name: "Jane Smith",
+    email: "jane.smith@acme.com",
+    organization_id: "org-uuid-here",
+  }),
 });
 ```
 
 ### Update Admin User
+
 ```javascript
 const response = await fetch(`${baseUrl}/manage-admin-users/${userId}`, {
-  method: 'PUT',
+  method: "PUT",
   headers: {
-    'Authorization': `Bearer ${superAdminToken}`,
-    'Content-Type': 'application/json',
+    Authorization: `Bearer ${superAdminToken}`,
+    "Content-Type": "application/json",
   },
   body: JSON.stringify({
-    full_name: 'Jane Johnson',
-    organization_id: 'new-org-uuid'
-  })
+    full_name: "Jane Johnson",
+    organization_id: "new-org-uuid",
+  }),
 });
 ```
 
 ## Monitoring
 
 ### Logs
+
 ```bash
 # View function logs
 supabase functions logs manage-admin-users
@@ -188,6 +203,7 @@ supabase functions logs manage-admin-users --follow
 ```
 
 ### Metrics
+
 - Response time (included in each response)
 - Success/error rates
 - Request volume
@@ -196,6 +212,7 @@ supabase functions logs manage-admin-users --follow
 ## Related Functions
 
 This function works in conjunction with:
+
 - `manage-organizations`: Organization management
 - `get-user-profile`: User profile retrieval
 - `create-agent`: Agent user creation (for admins)
@@ -216,22 +233,27 @@ When modifying this function:
 ### Common Issues
 
 **Authentication Failed**
+
 - Verify JWT token is valid
 - Check user exists with super_admin role
 - Ensure proper Authorization header format
 
 **Validation Errors**
+
 - Check required fields are provided
 - Verify data types and formats
 - Ensure organization_id references valid organization
 
 **Database Errors**
+
 - Verify table structure matches requirements
 - Check RLS policies allow super admin access
 - Ensure proper indexes exist
 
 ### Debug Mode
+
 Add debug logging by setting environment variable:
+
 ```bash
 DEBUG=true
 ```

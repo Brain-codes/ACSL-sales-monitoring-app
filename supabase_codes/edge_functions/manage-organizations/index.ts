@@ -63,14 +63,21 @@ async function executeMainLogic(req: Request) {
   const startTime = Date.now();
 
   try {
-    // Initialize Supabase client
-    console.log("🔧 Initializing Supabase...");
+    // Initialize Supabase client with service role for admin operations
+    console.log("🔧 Initializing Supabase with service role...");
     const authHeader = req.headers.get("Authorization");
     console.log("🔑 Auth header present:", !!authHeader);
 
-    const supabase = createClient(
+    // Create service role client for admin operations (user creation, etc.)
+    const serviceSupabase = createClient(
       Deno.env.get("SUPABASE_URL") ?? "",
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
+    );
+
+    // Create user client for authentication verification
+    const userSupabase = createClient(
+      Deno.env.get("SUPABASE_URL") ?? "",
+      Deno.env.get("SUPABASE_ANON_KEY") ?? "",
       {
         global: {
           headers: {
@@ -80,15 +87,15 @@ async function executeMainLogic(req: Request) {
       }
     );
 
-    // Authenticate super admin
+    // Authenticate super admin using user client
     console.log("🔐 Authenticating super admin...");
-    const { userId, userRole } = await authenticateSuperAdmin(supabase);
+    const { userId, userRole } = await authenticateSuperAdmin(userSupabase);
     console.log(`✅ Authenticated super admin: ${userId}`);
 
-    // Handle the organization route
+    // Handle the organization route - pass both clients
     const result = await handleOrganizationRoute(
       req,
-      supabase,
+      serviceSupabase,
       userId,
       userRole
     );

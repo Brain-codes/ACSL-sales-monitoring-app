@@ -40,12 +40,7 @@ export async function handleAdminUserRoute(
         throw new Error("Admin User ID is required for update operations");
       }
       const updateData = await req.json();
-      return await updateAdminUser(
-        supabase,
-        adminUserId,
-        updateData,
-        userId
-      );
+      return await updateAdminUser(supabase, adminUserId, updateData, userId);
 
     case "DELETE":
       // Delete admin user
