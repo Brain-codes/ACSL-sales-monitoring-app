@@ -6,20 +6,19 @@ export interface ValidationResult {
 }
 
 export interface CreateOrganizationWithUserData {
-  // Organization fields
-  name: string;
-  partner_email: string;
-  contact_phone?: string;
-  address?: string;
-  city?: string;
-  state?: string;
-  country?: string;
-  description?: string;
-  status?: string;
+  // Organization fields - Only 8 fields as specified
+  partner_name: string; // Required - Partner name
+  branch: string; // Required - Branch
+  state: string; // Required - State
+  contact_person?: string; // Optional - Contact person
+  contact_phone?: string; // Optional - Contact phone number
+  alternative_phone?: string; // Optional - Alternative phone number
+  email?: string; // Optional - Email
+  address?: string; // Optional - Address
 
-  // Admin user fields
-  admin_full_name: string;
-  admin_email: string;
+  // Admin user fields (auto-generated from partner data)
+  admin_full_name?: string;
+  admin_email?: string;
 }
 
 export function validateOrganizationData(
@@ -35,43 +34,59 @@ export function validateOrganizationData(
     };
   }
 
-  // Required fields for creation
+  // Required fields for creation - Only 3 required fields
   if (operation === "create") {
     if (
-      !data.name ||
-      typeof data.name !== "string" ||
-      data.name.trim().length === 0
+      !data.partner_name ||
+      typeof data.partner_name !== "string" ||
+      data.partner_name.trim().length === 0
     ) {
-      errors.push("Organization name is required");
+      errors.push("Partner name is required");
     }
 
     if (
-      !data.partner_email ||
-      typeof data.partner_email !== "string" ||
-      data.partner_email.trim().length === 0
+      !data.branch ||
+      typeof data.branch !== "string" ||
+      data.branch.trim().length === 0
     ) {
-      errors.push("Partner email is required");
-    }
-
-    // Validate admin user fields for creation
-    if (
-      !data.admin_full_name ||
-      typeof data.admin_full_name !== "string" ||
-      data.admin_full_name.trim().length === 0
-    ) {
-      errors.push("Admin user full name is required");
+      errors.push("Branch is required");
     }
 
     if (
-      !data.admin_email ||
-      typeof data.admin_email !== "string" ||
-      data.admin_email.trim().length === 0
+      !data.state ||
+      typeof data.state !== "string" ||
+      data.state.trim().length === 0
     ) {
-      errors.push("Admin user email is required");
+      errors.push("State is required");
+    }
+
+    // Admin user fields are auto-generated, but if provided, they must be valid
+    if (data.admin_full_name !== undefined) {
+      if (
+        typeof data.admin_full_name !== "string" ||
+        data.admin_full_name.trim().length === 0
+      ) {
+        errors.push(
+          "Admin user full name must be a non-empty string if provided"
+        );
+      }
+    }
+
+    if (data.admin_email !== undefined) {
+      if (
+        typeof data.admin_email !== "string" ||
+        data.admin_email.trim().length === 0
+      ) {
+        errors.push("Admin user email must be a non-empty string if provided");
+      } else if (!isValidEmail(data.admin_email)) {
+        errors.push(
+          "Admin user email must be a valid email address if provided"
+        );
+      }
     }
   }
 
-  // Validate admin user fields for creation
+  // Validate admin user fields for creation (if provided)
   if (operation === "create") {
     if (data.admin_full_name && typeof data.admin_full_name === "string") {
       if (data.admin_full_name.trim().length === 0) {
@@ -112,28 +127,29 @@ export function validateOrganizationData(
       }
     }
   }
-  if (data.name !== undefined) {
-    if (typeof data.name !== "string") {
-      errors.push("Organization name must be a string");
-    } else if (data.name.trim().length === 0) {
-      errors.push("Organization name cannot be empty");
-    } else if (data.name.trim().length > 100) {
-      errors.push("Organization name cannot exceed 100 characters");
+  // Validate partner name
+  if (data.partner_name !== undefined) {
+    if (typeof data.partner_name !== "string") {
+      errors.push("Partner name must be a string");
+    } else if (data.partner_name.trim().length === 0) {
+      errors.push("Partner name cannot be empty");
+    } else if (data.partner_name.trim().length > 100) {
+      errors.push("Partner name cannot exceed 100 characters");
     }
   }
 
-  // Validate email if provided
-  if (data.partner_email !== undefined) {
-    if (typeof data.partner_email !== "string") {
-      errors.push("Partner email must be a string");
-    } else if (data.partner_email.trim().length === 0) {
-      errors.push("Partner email cannot be empty");
-    } else if (!isValidEmail(data.partner_email)) {
-      errors.push("Partner email must be a valid email address");
+  // Validate branch field
+  if (data.branch !== undefined) {
+    if (typeof data.branch !== "string") {
+      errors.push("Branch must be a string");
+    } else if (data.branch.trim().length === 0) {
+      errors.push("Branch cannot be empty");
+    } else if (data.branch.trim().length > 100) {
+      errors.push("Branch cannot exceed 100 characters");
     }
   }
 
-  // Validate contact phone if provided
+  // Validate contact phone - optional field
   if (data.contact_phone !== undefined && data.contact_phone !== null) {
     if (typeof data.contact_phone !== "string") {
       errors.push("Contact phone must be a string");
@@ -142,53 +158,50 @@ export function validateOrganizationData(
     }
   }
 
-  // Validate address fields if provided
-  if (data.address !== undefined && data.address !== null) {
-    if (typeof data.address !== "string") {
-      errors.push("Address must be a string");
-    } else if (data.address.length > 255) {
-      errors.push("Address cannot exceed 255 characters");
+  // Validate email - optional field
+  if (data.email !== undefined && data.email !== null) {
+    if (typeof data.email !== "string") {
+      errors.push("Email must be a string");
+    } else if (data.email.trim().length > 0 && !isValidEmail(data.email)) {
+      errors.push("Email must be a valid email address");
     }
   }
 
-  if (data.city !== undefined && data.city !== null) {
-    if (typeof data.city !== "string") {
-      errors.push("City must be a string");
-    } else if (data.city.length > 100) {
-      errors.push("City cannot exceed 100 characters");
+  // Validate contact person if provided
+  if (data.contact_person !== undefined && data.contact_person !== null) {
+    if (typeof data.contact_person !== "string") {
+      errors.push("Contact person must be a string");
+    } else if (data.contact_person.length > 100) {
+      errors.push("Contact person cannot exceed 100 characters");
     }
   }
 
-  if (data.state !== undefined && data.state !== null) {
+  // Validate alternative phone if provided
+  if (data.alternative_phone !== undefined && data.alternative_phone !== null) {
+    if (typeof data.alternative_phone !== "string") {
+      errors.push("Alternative phone must be a string");
+    } else if (data.alternative_phone.length > 20) {
+      errors.push("Alternative phone cannot exceed 20 characters");
+    }
+  }
+
+  // Validate state - required field
+  if (data.state !== undefined) {
     if (typeof data.state !== "string") {
       errors.push("State must be a string");
+    } else if (data.state.trim().length === 0 && operation === "create") {
+      errors.push("State cannot be empty");
     } else if (data.state.length > 100) {
       errors.push("State cannot exceed 100 characters");
     }
   }
 
-  if (data.country !== undefined && data.country !== null) {
-    if (typeof data.country !== "string") {
-      errors.push("Country must be a string");
-    } else if (data.country.length > 100) {
-      errors.push("Country cannot exceed 100 characters");
-    }
-  }
-
-  // Validate description if provided
-  if (data.description !== undefined && data.description !== null) {
-    if (typeof data.description !== "string") {
-      errors.push("Description must be a string");
-    } else if (data.description.length > 500) {
-      errors.push("Description cannot exceed 500 characters");
-    }
-  }
-
-  // Validate status if provided
-  if (data.status !== undefined) {
-    const validStatuses = ["active", "inactive", "suspended"];
-    if (!validStatuses.includes(data.status)) {
-      errors.push(`Status must be one of: ${validStatuses.join(", ")}`);
+  // Validate address - optional field
+  if (data.address !== undefined && data.address !== null) {
+    if (typeof data.address !== "string") {
+      errors.push("Address must be a string");
+    } else if (data.address.length > 255) {
+      errors.push("Address cannot exceed 255 characters");
     }
   }
 

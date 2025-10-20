@@ -18,12 +18,8 @@ export async function deleteAdminUser(supabase: any, adminUserId: string) {
   // Check if user has any dependent records (e.g., created sales, agents, etc.)
   const checks = await Promise.all([
     // Check for sales created by this admin
-    supabase
-      .from("sales")
-      .select("id")
-      .eq("created_by", adminUserId)
-      .limit(1),
-    
+    supabase.from("sales").select("id").eq("created_by", adminUserId).limit(1),
+
     // Check for agents created by this admin
     supabase
       .from("profiles")
@@ -37,18 +33,22 @@ export async function deleteAdminUser(supabase: any, adminUserId: string) {
 
   // Prepare warning messages for dependent records
   const warnings: string[] = [];
-  
+
   if (salesCheck.data && salesCheck.data.length > 0) {
     warnings.push("This admin has created sales records");
   }
-  
+
   if (agentsCheck.data && agentsCheck.data.length > 0) {
     warnings.push("This admin's organization has agent users");
   }
 
   // For now, we'll proceed with deletion but log warnings
   if (warnings.length > 0) {
-    console.warn(`⚠️ Warning: Deleting admin user with dependencies: ${warnings.join(", ")}`);
+    console.warn(
+      `⚠️ Warning: Deleting admin user with dependencies: ${warnings.join(
+        ", "
+      )}`
+    );
   }
 
   try {
@@ -60,11 +60,15 @@ export async function deleteAdminUser(supabase: any, adminUserId: string) {
       .eq("id", adminUserId);
 
     if (profileDeleteError) {
-      throw new Error(`Failed to delete user profile: ${profileDeleteError.message}`);
+      throw new Error(
+        `Failed to delete user profile: ${profileDeleteError.message}`
+      );
     }
 
     // Then delete from auth (this will cascade delete the user)
-    const { error: authDeleteError } = await supabase.auth.admin.deleteUser(adminUserId);
+    const { error: authDeleteError } = await supabase.auth.admin.deleteUser(
+      adminUserId
+    );
 
     if (authDeleteError) {
       console.warn(`Failed to delete auth user: ${authDeleteError.message}`);
@@ -82,7 +86,6 @@ export async function deleteAdminUser(supabase: any, adminUserId: string) {
       message: "Admin user deleted successfully",
       warnings: warnings.length > 0 ? warnings : undefined,
     };
-
   } catch (error) {
     console.error(`❌ Failed to delete admin user: ${error.message}`);
     throw error;

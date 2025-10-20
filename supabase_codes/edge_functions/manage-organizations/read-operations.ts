@@ -5,24 +5,24 @@
 export async function getOrganization(supabase: any, organizationId: string) {
   console.log(`🔍 Getting organization with admin user: ${organizationId}`);
 
-  // First get the organization
+  // First get the organization - using new 8-field structure
   const { data: organization, error } = await supabase
     .from("organizations")
     .select(
       `
       id,
-      name,
-      partner_email,
-      contact_phone,
-      address,
-      city,
+      partner_name,
+      branch,
       state,
-      country,
-      description,
-      status,
+      contact_person,
+      contact_phone,
+      alternative_phone,
+      email,
+      address,
       created_at,
       updated_at,
-      created_by
+      created_by,
+      updated_by
     `
     )
     .eq("id", organizationId)
@@ -89,26 +89,26 @@ export async function getOrganizations(
   let query = supabase.from("organizations").select(
     `
       id,
-      name,
-      partner_email,
-      contact_phone,
-      address,
-      city,
+      partner_name,
+      branch,
       state,
-      country,
-      description,
-      status,
+      contact_person,
+      contact_phone,
+      alternative_phone,
+      email,
+      address,
       created_at,
       updated_at,
-      created_by
+      created_by,
+      updated_by
     `,
     { count: "exact" }
   );
 
-  // Apply filters
+  // Apply filters - updated for new 8-field structure
   if (search) {
     query = query.or(
-      `name.ilike.%${search}%,partner_email.ilike.%${search}%,city.ilike.%${search}%`
+      `partner_name.ilike.%${search}%,branch.ilike.%${search}%,email.ilike.%${search}%,state.ilike.%${search}%`
     );
   }
 

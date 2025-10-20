@@ -54,7 +54,9 @@ export function validateAdminUserData(
     } else if (data.full_name.trim().length > 100) {
       errors.push("Full name cannot exceed 100 characters");
     } else if (!/^[a-zA-Z\s'-]+$/.test(data.full_name.trim())) {
-      errors.push("Full name can only contain letters, spaces, hyphens, and apostrophes");
+      errors.push(
+        "Full name can only contain letters, spaces, hyphens, and apostrophes"
+      );
     }
   }
 
@@ -93,7 +95,9 @@ export function validateAdminUserData(
     } else if (data.password.length > 128) {
       errors.push("Password cannot exceed 128 characters");
     } else if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(data.password)) {
-      errors.push("Password must contain at least one lowercase letter, one uppercase letter, and one number");
+      errors.push(
+        "Password must contain at least one lowercase letter, one uppercase letter, and one number"
+      );
     }
   }
 
@@ -107,15 +111,17 @@ export function validateAdminUserData(
   // Validate any unexpected fields
   const allowedFields = [
     "full_name",
-    "email", 
+    "email",
     "organization_id",
     "password",
-    "role"
+    "role",
   ];
-  
+
   const providedFields = Object.keys(data);
-  const unexpectedFields = providedFields.filter(field => !allowedFields.includes(field));
-  
+  const unexpectedFields = providedFields.filter(
+    (field) => !allowedFields.includes(field)
+  );
+
   if (unexpectedFields.length > 0) {
     errors.push(`Unexpected fields: ${unexpectedFields.join(", ")}`);
   }
@@ -134,6 +140,7 @@ function isValidEmail(email: string): boolean {
 
 // Helper function to validate UUID format
 function isValidUUID(uuid: string): boolean {
-  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  const uuidRegex =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
   return uuidRegex.test(uuid);
 }

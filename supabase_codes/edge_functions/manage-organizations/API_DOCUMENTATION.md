@@ -63,11 +63,14 @@ Authorization: Bearer YOUR_JWT_TOKEN
     {
       "id": "123e4567-e89b-12d3-a456-426614174000",
       "name": "Stove Solutions Nigeria",
+      "branch": "Lagos Main",
       "partner_email": "contact@stovesolutions.ng",
       "contact_phone": "+234123456789",
+      "state": "Lagos",
+      "contact_person": "John Doe",
+      "alternative_phone": "+234987654321",
       "address": "123 Business Street",
       "city": "Lagos",
-      "state": "Lagos",
       "country": "Nigeria",
       "description": "Leading stove distributor",
       "status": "active",
@@ -127,11 +130,14 @@ Authorization: Bearer YOUR_JWT_TOKEN
     "organization": {
       "id": "123e4567-e89b-12d3-a456-426614174000",
       "name": "Stove Solutions Nigeria",
+      "branch": "Lagos Main",
       "partner_email": "contact@stovesolutions.ng",
       "contact_phone": "+234123456789",
+      "state": "Lagos",
+      "contact_person": "John Doe",
+      "alternative_phone": "+234987654321",
       "address": "123 Business Street",
       "city": "Lagos",
-      "state": "Lagos",
       "country": "Nigeria",
       "description": "Leading stove distributor",
       "status": "active",
@@ -176,12 +182,15 @@ Create a new organization along with its admin user. This endpoint will:
 
 ```json
 {
-  "name": "New Organization Name", // Required: string, max 100 chars
+  "name": "New Organization Name", // Required: string, max 100 chars, Partner/Organization name
+  "branch": "Lagos Branch", // Required: string, max 100 chars, Branch name as string
   "partner_email": "contact@neworg.com", // Required: string, unique email
-  "contact_phone": "+234123456789", // Optional: string, max 20 chars
+  "contact_phone": "+234123456789", // Required: string, max 20 chars
+  "state": "Lagos", // Required: string, max 100 chars
+  "contact_person": "John Doe", // Optional: string, max 100 chars
+  "alternative_phone": "+234987654321", // Optional: string, max 20 chars
   "address": "123 Business Street", // Optional: string, max 255 chars
   "city": "Lagos", // Optional: string, max 100 chars
-  "state": "Lagos", // Optional: string, max 100 chars
   "country": "Nigeria", // Optional: string, defaults to "Nigeria"
   "description": "Organization description", // Optional: string, max 500 chars
   "status": "active", // Optional: "active", "inactive", "suspended"
@@ -197,7 +206,10 @@ Create a new organization along with its admin user. This endpoint will:
 ```json
 {
   "name": "Simple Organization",
+  "branch": "Main Branch",
   "partner_email": "contact@org.com",
+  "contact_phone": "+234123456789",
+  "state": "Lagos",
   "admin_full_name": "Admin Name",
   "admin_email": "admin@org.com"
 }
@@ -212,10 +224,12 @@ Content-Type: application/json
 
 {
   "name": "Green Energy Solutions",
+  "branch": "Abuja Main",
   "partner_email": "info@greenenergy.ng",
   "contact_phone": "+234555123456",
-  "city": "Abuja",
   "state": "FCT",
+  "contact_person": "Alice Johnson",
+  "city": "Abuja",
   "description": "Clean energy solutions provider",
   "admin_full_name": "Alice Johnson",
   "admin_email": "alice@greenenergy.ng"
@@ -231,11 +245,14 @@ Content-Type: application/json
     "organization": {
       "id": "456e7890-e89b-12d3-a456-426614174001",
       "name": "Green Energy Solutions",
+      "branch": "Abuja Main",
       "partner_email": "info@greenenergy.ng",
       "contact_phone": "+234555123456",
+      "state": "FCT",
+      "contact_person": "Alice Johnson",
+      "alternative_phone": null,
       "address": null,
       "city": "Abuja",
-      "state": "FCT",
       "country": "Nigeria",
       "description": "Clean energy solutions provider",
       "status": "active",
@@ -281,8 +298,11 @@ Update an existing organization and optionally its admin user. Supports updating
 {
   // Organization fields
   "name": "Updated Organization Name",
+  "branch": "Updated Branch Name",
   "partner_email": "new@email.com",
   "contact_phone": "+234999888777",
+  "contact_person": "New Contact Person",
+  "alternative_phone": "+234111222333",
   "address": "New Address",
   "city": "New City",
   "state": "New State",
@@ -305,6 +325,7 @@ Content-Type: application/json
 
 {
   "name": "Updated Stove Solutions",
+  "branch": "Lagos Main",
   "status": "inactive",
   "description": "Updated company description",
   "admin_email": "newadmin@stovesolutions.ng"
@@ -320,11 +341,14 @@ Content-Type: application/json
     "organization": {
       "id": "123e4567-e89b-12d3-a456-426614174000",
       "name": "Updated Stove Solutions",
+      "branch": "Lagos Main",
       "partner_email": "contact@stovesolutions.ng",
       "contact_phone": "+234123456789",
+      "state": "Lagos",
+      "contact_person": "John Doe",
+      "alternative_phone": "+234987654321",
       "address": "123 Business Street",
       "city": "Lagos",
-      "state": "Lagos",
       "country": "Nigeria",
       "description": "Updated company description",
       "status": "inactive",
@@ -443,12 +467,15 @@ Authorization: Bearer YOUR_JWT_TOKEN
 ```typescript
 interface Organization {
   id: string; // UUID, auto-generated
-  name: string; // Required, max 100 chars
+  name: string; // Required, max 100 chars, Partner/Organization name
+  branch: string; // Required, max 100 chars, Branch name as string
   partner_email: string; // Required, unique, valid email
-  contact_phone?: string; // Optional, max 20 chars
+  contact_phone: string; // Required, max 20 chars
+  state: string; // Required, max 100 chars
+  contact_person?: string; // Optional, max 100 chars
+  alternative_phone?: string; // Optional, max 20 chars
   address?: string; // Optional, max 255 chars
   city?: string; // Optional, max 100 chars
-  state?: string; // Optional, max 100 chars
   country?: string; // Optional, max 100 chars, defaults to "Nigeria"
   description?: string; // Optional, max 500 chars
   status: "active" | "inactive" | "suspended" | "deleted"; // Defaults to "active"
@@ -478,12 +505,15 @@ interface AdminUser {
 ```typescript
 interface CreateOrganizationRequest {
   // Organization fields
-  name: string; // Required, max 100 chars
+  name: string; // Required, max 100 chars, Partner/Organization name
+  branch: string; // Required, max 100 chars, Branch name as string
   partner_email: string; // Required, unique email
-  contact_phone?: string; // Optional, max 20 chars
+  contact_phone: string; // Required, max 20 chars
+  state: string; // Required, max 100 chars
+  contact_person?: string; // Optional, max 100 chars
+  alternative_phone?: string; // Optional, max 20 chars
   address?: string; // Optional, max 255 chars
   city?: string; // Optional, max 100 chars
-  state?: string; // Optional, max 100 chars
   country?: string; // Optional, defaults to "Nigeria"
   description?: string; // Optional, max 500 chars
   status?: "active" | "inactive" | "suspended"; // Optional, defaults to "active"
@@ -499,9 +529,12 @@ interface CreateOrganizationRequest {
 ```typescript
 interface UpdateOrganizationRequest {
   // Organization fields (all optional)
-  name?: string; // Max 100 chars
+  name?: string; // Max 100 chars, Partner/Organization name
+  branch?: string; // Max 100 chars, Branch name as string
   partner_email?: string; // Unique email
   contact_phone?: string; // Max 20 chars
+  contact_person?: string; // Max 100 chars
+  alternative_phone?: string; // Max 20 chars
   address?: string; // Max 255 chars
   city?: string; // Max 100 chars
   state?: string; // Max 100 chars
@@ -663,7 +696,10 @@ class OrganizationsAPI {
     // Validate required fields
     if (
       !data.name ||
+      !data.branch ||
       !data.partner_email ||
+      !data.contact_phone ||
+      !data.state ||
       !data.admin_full_name ||
       !data.admin_email
     ) {
@@ -727,7 +763,10 @@ const organizations = await api.getAllOrganizations({
 // Create organization with admin user
 const newOrg = await api.createOrganizationWithUser({
   name: "New Organization",
+  branch: "Lagos Main",
   partner_email: "contact@organization.com",
+  contact_phone: "+234123456789",
+  state: "Lagos",
   admin_full_name: "Admin Name",
   admin_email: "admin@organization.com",
   city: "Lagos",
@@ -787,7 +826,7 @@ class OrganizationsAPI {
       Map<String, dynamic> data) async {
 
     // Validate required fields
-    final requiredFields = ['name', 'partner_email', 'admin_full_name', 'admin_email'];
+    final requiredFields = ['name', 'branch', 'partner_email', 'contact_phone', 'state', 'admin_full_name', 'admin_email'];
     for (final field in requiredFields) {
       if (!data.containsKey(field) || data[field] == null || data[field].toString().isEmpty) {
         throw Exception('Missing required field: $field');
@@ -833,7 +872,10 @@ class OrganizationService {
     try {
       final result = await _api.createOrganizationWithUser({
         'name': 'Test Organization',
+        'branch': 'Lagos Main',
         'partner_email': 'partner@test.com',
+        'contact_phone': '+234123456789',
+        'state': 'Lagos',
         'admin_full_name': 'Admin User',
         'admin_email': 'admin@test.com',
         'city': 'Lagos',
@@ -908,7 +950,10 @@ If you're migrating from the previous version that didn't include user managemen
 ```json
 {
   "name": "Organization Name",
+  "branch": "Main Branch",
   "partner_email": "contact@org.com",
+  "contact_phone": "+234123456789",
+  "state": "Lagos",
   "admin_full_name": "Admin Full Name",
   "admin_email": "admin@org.com"
 }

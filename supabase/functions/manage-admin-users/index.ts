@@ -86,12 +86,7 @@ async function executeMainLogic(req: Request) {
     console.log(`✅ Authenticated super admin: ${userId}`);
 
     // Handle the admin user route
-    const result = await handleAdminUserRoute(
-      req,
-      supabase,
-      userId,
-      userRole
-    );
+    const result = await handleAdminUserRoute(req, supabase, userId, userRole);
 
     // Prepare response
     const responseTime = Date.now() - startTime;

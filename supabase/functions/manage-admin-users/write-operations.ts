@@ -17,16 +17,12 @@ export async function createAdminUser(
   // Check if organization exists
   const { data: organization, error: orgError } = await supabase
     .from("organizations")
-    .select("id, name, status")
+    .select("id, partner_name")
     .eq("id", data.organization_id)
     .single();
 
   if (orgError || !organization) {
     throw new Error(`Organization with ID ${data.organization_id} not found`);
-  }
-
-  if (organization.status !== "active") {
-    throw new Error(`Cannot create admin user for inactive organization: ${organization.name}`);
   }
 
   // Check if user with email already exists
@@ -41,16 +37,17 @@ export async function createAdminUser(
   }
 
   // Create user in Supabase Auth
-  const { data: authUser, error: authError } = await supabase.auth.admin.createUser({
-    email: data.email,
-    password: data.password || generateRandomPassword(),
-    email_confirm: true,
-    user_metadata: {
-      full_name: data.full_name,
-      role: "admin",
-      organization_id: data.organization_id,
-    },
-  });
+  const { data: authUser, error: authError } =
+    await supabase.auth.admin.createUser({
+      email: data.email,
+      password: data.password || generateRandomPassword(),
+      email_confirm: true,
+      user_metadata: {
+        full_name: data.full_name,
+        role: "admin",
+        organization_id: data.organization_id,
+      },
+    });
 
   if (authError) {
     throw new Error(`Failed to create auth user: ${authError.message}`);
@@ -70,7 +67,8 @@ export async function createAdminUser(
   const { data: newProfile, error: profileError } = await supabase
     .from("profiles")
     .insert([profileData])
-    .select(`
+    .select(
+      `
       id,
       full_name,
       email,
@@ -80,15 +78,17 @@ export async function createAdminUser(
       updated_at,
       organizations (
         id,
-        name,
-        partner_email,
-        contact_phone,
-        city,
+        partner_name,
+        branch,
         state,
-        country,
-        status
+        contact_person,
+        contact_phone,
+        alternative_phone,
+        email,
+        address
       )
-    `)
+    `
+    )
     .single();
 
   if (profileError) {
@@ -147,19 +147,18 @@ export async function updateAdminUser(
   }
 
   // Check if organization exists (if organization_id is being updated)
-  if (data.organization_id && data.organization_id !== existingUser.organization_id) {
+  if (
+    data.organization_id &&
+    data.organization_id !== existingUser.organization_id
+  ) {
     const { data: organization, error: orgError } = await supabase
       .from("organizations")
-      .select("id, name, status")
+      .select("id, partner_name")
       .eq("id", data.organization_id)
       .single();
 
     if (orgError || !organization) {
       throw new Error(`Organization with ID ${data.organization_id} not found`);
-    }
-
-    if (organization.status !== "active") {
-      throw new Error(`Cannot assign user to inactive organization: ${organization.name}`);
     }
   }
 
@@ -171,14 +170,16 @@ export async function updateAdminUser(
   // Only update provided fields
   if (data.full_name !== undefined) updateData.full_name = data.full_name;
   if (data.email !== undefined) updateData.email = data.email;
-  if (data.organization_id !== undefined) updateData.organization_id = data.organization_id;
+  if (data.organization_id !== undefined)
+    updateData.organization_id = data.organization_id;
 
   // Update profile
   const { data: updatedProfile, error: updateError } = await supabase
     .from("profiles")
     .update(updateData)
     .eq("id", adminUserId)
-    .select(`
+    .select(
+      `
       id,
       full_name,
       email,
@@ -188,15 +189,17 @@ export async function updateAdminUser(
       updated_at,
       organizations (
         id,
-        name,
-        partner_email,
-        contact_phone,
-        city,
+        partner_name,
+        branch,
         state,
-        country,
-        status
+        contact_person,
+        contact_phone,
+        alternative_phone,
+        email,
+        address
       )
-    `)
+    `
+    )
     .single();
 
   if (updateError) {
@@ -212,13 +215,16 @@ export async function updateAdminUser(
         user_metadata: {
           full_name: updateData.full_name || existingUser.full_name,
           role: "admin",
-          organization_id: updateData.organization_id || existingUser.organization_id,
+          organization_id:
+            updateData.organization_id || existingUser.organization_id,
         },
       }
     );
 
     if (authUpdateError) {
-      console.warn(`Failed to update auth user email: ${authUpdateError.message}`);
+      console.warn(
+        `Failed to update auth user email: ${authUpdateError.message}`
+      );
     }
   }
 
@@ -232,7 +238,8 @@ export async function updateAdminUser(
 
 // Helper function to generate random password
 function generateRandomPassword(): string {
-  const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*";
+  const charset =
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*";
   let password = "";
   for (let i = 0; i < 12; i++) {
     password += charset.charAt(Math.floor(Math.random() * charset.length));

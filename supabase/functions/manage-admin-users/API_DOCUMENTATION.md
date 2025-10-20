@@ -1,9 +1,11 @@
 # Admin Users Management API
 
 ## Overview
+
 This edge function provides a comprehensive API for super admins to manage admin users. It allows creating, reading, updating, and deleting admin users while enforcing proper authorization and validation.
 
 ## Authentication
+
 - **Required Role**: `super_admin`
 - **Authorization**: Bearer token in Authorization header
 - **Access Control**: Only super admins can access this endpoint
@@ -11,6 +13,7 @@ This edge function provides a comprehensive API for super admins to manage admin
 ## API Endpoints
 
 ### Base URL
+
 ```
 https://your-project.supabase.co/functions/v1/manage-admin-users
 ```
@@ -18,11 +21,13 @@ https://your-project.supabase.co/functions/v1/manage-admin-users
 ## Operations
 
 ### 1. Create Admin User
+
 **Endpoint**: `POST /manage-admin-users`
 
 Creates a new admin user and ties them to an organization.
 
 **Request Body**:
+
 ```json
 {
   "full_name": "John Doe",
@@ -33,6 +38,7 @@ Creates a new admin user and ties them to an organization.
 ```
 
 **Response**:
+
 ```json
 {
   "success": true,
@@ -61,11 +67,13 @@ Creates a new admin user and ties them to an organization.
 ```
 
 ### 2. Get All Admin Users
+
 **Endpoint**: `GET /manage-admin-users`
 
 Retrieves all admin users with pagination and filtering options.
 
 **Query Parameters**:
+
 - `page` (optional): Page number (default: 1)
 - `limit` (optional): Items per page (default: 20)
 - `organization_id` (optional): Filter by organization ID
@@ -75,6 +83,7 @@ Retrieves all admin users with pagination and filtering options.
 **Example**: `GET /manage-admin-users?page=1&limit=10&organization_id=123e4567-e89b-12d3-a456-426614174000`
 
 **Response**:
+
 ```json
 {
   "success": true,
@@ -112,11 +121,13 @@ Retrieves all admin users with pagination and filtering options.
 ```
 
 ### 3. Get Single Admin User
+
 **Endpoint**: `GET /manage-admin-users/{user_id}`
 
 Retrieves a specific admin user by ID.
 
 **Response**:
+
 ```json
 {
   "success": true,
@@ -144,11 +155,13 @@ Retrieves a specific admin user by ID.
 ```
 
 ### 4. Update Admin User
+
 **Endpoint**: `PUT /manage-admin-users/{user_id}` or `PATCH /manage-admin-users/{user_id}`
 
 Updates an existing admin user.
 
 **Request Body** (all fields optional):
+
 ```json
 {
   "full_name": "John Smith",
@@ -158,6 +171,7 @@ Updates an existing admin user.
 ```
 
 **Response**:
+
 ```json
 {
   "success": true,
@@ -185,11 +199,13 @@ Updates an existing admin user.
 ```
 
 ### 5. Delete Admin User
+
 **Endpoint**: `DELETE /manage-admin-users/{user_id}`
 
 Deletes an admin user (soft delete or hard delete based on configuration).
 
 **Response**:
+
 ```json
 {
   "success": true,
@@ -209,6 +225,7 @@ Deletes an admin user (soft delete or hard delete based on configuration).
 ## Error Responses
 
 ### 400 Bad Request
+
 ```json
 {
   "success": false,
@@ -219,6 +236,7 @@ Deletes an admin user (soft delete or hard delete based on configuration).
 ```
 
 ### 403 Forbidden
+
 ```json
 {
   "success": false,
@@ -229,6 +247,7 @@ Deletes an admin user (soft delete or hard delete based on configuration).
 ```
 
 ### 404 Not Found
+
 ```json
 {
   "success": false,
@@ -239,6 +258,7 @@ Deletes an admin user (soft delete or hard delete based on configuration).
 ```
 
 ### 408 Request Timeout
+
 ```json
 {
   "success": false,
@@ -249,6 +269,7 @@ Deletes an admin user (soft delete or hard delete based on configuration).
 ```
 
 ### 500 Internal Server Error
+
 ```json
 {
   "success": false,
@@ -261,6 +282,7 @@ Deletes an admin user (soft delete or hard delete based on configuration).
 ## Validation Rules
 
 ### Full Name
+
 - Required for creation
 - Must be a string
 - Cannot be empty
@@ -268,17 +290,20 @@ Deletes an admin user (soft delete or hard delete based on configuration).
 - Can only contain letters, spaces, hyphens, and apostrophes
 
 ### Email
+
 - Required for creation
 - Must be a valid email format
 - Maximum 255 characters
 - Must be unique across all users
 
 ### Organization ID
+
 - Required for creation
 - Must be a valid UUID format
 - Organization must exist and be active
 
 ### Password
+
 - Optional for creation (auto-generated if not provided)
 - Minimum 8 characters
 - Maximum 128 characters
@@ -296,6 +321,7 @@ Deletes an admin user (soft delete or hard delete based on configuration).
 ## Usage Examples
 
 ### Create Admin User with cURL
+
 ```bash
 curl -X POST "https://your-project.supabase.co/functions/v1/manage-admin-users" \
   -H "Authorization: Bearer your-jwt-token" \
@@ -308,12 +334,14 @@ curl -X POST "https://your-project.supabase.co/functions/v1/manage-admin-users" 
 ```
 
 ### Get Admin Users with Filters
+
 ```bash
 curl -X GET "https://your-project.supabase.co/functions/v1/manage-admin-users?organization_id=123e4567-e89b-12d3-a456-426614174000&page=1&limit=10" \
   -H "Authorization: Bearer your-jwt-token"
 ```
 
 ### Update Admin User
+
 ```bash
 curl -X PUT "https://your-project.supabase.co/functions/v1/manage-admin-users/user-uuid" \
   -H "Authorization: Bearer your-jwt-token" \
@@ -325,6 +353,7 @@ curl -X PUT "https://your-project.supabase.co/functions/v1/manage-admin-users/us
 ```
 
 ### Delete Admin User
+
 ```bash
 curl -X DELETE "https://your-project.supabase.co/functions/v1/manage-admin-users/user-uuid" \
   -H "Authorization: Bearer your-jwt-token"

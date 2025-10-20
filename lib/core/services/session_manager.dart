@@ -86,12 +86,29 @@ class SessionManager extends GetxService {
 
   String? get organizationName {
     final org = getOrganization();
-    return org?['name']?.toString();
+    // Try new field first, fallback to old field for backward compatibility
+    return org?['partner_name']?.toString() ?? org?['name']?.toString();
+  }
+
+  String? get partnerName {
+    final org = getOrganization();
+    return org?['partner_name']?.toString();
+  }
+
+  String? get organizationBranch {
+    final org = getOrganization();
+    return org?['branch']?.toString();
+  }
+
+  String? get organizationState {
+    final org = getOrganization();
+    return org?['state']?.toString();
   }
 
   String? get partnerEmail {
     final org = getOrganization();
-    return org?['partner_email']?.toString();
+    // Try new field first, fallback to old field for backward compatibility
+    return org?['email']?.toString() ?? org?['partner_email']?.toString();
   }
 
   String? get userEmail {

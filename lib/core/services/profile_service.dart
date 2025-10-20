@@ -26,9 +26,15 @@ class ProfileService extends GetxService {
             organization_id,
             organizations(
               id,
-              name,
-              created_at,
-              partner_email
+              partner_name,
+              branch,
+              state,
+              contact_person,
+              contact_phone,
+              alternative_phone,
+              email,
+              address,
+              created_at
             )
           ''').eq('id', userId).maybeSingle();
 
@@ -38,7 +44,8 @@ class ProfileService extends GetxService {
             response['organization_id'] != null) {
           final orgResponse = await _supabase
               .from('organizations')
-              .select('id, name, created_at, partner_email')
+              .select(
+                  'id, partner_name, branch, state, contact_person, contact_phone, alternative_phone, email, address, created_at')
               .eq('id', response['organization_id'])
               .maybeSingle();
 
@@ -94,9 +101,15 @@ class ProfileService extends GetxService {
             organization_id,
             organizations(
               id,
-              name,
-              created_at,
-              partner_email
+              partner_name,
+              branch,
+              state,
+              contact_person,
+              contact_phone,
+              alternative_phone,
+              email,
+              address,
+              created_at
             )
           ''').maybeSingle();
 

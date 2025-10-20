@@ -17,18 +17,12 @@ export async function createAdminUser(
   // Check if organization exists
   const { data: organization, error: orgError } = await supabase
     .from("organizations")
-    .select("id, name, status")
+    .select("id, partner_name")
     .eq("id", data.organization_id)
     .single();
 
   if (orgError || !organization) {
     throw new Error(`Organization with ID ${data.organization_id} not found`);
-  }
-
-  if (organization.status !== "active") {
-    throw new Error(
-      `Cannot create admin user for inactive organization: ${organization.name}`
-    );
   }
 
   // Check if user with email already exists
@@ -84,13 +78,14 @@ export async function createAdminUser(
       updated_at,
       organizations (
         id,
-        name,
-        partner_email,
-        contact_phone,
-        city,
+        partner_name,
+        branch,
         state,
-        country,
-        status
+        contact_person,
+        contact_phone,
+        alternative_phone,
+        email,
+        address
       )
     `
     )
@@ -158,18 +153,12 @@ export async function updateAdminUser(
   ) {
     const { data: organization, error: orgError } = await supabase
       .from("organizations")
-      .select("id, name, status")
+      .select("id, partner_name")
       .eq("id", data.organization_id)
       .single();
 
     if (orgError || !organization) {
       throw new Error(`Organization with ID ${data.organization_id} not found`);
-    }
-
-    if (organization.status !== "active") {
-      throw new Error(
-        `Cannot assign user to inactive organization: ${organization.name}`
-      );
     }
   }
 
@@ -200,13 +189,14 @@ export async function updateAdminUser(
       updated_at,
       organizations (
         id,
-        name,
-        partner_email,
-        contact_phone,
-        city,
+        partner_name,
+        branch,
         state,
-        country,
-        status
+        contact_person,
+        contact_phone,
+        alternative_phone,
+        email,
+        address
       )
     `
     )

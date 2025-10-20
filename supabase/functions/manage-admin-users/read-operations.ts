@@ -6,7 +6,8 @@ export async function getAdminUser(supabase: any, adminUserId: string) {
   // Fetch admin user with organization details
   const { data: adminUser, error } = await supabase
     .from("profiles")
-    .select(`
+    .select(
+      `
       id,
       full_name,
       email,
@@ -24,7 +25,8 @@ export async function getAdminUser(supabase: any, adminUserId: string) {
         country,
         status
       )
-    `)
+    `
+    )
     .eq("id", adminUserId)
     .eq("role", "admin")
     .single();
@@ -42,7 +44,10 @@ export async function getAdminUser(supabase: any, adminUserId: string) {
   };
 }
 
-export async function getAdminUsers(supabase: any, searchParams: URLSearchParams) {
+export async function getAdminUsers(
+  supabase: any,
+  searchParams: URLSearchParams
+) {
   console.log("📖 Fetching admin users...");
 
   // Parse pagination parameters
@@ -58,7 +63,8 @@ export async function getAdminUsers(supabase: any, searchParams: URLSearchParams
   // Build query
   let query = supabase
     .from("profiles")
-    .select(`
+    .select(
+      `
       id,
       full_name,
       email,
@@ -76,7 +82,8 @@ export async function getAdminUsers(supabase: any, searchParams: URLSearchParams
         country,
         status
       )
-    `)
+    `
+    )
     .eq("role", "admin")
     .order("created_at", { ascending: false });
 

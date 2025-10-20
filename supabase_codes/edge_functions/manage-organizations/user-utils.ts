@@ -66,7 +66,21 @@ export async function createUserInAuth(
   console.log(`👤 Creating user in auth for: ${userData.email}`);
 
   try {
-    // Create user in Supabase Auth
+    // Check if email already exists in profiles table
+    const { data: existingProfile, error: profileCheckError } = await supabase
+      .from("profiles")
+      .select("id, email")
+      .eq("email", userData.email)
+      .single();
+
+    if (existingProfile) {
+      throw new Error(
+        `User with email "${userData.email}" already exists in profiles`
+      );
+    }
+
+    // Create user in Supabase Auth using the passed supabase client (should have service role)
+    console.log("🔧 Using service role for user creation...");
     const { data: authUser, error: authError } =
       await supabase.auth.admin.createUser({
         email: userData.email,
@@ -81,6 +95,12 @@ export async function createUserInAuth(
       });
 
     if (authError) {
+      console.error("❌ Auth user creation failed:", {
+        message: authError.message,
+        details: authError,
+        code: authError.code,
+        status: authError.status,
+      });
       throw new Error(`Failed to create user in auth: ${authError.message}`);
     }
 
@@ -164,7 +184,7 @@ export async function sendWelcomeEmail(
   console.log(`📧 Sending welcome email to: ${userEmail}`);
 
   const apiUrl =
-    Deno.env.get("EMAIL_API_URL") ||
+    (globalThis as any).Deno?.env.get("EMAIL_API_URL") ||
     "https://atmosfair-node-service.vercel.app/api/email-send";
 
   // Prepare email data for the microservice
@@ -221,7 +241,7 @@ export async function sendWelcomeEmail(
 
     // For development/testing, you might want to return success
     // Remove this in production and let the error bubble up
-    if (Deno.env.get("ENVIRONMENT") === "development") {
+    if ((globalThis as any).Deno?.env.get("ENVIRONMENT") === "development") {
       console.warn("⚠️ Development mode: Simulating email success");
       return { status: true, message: "Email simulated in development mode" };
     }

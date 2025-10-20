@@ -1,21 +1,25 @@
 # Deployment Guide - Manage Admin Users Edge Function
 
 ## Overview
+
 This guide provides step-by-step instructions for deploying the `manage-admin-users` edge function to Supabase.
 
 ## Prerequisites
 
 1. **Supabase CLI installed**
+
    ```bash
    npm install -g supabase
    ```
 
 2. **Supabase project initialized**
+
    ```bash
    supabase init
    ```
 
 3. **Authenticated with Supabase**
+
    ```bash
    supabase login
    ```
@@ -28,6 +32,7 @@ This guide provides step-by-step instructions for deploying the `manage-admin-us
 ## Deployment Steps
 
 ### 1. Deploy the Edge Function
+
 ```bash
 # Navigate to your project root
 cd /path/to/your/project
@@ -40,6 +45,7 @@ supabase functions deploy manage-admin-users --project-ref YOUR_PROJECT_REF
 ```
 
 ### 2. Set Environment Variables
+
 Make sure your Supabase project has the following environment variables set:
 
 ```bash
@@ -50,6 +56,7 @@ SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 ```
 
 ### 3. Verify Deployment
+
 ```bash
 # Check function status
 supabase functions list
@@ -66,6 +73,7 @@ supabase functions logs manage-admin-users --follow
 ### 1. Test with cURL
 
 **Health Check (CORS preflight)**:
+
 ```bash
 curl -X OPTIONS "https://YOUR_PROJECT_REF.supabase.co/functions/v1/manage-admin-users" \
   -H "Origin: http://localhost:3000" \
@@ -73,6 +81,7 @@ curl -X OPTIONS "https://YOUR_PROJECT_REF.supabase.co/functions/v1/manage-admin-
 ```
 
 **Get Admin Users (requires super admin token)**:
+
 ```bash
 curl -X GET "https://YOUR_PROJECT_REF.supabase.co/functions/v1/manage-admin-users" \
   -H "Authorization: Bearer YOUR_SUPER_ADMIN_JWT_TOKEN" \
@@ -80,6 +89,7 @@ curl -X GET "https://YOUR_PROJECT_REF.supabase.co/functions/v1/manage-admin-user
 ```
 
 **Create Admin User**:
+
 ```bash
 curl -X POST "https://YOUR_PROJECT_REF.supabase.co/functions/v1/manage-admin-users" \
   -H "Authorization: Bearer YOUR_SUPER_ADMIN_JWT_TOKEN" \
@@ -153,9 +163,11 @@ Import the following collection for comprehensive testing:
 ## Database Requirements
 
 ### Required Tables
+
 Ensure the following tables exist with proper structure:
 
 1. **profiles table**:
+
 ```sql
 CREATE TABLE profiles (
   id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -169,6 +181,7 @@ CREATE TABLE profiles (
 ```
 
 2. **organizations table**:
+
 ```sql
 CREATE TABLE organizations (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -188,6 +201,7 @@ CREATE TABLE organizations (
 ```
 
 ### Required Indexes
+
 ```sql
 -- For performance optimization
 CREATE INDEX idx_profiles_role ON profiles(role);
@@ -197,6 +211,7 @@ CREATE INDEX idx_organizations_status ON organizations(status);
 ```
 
 ### Row Level Security (RLS)
+
 ```sql
 -- Enable RLS on tables
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
@@ -206,16 +221,16 @@ ALTER TABLE organizations ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Super admins can manage all profiles" ON profiles
   FOR ALL USING (
     EXISTS (
-      SELECT 1 FROM profiles p 
+      SELECT 1 FROM profiles p
       WHERE p.id = auth.uid() AND p.role = 'super_admin'
     )
   );
 
--- Policies for organizations table  
+-- Policies for organizations table
 CREATE POLICY "Super admins can manage all organizations" ON organizations
   FOR ALL USING (
     EXISTS (
-      SELECT 1 FROM profiles p 
+      SELECT 1 FROM profiles p
       WHERE p.id = auth.uid() AND p.role = 'super_admin'
     )
   );
@@ -224,7 +239,9 @@ CREATE POLICY "Super admins can manage all organizations" ON organizations
 ## Monitoring and Maintenance
 
 ### 1. Function Logs
+
 Monitor function execution:
+
 ```bash
 # View recent logs
 supabase functions logs manage-admin-users --limit 100
@@ -237,7 +254,9 @@ supabase functions logs manage-admin-users --follow
 ```
 
 ### 2. Performance Monitoring
+
 Key metrics to monitor:
+
 - Response time (included in function response)
 - Error rate
 - Request volume
@@ -246,18 +265,22 @@ Key metrics to monitor:
 ### 3. Common Issues and Solutions
 
 **Issue: Function timeout**
+
 - Solution: Optimize database queries, add proper indexes
 - Check: Response time in function logs
 
 **Issue: Authentication errors**
+
 - Solution: Verify JWT token and user role
 - Check: User exists in profiles table with super_admin role
 
 **Issue: Validation errors**
+
 - Solution: Check request payload format
 - Check: API documentation for required fields
 
 **Issue: Database constraint violations**
+
 - Solution: Verify organization exists and is active
 - Check: Email uniqueness constraints
 
@@ -296,6 +319,7 @@ supabase functions delete manage-admin-users --project-ref YOUR_PROJECT_REF
 ## Support
 
 For issues or questions:
+
 1. Check function logs: `supabase functions logs manage-admin-users`
 2. Verify database schema and permissions
 3. Test with Postman collection

@@ -23,7 +23,7 @@ class SignupController extends GetxController {
       final org = await _supabaseClient
           .from('organizations')
           .select('id')
-          .eq('partner_email', emailController.text)
+          .eq('email', emailController.text)
           .maybeSingle();
 
       if (org == null) {

@@ -1,0 +1,4 @@
+Sales Reference,Sales Date,Customer,State,Branch,Quantity,Downloaded by,Stove IDs,Sales Factory,Sales Rep,Partner ID,Partner Address,Partner Contact Person,Partner Contact Phone,Partner Alternative Phone,Partner Email
+TR-4591A1,9/18/2025,LAPO MFB,Cross River,OBUBRA,40,ACSL Admin,"101034734, 101034900, 101034756, 101034823",Asaba,Ejiro Emeotu,9CF111,Mile 1 park by former first bank obubra,ANIEFIOK UDO,7046023589,N/A,N/A
+TR-4592B2,9/19/2025,FIRST BANK PLC,Lagos,IKEJA,25,ACSL Admin,"101034945, 101034987, 101035012",Lagos,John Smith,9CF112,Plot 123 Allen Avenue Ikeja,MARY JOHNSON,8034567890,8023456789,mary.johnson@firstbank.com
+TR-4593C3,9/20/2025,ZENITH BANK,Abuja,GARKI,30,ACSL Admin,"101035088, 101035134, 101035167, 101035198, 101035223",Abuja,Peter Okafor,9CF113,Central Business District Garki,DAVID WILSON,9034567890,N/A,david.wilson@zenithbank.com
