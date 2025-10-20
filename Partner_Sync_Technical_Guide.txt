@@ -1,0 +1,456 @@
+PARTNER SYNC SYSTEM - TECHNICAL IMPLEMENTATION GUIDE FOR REACT/TYPESCRIPT
+
+OVERVIEW
+========
+This guide provides code examples for integrating with the Partner Sync API using React/TypeScript. These are examples only - adapt them to your specific application structure.
+
+ENVIRONMENT SETUP
+=================
+Store your credentials in environment variables (.env file):
+
+REACT_APP_SYNC_API_URL=https://your-project-id.supabase.co/functions/v1/external-csv-sync
+REACT_APP_SYNC_TOKEN=your_token_here
+REACT_APP_SYNC_SECRET=your_secret_here
+REACT_APP_SYNC_APP_NAME=your_app_name_here
+
+BASIC API SERVICE CLASS
+=======================
+Create a service class to handle API calls:
+
+```typescript
+// services/PartnerSyncService.ts
+export interface Partner {
+  partner_id: string;
+  partner_name: string;
+  email?: string;
+  contact_person?: string;
+  contact_phone?: string;
+  alternative_phone?: string;
+  address?: string;
+  state?: string;
+  branch?: string;
+  stove_ids?: string[];
+}
+
+export interface SyncResponse {
+  success: boolean;
+  message: string;
+  summary?: {
+    total_processed: number;
+    successful: number;
+    failed: number;
+  };
+  results?: Array<{
+    partner_id: string;
+    status: 'success' | 'error';
+    error?: string;
+    result?: any;
+  }>;
+}
+
+export class PartnerSyncService {
+  private readonly apiUrl = process.env.REACT_APP_SYNC_API_URL!;
+  private readonly credentials = {
+    token: process.env.REACT_APP_SYNC_TOKEN!,
+    secret_key: process.env.REACT_APP_SYNC_SECRET!,
+    application_name: process.env.REACT_APP_SYNC_APP_NAME!,
+  };
+
+  // Convert partner objects to CSV string
+  private partnersToCSV(partners: Partner[]): string {
+    if (partners.length === 0) return '';
+
+    // CSV Header
+    const headers = [
+      'partner_id', 'partner_name', 'email', 'contact_person',
+      'contact_phone', 'alternative_phone', 'address', 'state', 
+      'branch', 'stove_ids'
+    ];
+
+    // CSV Rows
+    const rows = partners.map(partner => [
+      partner.partner_id || '',
+      partner.partner_name || '',
+      partner.email || '',
+      partner.contact_person || '',
+      partner.contact_phone || '',
+      partner.alternative_phone || '',
+      partner.address || '',
+      partner.state || '',
+      partner.branch || '',
+      partner.stove_ids ? partner.stove_ids.join(';') : ''
+    ]);
+
+    // Combine header and rows
+    const csvContent = [headers, ...rows]
+      .map(row => row.map(field => `"${field}"`).join(','))
+      .join('\n');
+
+    return csvContent;
+  }
+
+  // Main sync method
+  async syncPartners(partners: Partner[]): Promise<SyncResponse> {
+    try {
+      if (partners.length === 0) {
+        throw new Error('No partners to sync');
+      }
+
+      const csvData = this.partnersToCSV(partners);
+      
+      const response = await fetch(this.apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          ...this.credentials,
+          csv_data: csvData,
+          origin_url: window.location.origin,
+        }),
+      });
+
+      const result: SyncResponse = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.message || 'Sync failed');
+      }
+
+      return result;
+    } catch (error) {
+      console.error('Partner sync error:', error);
+      throw error;
+    }
+  }
+
+  // Sync partners with status filter
+  async syncCompletedPartners(allPartners: Partner[]): Promise<SyncResponse> {
+    // Example: Filter partners that are ready for sync
+    // Adapt this logic to your status tracking system
+    const completedPartners = allPartners.filter(partner => {
+      // Add your completion criteria here
+      return partner.partner_id && partner.partner_name;
+    });
+
+    return this.syncPartners(completedPartners);
+  }
+
+  // Batch sync for large datasets
+  async syncPartnersInBatches(
+    partners: Partner[], 
+    batchSize: number = 200
+  ): Promise<SyncResponse[]> {
+    const results: SyncResponse[] = [];
+    
+    for (let i = 0; i < partners.length; i += batchSize) {
+      const batch = partners.slice(i, i + batchSize);
+      console.log(`Syncing batch ${Math.floor(i/batchSize) + 1} of ${Math.ceil(partners.length/batchSize)}`);
+      
+      try {
+        const result = await this.syncPartners(batch);
+        results.push(result);
+        
+        // Add delay between batches to avoid overwhelming the API
+        if (i + batchSize < partners.length) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+      } catch (error) {
+        console.error(`Batch ${Math.floor(i/batchSize) + 1} failed:`, error);
+        results.push({
+          success: false,
+          message: `Batch failed: ${error.message}`,
+        });
+      }
+    }
+    
+    return results;
+  }
+}
+```
+
+REACT COMPONENT EXAMPLE
+========================
+```typescript
+// components/PartnerSyncButton.tsx
+import React, { useState } from 'react';
+import { PartnerSyncService, Partner, SyncResponse } from '../services/PartnerSyncService';
+
+interface Props {
+  partners: Partner[];
+  onSyncComplete?: (result: SyncResponse) => void;
+}
+
+export const PartnerSyncButton: React.FC<Props> = ({ partners, onSyncComplete }) => {
+  const [isLoading, setIsLoading] = useState(false);
+  const [lastResult, setLastResult] = useState<SyncResponse | null>(null);
+  const syncService = new PartnerSyncService();
+
+  const handleSync = async () => {
+    setIsLoading(true);
+    try {
+      let result: SyncResponse;
+      
+      if (partners.length > 500) {
+        // Large dataset - use batch sync
+        const batchResults = await syncService.syncPartnersInBatches(partners, 200);
+        
+        // Combine batch results
+        const totalProcessed = batchResults.reduce((sum, r) => sum + (r.summary?.total_processed || 0), 0);
+        const totalSuccessful = batchResults.reduce((sum, r) => sum + (r.summary?.successful || 0), 0);
+        const totalFailed = batchResults.reduce((sum, r) => sum + (r.summary?.failed || 0), 0);
+        
+        result = {
+          success: batchResults.every(r => r.success),
+          message: `Batch sync completed. ${totalSuccessful} successful, ${totalFailed} failed.`,
+          summary: {
+            total_processed: totalProcessed,
+            successful: totalSuccessful,
+            failed: totalFailed,
+          }
+        };
+      } else {
+        // Small dataset - single sync
+        result = await syncService.syncPartners(partners);
+      }
+
+      setLastResult(result);
+      onSyncComplete?.(result);
+
+      if (result.success) {
+        alert(`Sync successful! ${result.summary?.successful} partners synced.`);
+      } else {
+        alert(`Sync failed: ${result.message}`);
+      }
+    } catch (error) {
+      const errorResult: SyncResponse = {
+        success: false,
+        message: error.message || 'Sync failed unexpectedly',
+      };
+      setLastResult(errorResult);
+      alert(`Sync error: ${error.message}`);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <div>
+      <button 
+        onClick={handleSync} 
+        disabled={isLoading || partners.length === 0}
+        style={{
+          padding: '12px 24px',
+          backgroundColor: isLoading ? '#gray' : '#007bff',
+          color: 'white',
+          border: 'none',
+          borderRadius: '4px',
+          cursor: isLoading ? 'not-allowed' : 'pointer',
+        }}
+      >
+        {isLoading ? 'Syncing...' : `Sync ${partners.length} Partners`}
+      </button>
+
+      {lastResult && (
+        <div style={{ marginTop: '16px', padding: '12px', border: '1px solid #ddd' }}>
+          <h4>Last Sync Result:</h4>
+          <p><strong>Status:</strong> {lastResult.success ? 'Success' : 'Failed'}</p>
+          <p><strong>Message:</strong> {lastResult.message}</p>
+          {lastResult.summary && (
+            <div>
+              <p><strong>Total Processed:</strong> {lastResult.summary.total_processed}</p>
+              <p><strong>Successful:</strong> {lastResult.summary.successful}</p>
+              <p><strong>Failed:</strong> {lastResult.summary.failed}</p>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+```
+
+DATA FETCHING EXAMPLE
+=====================
+```typescript
+// hooks/usePartnerData.ts
+import { useState, useEffect } from 'react';
+import { Partner } from '../services/PartnerSyncService';
+
+export const usePartnerData = () => {
+  const [partners, setPartners] = useState<Partner[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadPartners();
+  }, []);
+
+  const loadPartners = async () => {
+    try {
+      setLoading(true);
+      
+      // Example: Fetch from your existing API
+      const response = await fetch('/api/partners');
+      const data = await response.json();
+      
+      // Transform your data to match Partner interface
+      const transformedPartners: Partner[] = data.map((item: any) => ({
+        partner_id: item.id || item.partner_code,
+        partner_name: item.name || item.company_name,
+        email: item.email_address || item.contact_email,
+        contact_person: item.contact_name || item.representative,
+        contact_phone: item.phone || item.primary_phone,
+        alternative_phone: item.alt_phone || item.secondary_phone,
+        address: item.address || item.location,
+        state: item.state || item.region,
+        branch: item.branch || item.office || 'Main Branch',
+        stove_ids: item.stove_serial_numbers || [],
+      }));
+
+      setPartners(transformedPartners);
+    } catch (error) {
+      console.error('Failed to load partners:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Filter partners by completion status
+  const getCompletedPartners = () => {
+    return partners.filter(partner => {
+      // Add your completion criteria
+      return partner.partner_id && 
+             partner.partner_name && 
+             partner.email; // Example criteria
+    });
+  };
+
+  // Get partners updated since last sync
+  const getUpdatedPartners = (lastSyncDate: Date) => {
+    return partners.filter(partner => {
+      // This assumes you track update timestamps
+      // Adapt to your data structure
+      return true; // Implement your logic here
+    });
+  };
+
+  return {
+    partners,
+    loading,
+    loadPartners,
+    getCompletedPartners,
+    getUpdatedPartners,
+  };
+};
+```
+
+MAIN APP INTEGRATION
+====================
+```typescript
+// App.tsx or your main component
+import React from 'react';
+import { PartnerSyncButton } from './components/PartnerSyncButton';
+import { usePartnerData } from './hooks/usePartnerData';
+
+export const App: React.FC = () => {
+  const { partners, loading, getCompletedPartners } = usePartnerData();
+
+  const handleSyncComplete = (result) => {
+    console.log('Sync completed:', result);
+    
+    // You can update UI, show notifications, etc.
+    if (result.success) {
+      // Maybe refresh your local data
+      // Maybe update sync status in your database
+      // Maybe show a success notification
+    }
+  };
+
+  if (loading) {
+    return <div>Loading partners...</div>;
+  }
+
+  const completedPartners = getCompletedPartners();
+
+  return (
+    <div>
+      <h1>Partner Management</h1>
+      
+      <div>
+        <p>Total Partners: {partners.length}</p>
+        <p>Ready to Sync: {completedPartners.length}</p>
+      </div>
+
+      <PartnerSyncButton 
+        partners={completedPartners}
+        onSyncComplete={handleSyncComplete}
+      />
+
+      {/* Rest of your app */}
+    </div>
+  );
+};
+```
+
+ERROR HANDLING STRATEGIES
+=========================
+```typescript
+// utils/errorHandler.ts
+export class SyncErrorHandler {
+  static handleSyncError(error: any, context: string = 'sync') {
+    console.error(`${context} error:`, error);
+    
+    if (error.message?.includes('Invalid token')) {
+      return 'Authentication failed. Please check your credentials.';
+    }
+    
+    if (error.message?.includes('origin not allowed')) {
+      return 'Your website is not authorized. Contact support to add your domain.';
+    }
+    
+    if (error.message?.includes('partner_id')) {
+      return 'Some partners are missing required Partner ID. Please check your data.';
+    }
+    
+    if (error.message?.includes('Network')) {
+      return 'Network error. Please check your internet connection and try again.';
+    }
+    
+    return `Sync failed: ${error.message || 'Unknown error occurred'}`;
+  }
+  
+  static shouldRetry(error: any): boolean {
+    // Retry for network errors, not for authentication errors
+    return error.message?.includes('Network') || 
+           error.message?.includes('timeout') ||
+           error.status >= 500;
+  }
+}
+```
+
+TESTING YOUR INTEGRATION
+========================
+1. Start with environment variables properly set
+2. Test with 2-3 sample partners first
+3. Verify data appears in the target system
+4. Test error scenarios (invalid credentials, malformed data)
+5. Test with larger datasets gradually
+6. Test batch processing for 1000+ partners
+
+PERFORMANCE CONSIDERATIONS
+==========================
+- Use batch processing for datasets over 500 partners
+- Add delays between batches to avoid rate limiting
+- Show progress indicators for large syncs
+- Consider syncing only changed data vs full database
+- Cache credentials and reuse service instances
+- Handle timeouts gracefully for large datasets
+
+SECURITY NOTES
+==============
+- Never hardcode credentials in your source code
+- Use environment variables or secure config management
+- Validate data before sending to avoid exposing sensitive information
+- Log sync activities but not sensitive data
+- Consider encryption for data in transit (HTTPS is used automatically)
+
+Remember: These are example implementations. Adapt them to your specific application architecture, data structure, and business requirements.
