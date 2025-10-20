@@ -1,0 +1,169 @@
+PARTNER DATA SYNCHRONIZATION SYSTEM - USER GUIDE
+
+OVERVIEW
+========
+This system allows your application to automatically send partner/organization data to our Stove Transaction database. Instead of manually exporting and importing data, you can now click a button and everything syncs automatically.
+
+WHAT YOU NEED TO GET STARTED
+============================
+1. A button in your application for "Sync Partners" or "Send Data"
+2. The security credentials we will provide to you:
+   - Token (we provide this)
+   - Secret Key (we provide this) 
+   - Application Name (we provide this)
+3. Your website URL (you provide this to us)
+
+HOW IT WORKS
+============
+When someone clicks your sync button, your system will:
+1. Collect all partner data from your database
+2. Format it as CSV data
+3. Send it to our secure API
+4. Receive confirmation of what was processed
+
+PREPARING YOUR DATA
+==================
+Before you can sync, you need to decide:
+
+OPTION 1 - Sync Only Completed Records
+If you track status in your system, only sync partners marked as "completed" or "ready". This prevents sending incomplete data.
+
+OPTION 2 - Sync All Partners
+Send your entire partner database. We will create new records or update existing ones based on Partner ID.
+
+HANDLING LARGE DATASETS
+=======================
+Our system can handle:
+- Small batches: 50-100 partners per sync (recommended)
+- Medium batches: 200-500 partners per sync (acceptable)
+- Large batches: 1000+ partners per sync (possible but slower)
+
+If you have thousands of partners, consider:
+- Syncing in smaller batches
+- Syncing only new/updated partners since last sync
+- Running sync during off-peak hours
+
+REQUIRED PARTNER INFORMATION
+============================
+Each partner record MUST include:
+- Partner ID (your unique identifier for this partner)
+- Partner Name (company or organization name)
+
+OPTIONAL PARTNER INFORMATION
+============================
+You can also include:
+- Email address
+- Contact person name
+- Phone numbers (primary and alternative)
+- Physical address
+- State/Region
+- Branch/Office name
+- Stove IDs (serial numbers, separated by semicolons if multiple)
+
+SUPPORTED DATA FORMATS
+=====================
+Your CSV data can use different column names. We understand:
+
+For Partner ID: partner_id, partnerid, partner_code, id, code
+For Partner Name: partner_name, partnername, name, organization_name
+For Email: email, email_address, partner_email
+For Contact Person: contact_person, contactperson, contact_name
+For Phone: contact_phone, phone, primary_phone
+For Address: address, full_address, location
+For State: state, region, province
+For Branch: branch, branch_name, office
+For Stove IDs: stove_ids, stoveids, serial_numbers
+
+EXAMPLE CSV FORMAT
+==================
+partner_id,partner_name,email,contact_phone,stove_ids
+COMP001,ABC Company,contact@abc.com,+1234567890,STV001;STV002
+CORP002,XYZ Corporation,info@xyz.com,+0987654321,STV003
+
+WHAT HAPPENS DURING SYNC
+========================
+1. Your button triggers the sync process
+2. We verify your credentials for security
+3. We process each partner in your CSV data
+4. For each partner, we either:
+   - Create a new record (if Partner ID doesn't exist)
+   - Update existing record (if Partner ID already exists)
+5. We process any Stove IDs associated with each partner
+6. We send you a detailed response
+
+RESPONSE AFTER SYNC
+===================
+You will receive a response telling you:
+- How many partners were processed successfully
+- How many failed (and why they failed)
+- Details about each partner (created vs updated)
+- Details about stove IDs (new vs existing)
+
+EXAMPLE SUCCESS RESPONSE
+========================
+Success: true
+Message: CSV synchronization completed. 3 successful, 0 failed.
+Total processed: 3 partners
+Successful: 3 partners
+Failed: 0 partners
+
+For each partner:
+- Partner ID: COMP001
+- Status: Success
+- Action: Created new record
+- Stove IDs: 2 processed, 2 created, 0 skipped
+
+EXAMPLE ERROR SCENARIOS
+======================
+- "Invalid credentials" = Check your token, secret key, or application name
+- "Partner ID missing" = Make sure every row has a valid Partner ID
+- "Request origin not allowed" = Your website URL needs to be approved
+- "CSV format error" = Check your CSV data format
+
+SECURITY FEATURES
+=================
+- All requests must include valid credentials
+- Your website URL is verified before processing
+- All API calls are logged and monitored
+- Credentials can be revoked if compromised
+
+GETTING YOUR CREDENTIALS
+========================
+Contact us to receive:
+1. Your unique Token
+2. Your Secret Key  
+3. Your Application Name
+4. Instructions for adding your website URL to our approved list
+
+TESTING YOUR INTEGRATION
+========================
+1. Start with a small test batch (2-3 partners)
+2. Verify the data appears correctly in our system
+3. Test error scenarios (invalid credentials, malformed data)
+4. Gradually increase batch sizes to find your optimal sync size
+
+TROUBLESHOOTING
+===============
+If sync fails:
+1. Check your internet connection
+2. Verify all credentials are correct and not expired
+3. Ensure your CSV data includes required fields
+4. Contact us if errors persist
+
+BEST PRACTICES
+==============
+- Sync during low-traffic periods
+- Keep batch sizes reasonable (under 500 partners)
+- Always verify sync results before considering it complete
+- Maintain backups of your data before large syncs
+- Test thoroughly in development before production use
+
+SUPPORT
+=======
+For technical support or credential requests, contact us with:
+- Your application name
+- Description of the issue
+- Sample data that's failing (remove sensitive information)
+- Error messages you're receiving
+
+This system is designed to make partner data synchronization simple and secure. Follow these guidelines and your integration should work smoothly.

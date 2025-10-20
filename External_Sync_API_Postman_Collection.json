@@ -1,0 +1,184 @@
+{
+  "info": {
+    "name": "Stove Transaction External Sync API",
+    "description": "External API for synchronizing organization and stove ID data with Stove Transaction System",
+    "version": "1.0.0",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "https://your-project-id.supabase.co/functions/v1",
+      "description": "Replace 'your-project-id' with your actual Supabase project ID"
+    },
+    {
+      "key": "token",
+      "value": "test-token-12345",
+      "description": "External application token (replace with your actual token)"
+    },
+    {
+      "key": "secret_key",
+      "value": "test-secret-67890",
+      "description": "External application secret key (replace with your actual secret)"
+    },
+    {
+      "key": "application_name",
+      "value": "Test External App",
+      "description": "Name of your external application"
+    }
+  ],
+  "item": [
+    {
+      "name": "External Sync - Single Organization",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{supabase_anon_key}}",
+            "description": "Your Supabase anon key"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"token\": \"{{token}}\",\n  \"secret_key\": \"{{secret_key}}\",\n  \"application_name\": \"{{application_name}}\",\n  \"organization_data\": {\n    \"partner_id\": \"ACME001\",\n    \"partner_name\": \"ACME Corporation\",\n    \"email\": \"contact@acme.com\",\n    \"contact_person\": \"John Smith\",\n    \"contact_phone\": \"+1234567890\",\n    \"alternative_phone\": \"+0987654321\",\n    \"address\": \"123 Business St, City, State\",\n    \"state\": \"California\",\n    \"branch\": \"Main Office\"\n  },\n  \"stove_ids\": [\"STV001\", \"STV002\", \"STV003\"],\n  \"origin_url\": \"https://your-app.com\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/external-sync",
+          "host": ["{{base_url}}"],
+          "path": ["external-sync"]
+        },
+        "description": "Sync a single organization with stove IDs using the external sync API"
+      },
+      "response": []
+    },
+    {
+      "name": "External CSV Sync - Multiple Organizations",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{supabase_anon_key}}",
+            "description": "Your Supabase anon key"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"token\": \"{{token}}\",\n  \"secret_key\": \"{{secret_key}}\",\n  \"application_name\": \"{{application_name}}\",\n  \"csv_data\": \"partner_id,partner_name,email,contact_person,contact_phone,address,state,stove_ids\\nACME001,ACME Corporation,contact@acme.com,John Smith,+1234567890,123 Business St,California,STV001;STV002;STV003\\nTECH002,Tech Solutions,info@techsol.com,Jane Doe,+1987654321,456 Tech Ave,New York,STV004;STV005\\nMFG003,Manufacturing Co,sales@mfg.com,Bob Johnson,+1122334455,789 Industry Rd,Texas,STV006\",\n  \"origin_url\": \"https://your-app.com\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/external-csv-sync",
+          "host": ["{{base_url}}"],
+          "path": ["external-csv-sync"]
+        },
+        "description": "Sync multiple organizations using CSV data with the external sync API"
+      },
+      "response": []
+    },
+    {
+      "name": "External CSV Sync - Flexible Format",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{supabase_anon_key}}",
+            "description": "Your Supabase anon key"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"token\": \"{{token}}\",\n  \"secret_key\": \"{{secret_key}}\",\n  \"application_name\": \"{{application_name}}\",\n  \"csv_data\": \"name,id,phone,email,location,stoveids,extra_field\\nFlexible Corp,FLEX001,+1555123456,flex@example.com,123 Flex St,STV100;STV101,extra_data\\nAdaptive Inc,ADAPT002,+1555987654,adapt@example.com,456 Adaptive Ave,STV102,more_data\",\n  \"origin_url\": \"https://your-app.com\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/external-csv-sync",
+          "host": ["{{base_url}}"],
+          "path": ["external-csv-sync"]
+        },
+        "description": "Test CSV sync with different column names and order (name=partner_name, id=partner_id, etc.)"
+      },
+      "response": []
+    },
+    {
+      "name": "Test - Invalid Token",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{supabase_anon_key}}",
+            "description": "Your Supabase anon key"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"token\": \"invalid-token\",\n  \"secret_key\": \"invalid-secret\",\n  \"application_name\": \"Invalid App\",\n  \"organization_data\": {\n    \"partner_id\": \"TEST001\",\n    \"partner_name\": \"Test Organization\"\n  }\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/external-sync",
+          "host": ["{{base_url}}"],
+          "path": ["external-sync"]
+        },
+        "description": "Test authentication failure with invalid credentials"
+      },
+      "response": []
+    },
+    {
+      "name": "Test - Missing Required Fields",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{supabase_anon_key}}",
+            "description": "Your Supabase anon key"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"token\": \"{{token}}\",\n  \"secret_key\": \"{{secret_key}}\",\n  \"application_name\": \"{{application_name}}\",\n  \"organization_data\": {\n    \"partner_name\": \"Test Organization Without ID\"\n  }\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/external-sync",
+          "host": ["{{base_url}}"],
+          "path": ["external-sync"]
+        },
+        "description": "Test validation with missing required fields (partner_id)"
+      },
+      "response": []
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// You can add global pre-request scripts here",
+          "// For example, to set dynamic timestamps or generate test data"
+        ]
+      }
+    }
+  ]
+}
