@@ -5,10 +5,12 @@
 The `get-sales-advanced` endpoint now supports two response formats:
 
 ### Format 1 (Clara's Format - Default)
+
 **Usage**: External API consumers, Clara's team
 **Fields**: Standardized field names matching Clara's requirements
 
 ### Format 2 (Database Format)
+
 **Usage**: Flutter app and internal systems
 **Fields**: Current database field structure
 
@@ -29,6 +31,7 @@ curl -X POST "YOUR_SUPABASE_URL/functions/v1/get-sales-advanced" \
 ```
 
 **Expected Response Structure:**
+
 ```json
 {
   "success": true,
@@ -72,6 +75,7 @@ curl -X POST "YOUR_SUPABASE_URL/functions/v1/get-sales-advanced" \
 ```
 
 **Expected Response Structure:**
+
 ```json
 {
   "success": true,
@@ -118,6 +122,7 @@ curl -X POST "YOUR_SUPABASE_URL/functions/v1/get-sales-advanced" \
 ## Flutter App Integration ✅
 
 The Flutter app now has a new method `fetchSalesAdvanced()` that:
+
 - Automatically uses `responseFormat: "format2"`
 - Provides more filtering options than the basic `fetchSales()`
 - Returns the familiar database format structure
@@ -141,7 +146,7 @@ if (result.success) {
   final paginatedSales = result.data!;
   print("Response format: ${paginatedSales.responseFormat}"); // Should print "format2"
   print("Sales count: ${paginatedSales.sales.length}");
-  
+
   // Use the sales data as normal
   for (final sale in paginatedSales.sales) {
     print("Stove Serial: ${sale.stoveSerialNo}");
@@ -154,40 +159,43 @@ if (result.success) {
 ## Migration Strategy
 
 ### Phase 1: ✅ Complete
+
 - [x] Dual format support implemented in backend
 - [x] Format 1 set as default for new consumers
 - [x] Format 2 available for existing systems
 - [x] Flutter method added with format2 support
 
 ### Phase 2: Gradual Migration
+
 - [ ] Test Clara's integration with format1 (default)
 - [ ] Optionally migrate Flutter app to use `fetchSalesAdvanced()` for better filtering
 - [ ] Monitor both formats for any issues
 - [ ] Update other client applications as needed
 
 ### Phase 3: Long-term
+
 - [ ] Eventually standardize on single format when all clients migrated
 - [ ] Deprecate older endpoints if no longer needed
 
 ## Field Mapping Reference
 
-| Clara Field (Format 1) | Database Field (Format 2) | Source Logic |
-|-------------------------|----------------------------|--------------|
-| serialNumber | stove_serial_no | Direct mapping |
-| salesDate | sales_date | Direct mapping |
-| created | created_at | ISO format conversion |
-| state | state_backup / addresses.state | Fallback logic |
-| district | lga_backup | Direct mapping |
-| address | addresses.full_address | Fallback to concatenated |
-| latitude | addresses.latitude | Direct mapping |
-| longitude | addresses.longitude | Direct mapping |
-| phone | phone / contact_phone | Fallback logic |
-| contactPerson | contact_person | Direct mapping |
-| otherContactPhone | other_phone | Direct mapping |
-| salesPartner | partner_name / organizations.partner_name | Fallback logic |
-| userName | end_user_name (first part) | Name splitting |
-| userSurname | end_user_name (remaining) | Name splitting |
-| cpa | null | To be defined |
+| Clara Field (Format 1) | Database Field (Format 2)                 | Source Logic             |
+| ---------------------- | ----------------------------------------- | ------------------------ |
+| serialNumber           | stove_serial_no                           | Direct mapping           |
+| salesDate              | sales_date                                | Direct mapping           |
+| created                | created_at                                | ISO format conversion    |
+| state                  | state_backup / addresses.state            | Fallback logic           |
+| district               | lga_backup                                | Direct mapping           |
+| address                | addresses.full_address                    | Fallback to concatenated |
+| latitude               | addresses.latitude                        | Direct mapping           |
+| longitude              | addresses.longitude                       | Direct mapping           |
+| phone                  | phone / contact_phone                     | Fallback logic           |
+| contactPerson          | contact_person                            | Direct mapping           |
+| otherContactPhone      | other_phone                               | Direct mapping           |
+| salesPartner           | partner_name / organizations.partner_name | Fallback logic           |
+| userName               | end_user_name (first part)                | Name splitting           |
+| userSurname            | end_user_name (remaining)                 | Name splitting           |
+| cpa                    | null                                      | To be defined            |
 
 ## Benefits Achieved
 

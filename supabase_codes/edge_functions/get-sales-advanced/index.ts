@@ -157,9 +157,20 @@ async function executeMainLogic(req: Request) {
     }
 
     // Transform data based on requested format
-    console.log(`🔄 Applying response format: ${filters.responseFormat || 'format1 (default)'}`);
-    const transformedData = transformResponse(sales || [], filters.responseFormat || 'format1');
-    console.log(`✅ Data transformed to ${filters.responseFormat || 'format1'}: ${transformedData.length} records`);
+    console.log(
+      `🔄 Applying response format: ${
+        filters.responseFormat || "format1 (default)"
+      }`
+    );
+    const transformedData = transformResponse(
+      sales || [],
+      filters.responseFormat || "format1"
+    );
+    console.log(
+      `✅ Data transformed to ${filters.responseFormat || "format1"}: ${
+        transformedData.length
+      } records`
+    );
 
     // Prepare response
     const limit = Math.min(filters.limit || 100, 1000);
@@ -168,7 +179,7 @@ async function executeMainLogic(req: Request) {
     const response = {
       success: true,
       data: transformedData,
-      responseFormat: filters.responseFormat || 'format1',
+      responseFormat: filters.responseFormat || "format1",
       pagination: {
         page: filters.page || 1,
         limit,
@@ -203,7 +214,7 @@ async function executeMainLogic(req: Request) {
         userRole,
         userId,
         originalFormat: "database",
-        requestedFormat: filters.responseFormat || 'format1',
+        requestedFormat: filters.responseFormat || "format1",
       },
     };
 
