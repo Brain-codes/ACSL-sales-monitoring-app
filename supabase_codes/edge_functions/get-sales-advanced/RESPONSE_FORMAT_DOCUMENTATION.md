@@ -1,6 +1,7 @@
 # Response Format Documentation for get-sales-advanced
 
 ## Overview
+
 The `get-sales-advanced` endpoint now supports two different response formats to accommodate different client requirements:
 
 - **Format 1 (Default)**: Clara Di Gregorio's requested format - standardized field names and structure
@@ -9,6 +10,7 @@ The `get-sales-advanced` endpoint now supports two different response formats to
 ## Usage
 
 ### Parameter
+
 Add the `responseFormat` parameter to your request:
 
 ```javascript
@@ -24,33 +26,36 @@ Add the `responseFormat` parameter to your request:
 ```
 
 ### Default Behavior
+
 - If `responseFormat` is not specified, **format1** is used by default
 - This ensures compatibility with Clara's requirements while maintaining backward compatibility
 
 ## Format 1 (Clara's Format)
+
 This format follows Clara Di Gregorio's specifications with the following fields:
 
 ```typescript
 interface ClaraFormat {
-  serialNumber: string;        // Stove serial number (required)
-  salesDate: string;          // Sales date (required)
-  created: string;            // Created date in ISO format (required)
-  state: string;              // State/region (required)
-  district: string;           // District/LGA (required)  
-  address: string;            // Full address (required)
-  latitude: number | null;    // GPS latitude (required)
-  longitude: number | null;   // GPS longitude (required)
-  phone: string;              // Primary phone (required)
-  contactPerson: string;      // Contact person name (required)
+  serialNumber: string; // Stove serial number (required)
+  salesDate: string; // Sales date (required)
+  created: string; // Created date in ISO format (required)
+  state: string; // State/region (required)
+  district: string; // District/LGA (required)
+  address: string; // Full address (required)
+  latitude: number | null; // GPS latitude (required)
+  longitude: number | null; // GPS longitude (required)
+  phone: string; // Primary phone (required)
+  contactPerson: string; // Contact person name (required)
   otherContactPhone: string | null; // Secondary phone
-  salesPartner: string;       // Sales partner/field assistant (required)
-  userName: string;           // End user first name (required)
-  userSurname: string;        // End user last name (required)
-  cpa: string | null;         // CPA value (to be defined)
+  salesPartner: string; // Sales partner/field assistant (required)
+  userName: string; // End user first name (required)
+  userSurname: string; // End user last name (required)
+  cpa: string | null; // CPA value (to be defined)
 }
 ```
 
 ### Example Format 1 Response:
+
 ```json
 {
   "success": true,
@@ -80,9 +85,11 @@ interface ClaraFormat {
 ```
 
 ## Format 2 (Database Format)
+
 This maintains the existing structure for backward compatibility:
 
 ### Example Format 2 Response:
+
 ```json
 {
   "success": true,
@@ -124,25 +131,27 @@ This maintains the existing structure for backward compatibility:
 ## Implementation Details
 
 ### Field Mapping (Format 1)
-| Clara Field | Source Field(s) |
-|-------------|----------------|
-| serialNumber | stove_serial_no |
-| salesDate | sales_date |
-| created | created_at (ISO format) |
-| state | state_backup OR addresses.state OR organizations.state |
-| district | lga_backup |
-| address | addresses.full_address OR addresses.street + addresses.city |
-| latitude | addresses.latitude |
-| longitude | addresses.longitude |
-| phone | phone OR contact_phone |
-| contactPerson | contact_person |
-| otherContactPhone | other_phone |
-| salesPartner | partner_name OR organizations.partner_name |
-| userName | First part of end_user_name |
-| userSurname | Remaining parts of end_user_name |
-| cpa | null (to be defined) |
+
+| Clara Field       | Source Field(s)                                             |
+| ----------------- | ----------------------------------------------------------- |
+| serialNumber      | stove_serial_no                                             |
+| salesDate         | sales_date                                                  |
+| created           | created_at (ISO format)                                     |
+| state             | state_backup OR addresses.state OR organizations.state      |
+| district          | lga_backup                                                  |
+| address           | addresses.full_address OR addresses.street + addresses.city |
+| latitude          | addresses.latitude                                          |
+| longitude         | addresses.longitude                                         |
+| phone             | phone OR contact_phone                                      |
+| contactPerson     | contact_person                                              |
+| otherContactPhone | other_phone                                                 |
+| salesPartner      | partner_name OR organizations.partner_name                  |
+| userName          | First part of end_user_name                                 |
+| userSurname       | Remaining parts of end_user_name                            |
+| cpa               | null (to be defined)                                        |
 
 ### Migration Strategy
+
 1. **Default to Format 1**: New integrations automatically get Clara's format
 2. **Explicit Format 2**: Existing Flutter app and other clients can specify `responseFormat: "format2"`
 3. **Gradual Migration**: Clients can migrate to Format 1 at their own pace
@@ -150,6 +159,7 @@ This maintains the existing structure for backward compatibility:
 ## Testing
 
 ### Test Format 1 (Default):
+
 ```bash
 curl -X POST "your-endpoint/get-sales-advanced" \
   -H "Authorization: Bearer your-token" \
@@ -158,6 +168,7 @@ curl -X POST "your-endpoint/get-sales-advanced" \
 ```
 
 ### Test Format 2 (Database):
+
 ```bash
 curl -X POST "your-endpoint/get-sales-advanced" \
   -H "Authorization: Bearer your-token" \
@@ -166,6 +177,7 @@ curl -X POST "your-endpoint/get-sales-advanced" \
 ```
 
 ### Test Format 1 (Explicit):
+
 ```bash
 curl -X POST "your-endpoint/get-sales-advanced" \
   -H "Authorization: Bearer your-token" \
@@ -174,6 +186,7 @@ curl -X POST "your-endpoint/get-sales-advanced" \
 ```
 
 ## Notes
+
 1. The `cpa` field in Format 1 is currently null - business logic needs to be defined
 2. Name splitting for `userName`/`userSurname` handles various name formats
 3. Address fallback logic ensures best available address information

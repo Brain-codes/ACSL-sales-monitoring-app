@@ -83,13 +83,17 @@ class SaleApiService {
       'limit': limit,
       'responseFormat': 'format2', // Use format2 for Flutter app
       if (search != null && search.isNotEmpty) 'search': search,
-      if (stoveSerialNo != null && stoveSerialNo.isNotEmpty) 'stoveSerialNo': stoveSerialNo,
-      if (endUserName != null && endUserName.isNotEmpty) 'endUserName': endUserName,
-      if (partnerName != null && partnerName.isNotEmpty) 'partnerName': partnerName,
+      if (stoveSerialNo != null && stoveSerialNo.isNotEmpty)
+        'stoveSerialNo': stoveSerialNo,
+      if (endUserName != null && endUserName.isNotEmpty)
+        'endUserName': endUserName,
+      if (partnerName != null && partnerName.isNotEmpty)
+        'partnerName': partnerName,
       if (phone != null && phone.isNotEmpty) 'phone': phone,
       if (dateFrom != null && dateFrom.isNotEmpty) 'dateFrom': dateFrom,
       if (dateTo != null && dateTo.isNotEmpty) 'dateTo': dateTo,
-      if (createdFrom != null && createdFrom.isNotEmpty) 'createdFrom': createdFrom,
+      if (createdFrom != null && createdFrom.isNotEmpty)
+        'createdFrom': createdFrom,
       if (createdTo != null && createdTo.isNotEmpty) 'createdTo': createdTo,
       if (states != null && states.isNotEmpty) 'states': states,
       if (lgas != null && lgas.isNotEmpty) 'lgas': lgas,
@@ -99,9 +103,12 @@ class SaleApiService {
       if (amountMax != null) 'amountMax': amountMax,
       if (statuses != null && statuses.isNotEmpty) 'statuses': statuses,
       if (status != null && status.isNotEmpty) 'status': status,
-      if (contactPerson != null && contactPerson.isNotEmpty) 'contactPerson': contactPerson,
-      if (contactPhone != null && contactPhone.isNotEmpty) 'contactPhone': contactPhone,
-      if (organizationId != null && organizationId.isNotEmpty) 'organizationId': organizationId,
+      if (contactPerson != null && contactPerson.isNotEmpty)
+        'contactPerson': contactPerson,
+      if (contactPhone != null && contactPhone.isNotEmpty)
+        'contactPhone': contactPhone,
+      if (organizationId != null && organizationId.isNotEmpty)
+        'organizationId': organizationId,
       if (sortBy != null && sortBy.isNotEmpty) 'sortBy': sortBy,
       if (sortOrder != null && sortOrder.isNotEmpty) 'sortOrder': sortOrder,
       'includeOrganization': includeOrganization,
@@ -190,10 +197,11 @@ class PaginatedSalesAdvanced {
   });
 
   factory PaginatedSalesAdvanced.fromJson(Map<String, dynamic> json) {
-    final salesData = json['data'] as List<dynamic>; // Note: 'data' not 'sales' for advanced endpoint
+    final salesData = json['data']
+        as List<dynamic>; // Note: 'data' not 'sales' for advanced endpoint
     final salesList = salesData.map((e) => SaleModel.fromJson(e)).toList();
     final pagination = PaginationInfo.fromJson(json['pagination']);
-    
+
     return PaginatedSalesAdvanced(
       sales: salesList,
       pagination: pagination,

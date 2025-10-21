@@ -20,35 +20,43 @@ export interface ClaraFormat {
 
 export function transformToFormat1(salesData: any[]): ClaraFormat[] {
   console.log("🔄 Transforming to Format 1 (Clara's format)...");
-  
-  return salesData.map(sale => {
+
+  return salesData.map((sale) => {
     // Extract names from full_name or end_user_name
-    const fullName = sale.end_user_name || '';
-    const nameParts = fullName.trim().split(' ');
-    const userName = nameParts[0] || '';
-    const userSurname = nameParts.slice(1).join(' ') || '';
+    const fullName = sale.end_user_name || "";
+    const nameParts = fullName.trim().split(" ");
+    const userName = nameParts[0] || "";
+    const userSurname = nameParts.slice(1).join(" ") || "";
 
     // Extract address information
-    const address = sale.addresses?.full_address || 
-                   `${sale.addresses?.street || ''} ${sale.addresses?.city || ''}`.trim() || 
-                   '';
-    
-    const state = sale.state_backup || sale.addresses?.state || sale.organizations?.state || '';
-    const district = sale.lga_backup || '';
-    
+    const address =
+      sale.addresses?.full_address ||
+      `${sale.addresses?.street || ""} ${sale.addresses?.city || ""}`.trim() ||
+      "";
+
+    const state =
+      sale.state_backup ||
+      sale.addresses?.state ||
+      sale.organizations?.state ||
+      "";
+    const district = sale.lga_backup || "";
+
     // Extract coordinates
     const latitude = sale.addresses?.latitude || null;
     const longitude = sale.addresses?.longitude || null;
-    
+
     // Extract partner/field assistant info
-    const salesPartner = sale.partner_name || sale.organizations?.partner_name || '';
-    
+    const salesPartner =
+      sale.partner_name || sale.organizations?.partner_name || "";
+
     // Format dates
-    const salesDate = sale.sales_date || '';
-    const created = sale.created_at ? new Date(sale.created_at).toISOString() : '';
-    
+    const salesDate = sale.sales_date || "";
+    const created = sale.created_at
+      ? new Date(sale.created_at).toISOString()
+      : "";
+
     return {
-      serialNumber: sale.stove_serial_no || '',
+      serialNumber: sale.stove_serial_no || "",
       salesDate: salesDate,
       created: created,
       state: state,
@@ -56,13 +64,13 @@ export function transformToFormat1(salesData: any[]): ClaraFormat[] {
       address: address,
       latitude: latitude,
       longitude: longitude,
-      phone: sale.phone || sale.contact_phone || '',
-      contactPerson: sale.contact_person || '',
+      phone: sale.phone || sale.contact_phone || "",
+      contactPerson: sale.contact_person || "",
       otherContactPhone: sale.other_phone || null,
       salesPartner: salesPartner,
       userName: userName,
       userSurname: userSurname,
-      cpa: null // This field needs to be defined based on your business logic
+      cpa: null, // This field needs to be defined based on your business logic
     };
   });
 }
@@ -79,11 +87,11 @@ export function transformResponse(salesData: any[], format: string): any[] {
   }
 
   switch (format) {
-    case 'format1':
-    case '1':
+    case "format1":
+    case "1":
       return transformToFormat1(salesData);
-    case 'format2':
-    case '2':
+    case "format2":
+    case "2":
       return keepFormat2(salesData);
     default:
       // Default to format1 as requested
