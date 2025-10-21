@@ -78,6 +78,9 @@ export interface Filters {
   // Export
   export?: string;
   exportFields?: string[];
+
+  // Response format
+  responseFormat?: string;
 }
 
 export async function parseFilters(req: Request): Promise<Filters> {
@@ -102,6 +105,7 @@ export async function parseFilters(req: Request): Promise<Filters> {
     limit: filters.limit || "default",
     search: filters.search ? "yes" : "no",
     export: filters.export || "no",
+    responseFormat: filters.responseFormat || "format1 (default)",
   });
 
   return filters;
