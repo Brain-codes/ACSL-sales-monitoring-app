@@ -6,6 +6,7 @@ import { parseFilters } from "./parse-filters.ts";
 import { buildQuery } from "./build-query.ts";
 import { fetchRelatedData } from "./fetch-related.ts";
 import { convertToCSV, prepareExportData } from "./export.ts";
+import { transformResponse } from "./format-transformer.ts";
 
 serve(async (req) => {
   console.log("🚀 Sales API started");
@@ -155,13 +156,19 @@ async function executeMainLogic(req: Request) {
       }
     }
 
+    // Transform data based on requested format
+    console.log(`🔄 Applying response format: ${filters.responseFormat || 'format1 (default)'}`);
+    const transformedData = transformResponse(sales || [], filters.responseFormat || 'format1');
+    console.log(`✅ Data transformed to ${filters.responseFormat || 'format1'}: ${transformedData.length} records`);
+
     // Prepare response
     const limit = Math.min(filters.limit || 100, 1000);
     const responseTime = Date.now() - startTime;
 
     const response = {
       success: true,
-      data: sales,
+      data: transformedData,
+      responseFormat: filters.responseFormat || 'format1',
       pagination: {
         page: filters.page || 1,
         limit,
@@ -192,8 +199,11 @@ async function executeMainLogic(req: Request) {
       debug: {
         totalRecordsInTable: totalRecords,
         queryResultCount: sales?.length || 0,
+        transformedResultCount: transformedData.length,
         userRole,
         userId,
+        originalFormat: "database",
+        requestedFormat: filters.responseFormat || 'format1',
       },
     };
 
