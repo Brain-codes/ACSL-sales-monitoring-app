@@ -359,13 +359,23 @@ async function processOrganizationSync(
 
 async function updateTokenUsage(supabase: any, token: string): Promise<void> {
   try {
-    await supabase
+    // First get current usage count
+    const { data: currentToken } = await supabase
       .from("external_app_tokens")
-      .update({
-        usage_count: supabase.sql`usage_count + 1`,
-        last_used_at: new Date().toISOString(),
-      })
-      .eq("token", token);
+      .select("usage_count")
+      .eq("token", token)
+      .single();
+
+    if (currentToken) {
+      // Update with incremented count
+      await supabase
+        .from("external_app_tokens")
+        .update({
+          usage_count: (currentToken.usage_count || 0) + 1,
+          last_used_at: new Date().toISOString(),
+        })
+        .eq("token", token);
+    }
   } catch (error) {
     console.error("Failed to update token usage:", error);
   }

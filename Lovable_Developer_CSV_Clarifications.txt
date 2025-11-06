@@ -1,0 +1,227 @@
+ANSWERS TO LOVABLE DEVELOPER QUESTIONS
+
+CRITICAL CLARIFICATIONS FOR CSV SYNC IMPLEMENTATION
+
+1. CSV FORMAT - HEADERS
+=======================
+Answer: YES, include headers in the CSV
+
+The CSV MUST include headers as the first row. Our system uses the headers to automatically map your column names to our expected fields.
+
+Example:
+```
+partner_id,partner_name,email,contact_phone,stove_ids
+COMP001,ABC Company,contact@abc.com,+1234567890,STV001;STV002
+CORP002,XYZ Corporation,info@xyz.com,+0987654321,STV003
+```
+
+NOT like this (no headers):
+```
+COMP001,ABC Company,contact@abc.com,+1234567890,STV001;STV002
+CORP002,XYZ Corporation,info@xyz.com,+0987654321,STV003
+```
+
+2. MULTIPLE STOVE IDs - SINGLE CELL FORMAT
+==========================================
+Answer: Keep all stove IDs in ONE cell, separated by SEMICOLONS (not commas)
+
+Correct format:
+```
+partner_id,partner_name,stove_ids
+COMP001,ABC Company,STV001;STV002;STV003
+```
+
+NOT separate rows:
+```
+partner_id,partner_name,stove_ids
+COMP001,ABC Company,STV001
+COMP001,ABC Company,STV002
+COMP001,ABC Company,STV003
+```
+
+Why semicolons? Because commas are used to separate CSV columns, so semicolons prevent parsing conflicts.
+
+3. REQUIRED vs OPTIONAL FIELDS
+===============================
+Answer: Only 2 fields are REQUIRED, everything else is optional
+
+REQUIRED FIELDS (must be present):
+- partner_id (your unique identifier)
+- partner_name (company/organization name)
+
+OPTIONAL FIELDS (include if you have them):
+- email
+- contact_person
+- contact_phone
+- alternative_phone
+- address
+- state
+- branch
+- stove_ids
+
+You can include ANY subset of the optional fields. Our system will handle missing columns gracefully.
+
+4. CHARACTER ENCODING
+======================
+Answer: Use UTF-8 encoding
+
+This ensures international characters (accents, special symbols, etc.) are handled correctly.
+
+In JavaScript/TypeScript:
+```javascript
+// When creating the CSV string, it's automatically UTF-8
+const csvString = "partner_id,partner_name\nCOMP001,Company Name";
+
+// When sending via fetch, specify charset
+headers: {
+  'Content-Type': 'application/json; charset=utf-8'
+}
+```
+
+5. LINE ENDINGS
+===============
+Answer: Use Unix (LF) line endings
+
+Use `\n` for line breaks, not `\r\n` (Windows format).
+
+Example:
+```javascript
+const csvRows = [
+  'partner_id,partner_name,email',
+  'COMP001,ABC Company,contact@abc.com',
+  'CORP002,XYZ Corporation,info@xyz.com'
+];
+
+const csvString = csvRows.join('\n'); // Use \n, not \r\n
+```
+
+COMPLETE EXAMPLE
+================
+Based on your questions, here's a complete working example:
+
+```typescript
+// Example function to create properly formatted CSV
+function createPartnerCSV(salesData: any[]): string {
+  // Headers (REQUIRED - first row)
+  const headers = [
+    'partner_id',
+    'partner_name', 
+    'email',
+    'contact_person',
+    'contact_phone',
+    'address',
+    'state',
+    'branch',
+    'stove_ids'
+  ];
+
+  // Transform your sales data to partner format
+  const dataRows = salesData.map(sale => [
+    sale.customer_id || sale.partner_id,           // Required
+    sale.customer_name || sale.partner_name,       // Required  
+    sale.email || '',                              // Optional
+    sale.contact_person || '',                     // Optional
+    sale.phone || '',                              // Optional
+    sale.address || '',                            // Optional
+    sale.state || '',                              // Optional
+    sale.branch || 'Main Branch',                  // Optional
+    Array.isArray(sale.stove_ids) 
+      ? sale.stove_ids.join(';')                   // Multiple IDs with semicolons
+      : (sale.stove_id || '')                      // Single ID or empty
+  ]);
+
+  // Combine headers and data with proper escaping
+  const allRows = [headers, ...dataRows];
+  
+  // Create CSV with proper escaping and UTF-8/LF format
+  const csvString = allRows
+    .map(row => 
+      row.map(field => {
+        // Escape fields that contain commas, quotes, or newlines
+        const stringField = String(field || '');
+        if (stringField.includes(',') || stringField.includes('"') || stringField.includes('\n')) {
+          return `"${stringField.replace(/"/g, '""')}"`; // Escape quotes
+        }
+        return stringField;
+      }).join(',')
+    )
+    .join('\n'); // Unix line endings
+
+  return csvString;
+}
+
+// Usage example
+const csvData = createPartnerCSV(yourSalesData);
+
+// Send to API
+const response = await fetch('https://oeiwnpngbnkhcismhpgs.supabase.co/functions/v1/external-csv-sync', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json; charset=utf-8'
+  },
+  body: JSON.stringify({
+    token: 'ext_19819df07984511722829cecea3d7643',
+    secret_key: 'secret_0fad562749de578c348a75a6dd786f000a9fdddd',
+    application_name: 'Atmosfair ERP System',
+    csv_data: csvData, // Your properly formatted CSV string
+    origin_url: 'https://preview--acsl-erp.lovable.app'
+  })
+});
+```
+
+VALIDATION CHECKLIST
+====================
+Before sending your CSV, verify:
+
+✅ First row contains headers
+✅ partner_id and partner_name are present for each row
+✅ Multiple stove IDs are separated by semicolons (;)
+✅ No Windows line endings (\r\n)
+✅ UTF-8 encoding
+✅ Fields with commas/quotes are properly escaped
+
+SAMPLE VALID CSV
+================
+```
+partner_id,partner_name,email,contact_phone,stove_ids
+D44504,FILLING HOTKEY POLICE DIVSION,onomeghe@gmail.com,7017786746,101089026;101081915;101089029;101089043;101081678;101081914;101086364;101081291;101090606;101086457
+ATMOS002,Green Solutions Inc,info@greensol.com,+0987654321,STV004
+ATMOS003,"Company, with Comma",support@company.com,+1122334455,STV005;STV006
+```
+
+CORRECTED VERSION OF YOUR CSV
+=============================
+Your CSV should look like this (corrected from your current format):
+
+```
+partner_id,partner_name,email,contact_person,contact_phone,alternative_phone,address,state,stove_ids
+D44504,FILLING HOTKEY POLICE DIVSION,onomeghe@gmail.com,SULIEMA YAHAYA,7017786746,8036812198,NO 4 BLOCK 23 POLICE BARRACKS BOMPAI KANO,Kano,101089026;101081915;101089029;101089043;101081678;101081914;101086364;101081291;101090606;101086457
+```
+
+KEY CHANGES FROM YOUR CURRENT FORMAT:
+- Use "partner_id" instead of "Partner ID" 
+- Use "partner_name" instead of "Customer"
+- Use semicolons (;) instead of commas (,) for stove IDs: 101089026;101081915;101089029...
+- Remove spaces from column headers
+- Use lowercase headers with underscores
+
+This CSV:
+- Has headers ✅
+- Uses semicolons for multiple stove IDs ✅  
+- Has required fields ✅
+- Properly escapes the company name with comma ✅
+- Uses Unix line endings ✅
+
+TESTING TIP
+===========
+Start with a simple 2-row CSV to test:
+
+```
+partner_id,partner_name
+TEST001,Test Company One
+TEST002,Test Company Two
+```
+
+Once this works, add optional fields gradually.
+
+Any more questions? Let me know!

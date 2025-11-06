@@ -106,6 +106,7 @@ class LoginController extends GetxController {
         );
       }
     } on AuthException catch (e) {
+      logger.e('Error fetching user profile: $e');
       showInfoToast(
         message: e.message,
         title: 'Login Status',

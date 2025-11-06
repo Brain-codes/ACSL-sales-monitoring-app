@@ -19,12 +19,17 @@ serve(async (req) => {
   }
   const url = new URL(req.url);
   const saleId = url.searchParams.get("id");
-  if (!saleId) {
+  const transactionId = url.searchParams.get("transaction_id");
+  const stoveSerialNo = url.searchParams.get("stove_serial_no");
+
+  // Validate that at least one parameter is provided
+  if (!saleId && !transactionId && !stoveSerialNo) {
     return withCors(
       new Response(
         JSON.stringify({
           success: false,
-          message: "Missing sale ID",
+          message:
+            "Missing required parameter: id, transaction_id, or stove_serial_no",
         }),
         {
           status: 400,
@@ -66,7 +71,10 @@ serve(async (req) => {
       .select("organization_id, role")
       .eq("id", userId)
       .maybeSingle();
-    if (profileError || (!profile?.organization_id && profile?.role !== "super_admin")) {
+    if (
+      profileError ||
+      (!profile?.organization_id && profile?.role !== "super_admin")
+    ) {
       return withCors(
         new Response(
           JSON.stringify({
@@ -80,17 +88,25 @@ serve(async (req) => {
       );
     }
     // Fetch sale with joins
-    let saleQuery = supabase
-      .from("sales")
-      .select(
-        `
+    let saleQuery = supabase.from("sales").select(
+      `
         *,
         address:addresses (*),
         stove_image:uploads!sales_stove_image_id_fkey (*),
         agreement_image:uploads!sales_agreement_image_id_fkey (*)
         `
-      )
-      .eq("id", saleId);
+    );
+
+    // Apply the appropriate filter based on available parameters
+    if (saleId) {
+      saleQuery = saleQuery.eq("id", saleId);
+    } else if (transactionId) {
+      saleQuery = saleQuery.eq("transaction_id", transactionId);
+    } else if (stoveSerialNo) {
+      saleQuery = saleQuery.eq("stove_serial_no", stoveSerialNo);
+    }
+
+    // Apply organization filter for non-super admins
     if (profile.role !== "super_admin") {
       saleQuery = saleQuery.eq("organization_id", profile.organization_id);
     }
