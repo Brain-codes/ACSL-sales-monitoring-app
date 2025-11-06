@@ -7,10 +7,14 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 // Removed unused import
 
 import 'package:stove_transaction/admin/sales/controller/sales_controller.dart';
+import 'package:stove_transaction/admin/sales/controller/update_sale_controller.dart';
 import 'package:stove_transaction/admin/sales/model/sale_model.dart';
+import 'package:stove_transaction/admin/sales/ui/update_sale_screen.dart';
 import 'package:stove_transaction/core/constants/app_colors.dart';
 import 'package:stove_transaction/core/constants/app_icons.dart';
 import 'package:stove_transaction/core/constants/text_theme.dart';
+import 'package:stove_transaction/shared/components/bottom_sheet/bottom_sheet_item.dart';
+import 'package:stove_transaction/shared/components/bottom_sheet/option_bottom_sheet.dart';
 import 'package:stove_transaction/shared/widgets/base_app_bar.dart';
 
 class SaleDetailsScreen extends StatelessWidget {
@@ -18,13 +22,59 @@ class SaleDetailsScreen extends StatelessWidget {
 
   const SaleDetailsScreen({Key? key, required this.sale}) : super(key: key);
 
+  void _salesMoreOption(BuildContext context, SaleModel saleData) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      useRootNavigator: true,
+      isScrollControlled: true,
+      builder: (BuildContext context) {
+        return OptionBottomSheet(
+          title: saleData.stoveSerialNo ?? 'Options',
+          subtitle: 'Select an action you\'d like to perform',
+          hasClose: true,
+          items: [
+            // TODO: Uncomment this when ready to implement assign agent feature
+            // BottomSheetItem(
+            //   icon: AppIcons.profile,
+            //   title: 'Assign Agent',
+            //   subtitle: 'Assign this sales to one of your agents',
+            //   onTap: () {},
+            // ),
+            BottomSheetItem(
+              icon: AppIcons.editPenIcon,
+              title: 'Update Sales Data',
+              subtitle: 'Update details of your this sale',
+              onTap: () {
+                Get.back(); // Close bottom sheet
+
+                // Remove existing controller if it exists to ensure fresh state
+                if (Get.isRegistered<UpdateSaleController>()) {
+                  Get.delete<UpdateSaleController>();
+                }
+
+                Get.to(() => UpdateSaleScreen(), arguments: {'sale': saleData});
+              },
+            ),
+            BottomSheetItem(
+              icon: AppIcons.trashIconFilled,
+              title: 'Delete Sale',
+              subtitle: 'What happens after this prompt?',
+              onTap: () async {},
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.white,
       appBar: BaseAppBar(
         otherWidgets: GestureDetector(
-          onTap: () {},
+          onTap: () => _salesMoreOption(context, sale),
           child: Padding(
             padding: const EdgeInsets.only(right: 16),
             child: Transform.rotate(

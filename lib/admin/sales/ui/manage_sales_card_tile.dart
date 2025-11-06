@@ -29,12 +29,13 @@ class ManageSalesCardTile extends StatelessWidget {
           subtitle: 'Select an action you\'d like to perform',
           hasClose: true,
           items: [
-            BottomSheetItem(
-              icon: AppIcons.profile,
-              title: 'Assign Agent',
-              subtitle: 'Assign this sales to one of your agents',
-              onTap: () {},
-            ),
+            // TODO: Uncomment this when ready to implement assign agent feature
+            // BottomSheetItem(
+            //   icon: AppIcons.profile,
+            //   title: 'Assign Agent',
+            //   subtitle: 'Assign this sales to one of your agents',
+            //   onTap: () {},
+            // ),
             BottomSheetItem(
               icon: AppIcons.editPenIcon,
               title: 'Update Sales Data',
