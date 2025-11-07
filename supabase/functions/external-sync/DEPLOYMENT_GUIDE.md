@@ -18,6 +18,7 @@ First, run the SQL script to set up the token management system:
 ```
 
 This will:
+
 - Insert a test token for development
 - Create functions for token management
 - Set up proper security policies
@@ -37,6 +38,7 @@ supabase functions deploy external-csv-sync
 ### 3. Set Environment Variables
 
 Ensure your Supabase project has the required environment variables:
+
 - `SUPABASE_URL` (automatically available)
 - `SUPABASE_SERVICE_ROLE_KEY` (automatically available)
 
@@ -45,6 +47,9 @@ Ensure your Supabase project has the required environment variables:
 Replace the test token with production tokens:
 
 ```sql
+-- First, run the setup script if you haven't already
+-- File: supabase_codes/sql_queries/setup-external-app-tokens.sql
+
 -- Generate a new token for your external application
 SELECT * FROM generate_external_app_token(
     'Your Production App',
@@ -88,15 +93,18 @@ Once deployed, your APIs will be available at:
 ## Troubleshooting
 
 ### Function Not Found
+
 - Ensure functions are deployed: `supabase functions list`
 - Check function logs: `supabase functions logs external-sync`
 
 ### Authentication Errors
+
 - Verify environment variables are set
 - Check token validity in database
 - Ensure URL restrictions are properly configured
 
 ### Database Errors
+
 - Verify external_app_tokens table exists
 - Check RLS policies are properly set
 - Ensure service role has necessary permissions

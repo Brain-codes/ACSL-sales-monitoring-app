@@ -51,6 +51,232 @@ interface StoveIdResult {
   action: "created" | "already_exists";
 }
 
+interface UserCreationResult {
+  userId: string;
+  email: string;
+  password: string;
+  isDummyEmail: boolean;
+}
+
+/**
+ * Validate email format
+ * Returns true if email is valid, false otherwise
+ */
+function isValidEmail(email: string | undefined | null): boolean {
+  console.log("🔍 ========== EMAIL VALIDATION ==========");
+  console.log("Input email:", email);
+  console.log("Input type:", typeof email);
+  console.log("Input value (JSON):", JSON.stringify(email));
+  
+  if (!email || typeof email !== 'string') {
+    console.log("❌ Validation failed: Email is null, undefined, or not a string");
+    console.log("======================================\n");
+    return false;
+  }
+  
+  const trimmed = email.trim().toLowerCase();
+  console.log("Trimmed & lowercase:", trimmed);
+  
+  // Check for common invalid values
+  const invalidValues = ['', 'n/a', 'na', 'null', 'undefined', 'none', '-', 'nil', 'n.a', 'n/a'];
+  if (invalidValues.includes(trimmed)) {
+    console.log(`❌ Validation failed: Email matches invalid value (${trimmed})`);
+    console.log("======================================\n");
+    return false;
+  }
+  
+  // Check for valid email format using regex
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  const isValid = emailRegex.test(trimmed);
+  
+  if (isValid) {
+    console.log("✅ Validation passed: Email is valid");
+  } else {
+    console.log("❌ Validation failed: Email format is invalid (regex test failed)");
+  }
+  console.log("======================================\n");
+  
+  return isValid;
+}
+
+/**
+ * Generate a secure random password
+ */
+function generatePassword(): string {
+  const length = 12;
+  const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*";
+  let password = "";
+  const array = new Uint8Array(length);
+  crypto.getRandomValues(array);
+  for (let i = 0; i < length; i++) {
+    password += charset[array[i] % charset.length];
+  }
+  return password;
+}
+
+/**
+ * Generate dummy email from partner name
+ * Format: partner_name@atmosfair.site (lowercase, no spaces, no special chars)
+ */
+function generateDummyEmail(partnerName: string, partnerId: string): string {
+  // Clean partner name: lowercase, remove special chars, replace spaces with underscores
+  let cleanName = partnerName
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, "") // Remove special characters
+    .replace(/\s+/g, "_") // Replace spaces with underscores
+    .trim();
+  
+  // If name is too long, truncate and add partner_id suffix for uniqueness
+  if (cleanName.length > 20) {
+    cleanName = cleanName.substring(0, 20);
+  }
+  
+  // Add partner_id suffix to ensure uniqueness
+  const idSuffix = partnerId.replace(/[^a-z0-9]/gi, "").toLowerCase().substring(0, 8);
+  
+  return `${cleanName}_${idSuffix}@atmosfair.site`;
+}
+
+/**
+ * Create user in Supabase Auth and profiles table
+ */
+async function createUserForOrganization(
+  supabase: any,
+  email: string,
+  password: string,
+  partnerName: string,
+  organizationId: string
+): Promise<UserCreationResult> {
+  try {
+    // First, check if user already exists in auth.users by email
+    const { data: existingAuthUsers, error: listError } = await supabase.auth.admin.listUsers();
+    
+    let authUserId: string | null = null;
+    
+    if (existingAuthUsers?.users) {
+      const existingUser = existingAuthUsers.users.find((u: any) => u.email === email);
+      if (existingUser) {
+        console.log(`⚠️ Auth user already exists with this email (ID: ${existingUser.id}), using existing user`);
+        authUserId = existingUser.id;
+      }
+    }
+    
+    // Create auth user only if it doesn't exist
+    if (!authUserId) {
+      const { data: newAuthUser, error: authError } = await supabase.auth.admin.createUser({
+        email: email,
+        password: password,
+        email_confirm: true, // Auto-confirm email
+        user_metadata: {
+          full_name: partnerName,
+          display_name: partnerName,
+          role: "admin",
+          organization_id: organizationId,
+        },
+      });
+
+      if (authError) throw new Error(`Auth user creation failed: ${authError.message}`);
+      if (!newAuthUser.user) throw new Error("User creation returned no user data");
+      
+      authUserId = newAuthUser.user.id;
+      console.log(`✅ New auth user created with ID: ${authUserId}`);
+    }
+
+    // Check if profile already exists for this user ID
+    const { data: existingProfile, error: profileCheckError } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', authUserId)
+      .maybeSingle();
+
+    if (existingProfile) {
+      console.log(`ℹ️ Profile already exists for user ID: ${authUserId}, skipping profile creation`);
+      return {
+        userId: authUserId!,
+        email: email,
+        password: password,
+        isDummyEmail: email.endsWith("@atmosfair.site"),
+      };
+    }
+
+    // Create profile entry only if it doesn't exist
+    console.log(`📝 Creating profile for user ID: ${authUserId}`);
+    const { error: profileError } = await supabase
+      .from('profiles')
+      .insert({
+        id: authUserId,
+        email: email,
+        full_name: partnerName,
+        role: "admin",
+        organization_id: organizationId,
+        has_changed_password: false,
+        created_at: new Date().toISOString(),
+      });
+
+    if (profileError) {
+      console.error(`❌ Profile creation error:`, profileError);
+      // Only try to clean up if we just created this auth user
+      if (!existingAuthUsers?.users?.find((u: any) => u.id === authUserId)) {
+        console.log(`🧹 Attempting to clean up auth user: ${authUserId}`);
+        await supabase.auth.admin.deleteUser(authUserId);
+      }
+      throw new Error(`Profile creation failed: ${profileError.message}`);
+    }
+
+    console.log(`✅ Profile created successfully for user: ${authUserId}`);
+
+    return {
+      userId: authUserId!,
+      email: email,
+      password: password,
+      isDummyEmail: email.endsWith("@atmosfair.site"),
+    };
+  } catch (error) {
+    console.error("❌ Error creating user:", error);
+    throw error;
+  }
+}
+
+/**
+ * Save credentials to credentials table
+ */
+async function saveCredentials(
+  supabase: any,
+  partnerId: string,
+  partnerName: string,
+  email: string,
+  password: string,
+  organizationId: string,
+  userId: string,
+  isDummyEmail: boolean
+): Promise<void> {
+  try {
+    const { error } = await supabase
+      .from("credentials")
+      .insert({
+        partner_id: partnerId,
+        partner_name: partnerName,
+        email: email,
+        password: password,
+        organization_id: organizationId,
+        user_id: userId,
+        is_dummy_email: isDummyEmail,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      });
+
+    if (error) {
+      console.error("❌ Failed to save credentials:", error);
+      throw new Error(`Failed to save credentials: ${error.message}`);
+    }
+
+    console.log(`✅ Credentials saved for partner: ${partnerId}`);
+  } catch (error) {
+    console.error("❌ Error saving credentials:", error);
+    throw error;
+  }
+}
+
 serve(async (req) => {
   // Handle CORS preflight
   if (req.method === "OPTIONS") {
@@ -79,6 +305,12 @@ serve(async (req) => {
 
     // Parse request body
     const body: ExternalSyncRequest = await req.json();
+
+    console.log("📥 ========== REQUEST RECEIVED ==========");
+    console.log("Application:", body.application_name);
+    console.log("Organization Data:", JSON.stringify(body.organization_data, null, 2));
+    console.log("Stove IDs:", body.stove_ids);
+    console.log("=========================================\n");
 
     // Validate required fields
     if (
@@ -242,6 +474,8 @@ async function processOrganizationSync(
       .single();
 
     let organization;
+    let userCreated = false;
+    let userCredentials: UserCreationResult | null = null;
 
     if (existingOrg) {
       // Update existing organization
@@ -253,7 +487,7 @@ async function processOrganizationSync(
         alternative_phone: orgData.alternative_phone,
         address: orgData.address,
         state: orgData.state,
-        branch: orgData.branch || "Main Branch", // Default value if not provided
+        branch: orgData.branch || 'Main Branch',
         updated_at: new Date().toISOString(),
       };
 
@@ -277,7 +511,7 @@ async function processOrganizationSync(
         alternative_phone: orgData.alternative_phone,
         address: orgData.address,
         state: orgData.state,
-        branch: orgData.branch || "Main Branch", // Default value if not provided
+        branch: orgData.branch || 'Main Branch',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };
@@ -290,6 +524,86 @@ async function processOrganizationSync(
 
       if (createError) throw createError;
       organization = newOrg;
+
+      // NEW: Create user for new organization
+      console.log(`🆕 New organization created, checking if user needs to be created...`);
+      
+      // First, check if a user already exists for this organization
+      const { data: existingProfile, error: profileCheckError } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("organization_id", organization.id)
+        .maybeSingle();
+
+      if (existingProfile) {
+        console.log(`ℹ️ User already exists for organization (email: ${existingProfile.email}), skipping user creation`);
+      } else {
+        console.log(`👤 No existing user found, creating admin user...`);
+        
+        // Determine email to use - VALIDATE FIRST, then fallback to dummy
+        let userEmail: string;
+        let isDummyEmail = false;
+        
+        console.log("📧 ========== EMAIL DETERMINATION ==========");
+        console.log("Provided email:", orgData.email);
+        console.log("===========================================\n");
+        
+        if (isValidEmail(orgData.email)) {
+          // Use provided email only if it's valid
+          userEmail = orgData.email.trim();
+          isDummyEmail = false;
+          console.log(`✅ Using provided email: ${userEmail}`);
+        } else {
+          // Generate dummy email if no valid email provided
+          userEmail = generateDummyEmail(orgData.partner_name, orgData.partner_id);
+          isDummyEmail = true;
+          if (orgData.email) {
+            console.log(`⚠️ Invalid email provided (${orgData.email}), generated dummy email: ${userEmail}`);
+          } else {
+            console.log(`📧 No email provided, generated dummy email: ${userEmail}`);
+          }
+          }
+
+        // Generate password
+        const password = generatePassword();
+        console.log("🔑 Password generated (length):", password.length);
+
+        try {
+          console.log(`🚀 Attempting to create user with email: ${userEmail}`);
+          
+          // Create user in auth and profiles
+          userCredentials = await createUserForOrganization(
+            supabase,
+            userEmail,
+            password,
+            orgData.partner_name,
+            organization.id
+          );
+
+          // Save credentials to credentials table (always save for reference)
+          await saveCredentials(
+            supabase,
+            orgData.partner_id,
+            orgData.partner_name,
+            userEmail,
+            password,
+            organization.id,
+            userCredentials.userId,
+            isDummyEmail
+          );
+
+          userCreated = true;
+          console.log(`✅ Admin user created successfully for organization: ${organization.id}`);
+        } catch (userError) {
+          console.error(`❌ ========== USER CREATION FAILED ==========`);
+          console.error(`Organization: ${orgData.partner_name}`);
+          console.error(`Error message: ${userError.message}`);
+          console.error(`Full error:`, userError);
+          console.error(`============================================\n`);
+          // Don't fail the entire sync if user creation fails
+          // Organization is still created, just log the error
+        }
+      }
     }
 
     // Process stove IDs if provided
@@ -341,9 +655,19 @@ async function processOrganizationSync(
         partner_name: organization.partner_name,
         action: existingOrg ? "updated" : "created",
       },
+      user: userCreated ? {
+        created: true,
+        email: userCredentials?.email,
+        password: userCredentials?.password,
+        is_dummy_email: userCredentials?.isDummyEmail,
+      } : {
+        created: false,
+        reason: existingOrg ? "Organization already exists" : "User creation failed",
+      },
       stove_ids: stoveIdResults,
       summary: {
         organization_action: existingOrg ? "updated" : "created",
+        user_created: userCreated,
         stove_ids_processed: stoveIds.length,
         stove_ids_created: stoveIdResults.filter((s) => s.action === "created")
           .length,
@@ -359,23 +683,13 @@ async function processOrganizationSync(
 
 async function updateTokenUsage(supabase: any, token: string): Promise<void> {
   try {
-    // First get current usage count
-    const { data: currentToken } = await supabase
+    await supabase
       .from("external_app_tokens")
-      .select("usage_count")
-      .eq("token", token)
-      .single();
-
-    if (currentToken) {
-      // Update with incremented count
-      await supabase
-        .from("external_app_tokens")
-        .update({
-          usage_count: (currentToken.usage_count || 0) + 1,
-          last_used_at: new Date().toISOString(),
-        })
-        .eq("token", token);
-    }
+      .update({
+        usage_count: supabase.sql`usage_count + 1`,
+        last_used_at: new Date().toISOString(),
+      })
+      .eq("token", token);
   } catch (error) {
     console.error("Failed to update token usage:", error);
   }
