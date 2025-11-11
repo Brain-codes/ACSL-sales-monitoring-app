@@ -8,6 +8,7 @@ String profileToJson(ProfileModel data) => json.encode(data.toJson());
 class ProfileModel {
   final String id;
   final String? email;
+  final String? username;
   final String? fullName;
   final String? phone;
   final String? role;
@@ -18,6 +19,7 @@ class ProfileModel {
   ProfileModel({
     required this.id,
     this.email,
+    this.username,
     this.fullName,
     this.phone,
     this.role,
@@ -29,6 +31,7 @@ class ProfileModel {
   factory ProfileModel.fromJson(Map<String, dynamic> json) => ProfileModel(
         id: json["id"],
         email: json["email"],
+        username: json["username"],
         fullName: json["full_name"],
         phone: json["phone"],
         role: json["role"],
@@ -52,6 +55,7 @@ class ProfileModel {
   Map<String, dynamic> toJson() => {
         "id": id,
         "email": email,
+        "username": username,
         "full_name": fullName,
         "phone": phone,
         "role": role,
@@ -64,6 +68,7 @@ class ProfileModel {
   ProfileModel copyWith({
     String? id,
     String? email,
+    String? username,
     String? fullName,
     String? phone,
     String? role,
@@ -74,6 +79,7 @@ class ProfileModel {
     return ProfileModel(
       id: id ?? this.id,
       email: email ?? this.email,
+      username: username ?? this.username,
       fullName: fullName ?? this.fullName,
       phone: phone ?? this.phone,
       role: role ?? this.role,
@@ -85,7 +91,7 @@ class ProfileModel {
 
   @override
   String toString() {
-    return 'ProfileModel(id: $id, email: $email, fullName: $fullName, organization: ${organization?.partnerName})';
+    return 'ProfileModel(id: $id, email: $email, username: $username, fullName: $fullName, organization: ${organization?.partnerName})';
   }
 
   @override

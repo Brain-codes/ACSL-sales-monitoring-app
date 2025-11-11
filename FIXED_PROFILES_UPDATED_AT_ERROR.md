@@ -1,52 +1,53 @@
 # ✅ FIXED: Profiles Table Updated_At Column Error
 
 ## 🐛 Error Found
+
 ```
 Could not find the 'updated_at' column of 'profiles' in the schema cache
 ```
 
 ## 🔍 Root Cause
+
 The code was trying to insert `updated_at` field into the `profiles` table, but the table **doesn't have an `updated_at` column**.
 
 ### Error Location
+
 **File:** `external-csv-sync/index.ts` (Line 153)  
 **Function:** `createUserForOrganization()`
 
 ```typescript
 // ❌ BEFORE (WRONG - profiles table doesn't have updated_at)
-const { error: profileError } = await supabase
-  .from('profiles')
-  .insert({
-    id: authUser.user.id,
-    full_name: partnerName,
-    email: email,
-    role: 'admin',
-    organization_id: organizationId,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(), // ❌ THIS FIELD DOESN'T EXIST
-  });
+const { error: profileError } = await supabase.from("profiles").insert({
+  id: authUser.user.id,
+  full_name: partnerName,
+  email: email,
+  role: "admin",
+  organization_id: organizationId,
+  created_at: new Date().toISOString(),
+  updated_at: new Date().toISOString(), // ❌ THIS FIELD DOESN'T EXIST
+});
 ```
 
 ## ✅ Fix Applied
 
 ### Changed Code
+
 ```typescript
 // ✅ AFTER (CORRECT - removed updated_at)
-const { error: profileError } = await supabase
-  .from('profiles')
-  .insert({
-    id: authUser.user.id,
-    full_name: partnerName,
-    email: email,
-    role: 'admin',
-    organization_id: organizationId,
-    created_at: new Date().toISOString(), // ✅ Only created_at
-  });
+const { error: profileError } = await supabase.from("profiles").insert({
+  id: authUser.user.id,
+  full_name: partnerName,
+  email: email,
+  role: "admin",
+  organization_id: organizationId,
+  created_at: new Date().toISOString(), // ✅ Only created_at
+});
 ```
 
 ## 📋 Profiles Table Schema
 
 Based on the error, the `profiles` table has these columns:
+
 - `id` (UUID, primary key, references auth.users)
 - `email` (text)
 - `full_name` (text)
@@ -75,6 +76,7 @@ supabase functions deploy external-csv-sync
 ```
 
 **Files Synced:**
+
 - ✅ `supabase/functions/external-csv-sync/index.ts` (deployed)
 - ✅ `supabase_codes/edge_functions/external-csv-sync/index.ts` (synced)
 

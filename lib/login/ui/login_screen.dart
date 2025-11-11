@@ -68,11 +68,11 @@ class LoginScreen extends StatelessWidget {
               ),
               const SizedBox(height: 40),
               CustomTextField(
-                label: 'Email',
-                hintText: 'Enter Your Email Address',
-                controller: loginController.emailController,
-                inputType: TextInputType.emailAddress,
-                validator: loginController.validateEmail,
+                label: 'Username or Email',
+                hintText: 'Enter Your Username or Email',
+                controller: loginController.identifierController,
+                inputType: TextInputType.text,
+                validator: loginController.validateIdentifier,
               ),
               Obx(
                 () => CustomTextField(

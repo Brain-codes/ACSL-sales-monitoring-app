@@ -7,6 +7,7 @@ Both edge functions (`external-sync` and `external-csv-sync`) now have detailed 
 ## 📋 What's Been Logged
 
 ### 1. **Request Data (external-sync)**
+
 ```
 📥 ========== REQUEST RECEIVED ==========
 Application: Atmosfair ERP System
@@ -21,6 +22,7 @@ Stove IDs: [...]
 ```
 
 ### 2. **CSV Data (external-csv-sync)**
+
 ```
 📄 ========== CSV DATA RECEIVED ==========
 Raw CSV Data: partner_id,partner_name,email...
@@ -32,6 +34,7 @@ Raw CSV Data: partner_id,partner_name,email...
 ```
 
 ### 3. **Organization Processing**
+
 ```
 🔄 ========== PROCESSING ORGANIZATION ==========
 Partner ID: P001
@@ -44,6 +47,7 @@ Full org data: {...}
 ```
 
 ### 4. **Email Validation (Most Important)**
+
 ```
 🔍 ========== EMAIL VALIDATION ==========
 Input email: N/A
@@ -55,6 +59,7 @@ Trimmed & lowercase: n/a
 ```
 
 ### 5. **Email Determination**
+
 ```
 📧 ========== EMAIL DETERMINATION ==========
 Provided email: N/A
@@ -66,12 +71,15 @@ Provided email: N/A
 ```
 
 ### 6. **Success or Failure**
+
 **Success:**
+
 ```
 ✅ Admin user created successfully for organization: [uuid]
 ```
 
 **Failure:**
+
 ```
 ❌ ========== USER CREATION FAILED ==========
 Organization: Test Partner
@@ -83,6 +91,7 @@ Full error: {...}
 ## 🔍 How to View Logs in Supabase
 
 ### Method 1: Supabase Dashboard (Recommended)
+
 1. Go to https://supabase.com/dashboard/project/oeiwnpngbnkhcismhpgs/functions
 2. Click on the function name (`external-sync` or `external-csv-sync`)
 3. Click on the "**Logs**" tab
@@ -90,6 +99,7 @@ Full error: {...}
 5. Look for the emoji markers (📥, 🔍, ⚠️, ❌, ✅) to quickly find relevant logs
 
 ### Method 2: Real-time Logs via CLI
+
 ```powershell
 # Watch logs for external-csv-sync
 supabase functions logs external-csv-sync --tail
@@ -103,6 +113,7 @@ supabase functions logs external-sync --tail
 After running your CSV sync request, please copy and send me:
 
 ### 1. **CSV Data Received Section**
+
 ```
 📄 ========== CSV DATA RECEIVED ==========
 Raw CSV Data: [COPY THIS]
@@ -110,6 +121,7 @@ Raw CSV Data: [COPY THIS]
 ```
 
 ### 2. **Processing Organization Section** (for the failing org)
+
 ```
 🔄 ========== PROCESSING ORGANIZATION ==========
 Partner ID: [COPY THIS]
@@ -122,6 +134,7 @@ Full org data: [COPY THIS]
 ```
 
 ### 3. **Email Validation Section**
+
 ```
 🔍 ========== EMAIL VALIDATION ==========
 [COPY EVERYTHING IN THIS SECTION]
@@ -129,6 +142,7 @@ Full org data: [COPY THIS]
 ```
 
 ### 4. **User Creation Failed Section** (if it fails)
+
 ```
 ❌ ========== USER CREATION FAILED ==========
 [COPY EVERYTHING IN THIS SECTION]
@@ -203,6 +217,7 @@ Full error: [complete error object]
 ```
 
 This will tell us if:
+
 - The email is passing validation but Supabase Auth still rejects it
 - There's another issue (like duplicate email, profile creation failure, etc.)
 
