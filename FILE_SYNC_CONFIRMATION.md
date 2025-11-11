@@ -7,6 +7,7 @@ Both edge function folders now contain the **same updated code** with comprehens
 ### 📁 File Locations
 
 #### 1. Deployment Location (Used by Supabase CLI)
+
 ```
 c:\Projects\stove_transaction\supabase\functions\
 ├── external-sync\index.ts          ✅ WITH LOGGING & EMAIL VALIDATION
@@ -14,6 +15,7 @@ c:\Projects\stove_transaction\supabase\functions\
 ```
 
 #### 2. Code Reference Location (Your backup/reference)
+
 ```
 c:\Projects\stove_transaction\supabase_codes\edge_functions\
 ├── external-sync\index.ts          ✅ WITH LOGGING & EMAIL VALIDATION (SYNCED)
@@ -25,6 +27,7 @@ c:\Projects\stove_transaction\supabase_codes\edge_functions\
 ## 🔄 What Was Synced
 
 ### ✅ Email Validation Function
+
 ```typescript
 function isValidEmail(email: string | undefined | null): boolean {
   // Comprehensive validation with detailed logging
@@ -33,6 +36,7 @@ function isValidEmail(email: string | undefined | null): boolean {
 ```
 
 ### ✅ Comprehensive Logging
+
 - 📥 Request data logging
 - 📄 CSV data logging (for CSV sync)
 - 🔄 Organization processing logging
@@ -43,6 +47,7 @@ function isValidEmail(email: string | undefined | null): boolean {
 - ✅ Success confirmation
 
 ### ✅ Email Determination Logic
+
 ```typescript
 if (isValidEmail(orgData.email)) {
   // Use provided email
@@ -53,7 +58,9 @@ if (isValidEmail(orgData.email)) {
   // Generate dummy email
   userEmail = generateDummyEmail(orgData.partner_name, orgData.partner_id);
   isDummyEmail = true;
-  console.log(`⚠️ Invalid email provided (${orgData.email}), generated dummy email: ${userEmail}`);
+  console.log(
+    `⚠️ Invalid email provided (${orgData.email}), generated dummy email: ${userEmail}`
+  );
 }
 ```
 
@@ -62,12 +69,14 @@ if (isValidEmail(orgData.email)) {
 ## 📋 Both Files Include
 
 ### 1. **Interfaces**
+
 - `ExternalSyncRequest` / `ExternalCSVSyncRequest`
 - `TokenValidationResult`
 - `StoveIdResult`
 - `UserCreationResult` ✅ NEW
 
 ### 2. **Utility Functions**
+
 - `isValidEmail()` ✅ NEW WITH LOGGING
 - `generatePassword()` ✅ NEW
 - `generateDummyEmail()` ✅ NEW
@@ -75,6 +84,7 @@ if (isValidEmail(orgData.email)) {
 - `saveCredentials()` ✅ NEW
 
 ### 3. **Core Functions**
+
 - `validateExternalToken()`
 - `processOrganizationSync()` ✅ UPDATED WITH USER CREATION
 - `updateTokenUsage()`
@@ -85,23 +95,28 @@ if (isValidEmail(orgData.email)) {
 ## 🎯 Key Features in Both Files
 
 ### ✅ Email Validation
+
 - Checks if email is null/undefined
 - Rejects invalid values: `'', 'n/a', 'na', 'null', 'undefined', 'none', '-', 'nil', 'n.a'`
 - Validates email format with regex
 
 ### ✅ Automatic Fallback
+
 - Invalid email → Generate dummy email
 - Missing email → Generate dummy email
 - Valid email → Use provided email
 
 ### ✅ User Creation (New Organizations Only)
+
 - Creates auth.users entry
 - Creates profiles entry
 - Saves credentials to credentials table
 - Returns credentials in response
 
 ### ✅ Detailed Logging
+
 Every step is logged with emoji markers for easy identification:
+
 - 📥 Request received
 - 📄 CSV data
 - 🔄 Organization processing
@@ -116,6 +131,7 @@ Every step is logged with emoji markers for easy identification:
 ## 🚀 Already Deployed
 
 Both functions have been deployed to Supabase:
+
 ```powershell
 ✅ supabase functions deploy external-sync
 ✅ supabase functions deploy external-csv-sync
@@ -128,11 +144,13 @@ Both functions have been deployed to Supabase:
 ### File Structure Explanation
 
 **`supabase/functions/`** (Primary)
+
 - This is the **official** Supabase functions directory
 - Used by `supabase functions deploy` command
 - This is what gets deployed to Supabase cloud
 
 **`supabase_codes/edge_functions/`** (Backup/Reference)
+
 - This is your **backup/reference** copy
 - Good for version control and documentation
 - Not used for deployment
@@ -146,6 +164,7 @@ When making changes to edge functions:
 3. **Then copy to:** `supabase_codes/edge_functions/` (for backup)
 
 Or use PowerShell to sync after editing:
+
 ```powershell
 # Copy from supabase/functions to supabase_codes/edge_functions
 Copy-Item "c:\Projects\stove_transaction\supabase\functions\external-sync\index.ts" "c:\Projects\stove_transaction\supabase_codes\edge_functions\external-sync\index.ts" -Force
@@ -158,6 +177,7 @@ Copy-Item "c:\Projects\stove_transaction\supabase\functions\external-csv-sync\in
 ## ✅ Verification
 
 Both locations now have:
+
 - ✅ `isValidEmail()` function with comprehensive logging
 - ✅ Email validation that rejects "N/A", "null", "-", etc.
 - ✅ Automatic dummy email generation for invalid emails

@@ -5,13 +5,15 @@ import 'package:get/get.dart';
 import 'package:stove_transaction/core/routes/app_routes.dart';
 import 'package:stove_transaction/core/services/session_manager.dart';
 import 'package:stove_transaction/core/services/profile_service.dart';
+import 'package:stove_transaction/core/services/supabase_service.dart';
 import 'package:stove_transaction/login/model/user_model.dart';
 import 'package:stove_transaction/shared/ui/toastification_snackbar.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:logger/logger.dart';
 
 class LoginController extends GetxController {
-  final TextEditingController emailController = TextEditingController();
+  // Text Editing Controllers
+  final TextEditingController identifierController = TextEditingController();
   final TextEditingController passwordController = TextEditingController();
   final RxBool isLoading = false.obs;
   final RxBool rememberMe = false.obs;
@@ -26,92 +28,114 @@ class LoginController extends GetxController {
   ) async {
     isLoading.value = true;
     try {
-      final response = await _supabaseAuth.signInWithPassword(
-        password: passwordController.text,
-        email: emailController.text,
-      );
-      if (response.user != null) {
-        logger.d(response.session?.user);
-        var result =
-            RawUserMetaData.fromJson(response.user?.userMetadata ?? {});
-        userData.value = result;
+      // Use the new login-with-credentials edge function
+      final _supabaseService = Get.find<SupabaseService>();
 
-        // Fetch complete user profile with organization data
-        try {
-          final profileResult =
-              await _profileService.fetchUserProfileWithOrganization(
-            response.user!.id,
+      final result = await _supabaseService.callEdgeFunction(
+        'login-with-credentials',
+        body: {
+          'identifier': identifierController.text.trim(),
+          'password': passwordController.text,
+        },
+        requireAuth: false,
+      );
+
+      if (!result.success || result.data == null) {
+        showInfoToast(
+          message: result.message,
+          title: 'Login Failed',
+        );
+        isLoading.value = false;
+        return;
+      }
+
+      // Extract session and user data from the response
+      final responseData = result.data as Map<String, dynamic>;
+      final sessionData = responseData['session'] as Map<String, dynamic>;
+      final user = sessionData['user'] as Map<String, dynamic>;
+      final accessToken = sessionData['access_token'] as String;
+      final refreshToken = sessionData['refresh_token'] as String;
+
+      logger.d('Login successful for user: ${user['id']}');
+
+      var userMetadata = RawUserMetaData.fromJson(user['user_metadata'] ?? {});
+      userData.value = userMetadata;
+
+      // Create session object
+      final session = Session(
+        accessToken: accessToken,
+        refreshToken: refreshToken,
+        expiresIn: sessionData['expires_in'],
+        tokenType: sessionData['token_type'] ?? 'bearer',
+        user: User.fromJson(user)!,
+      );
+
+      // Fetch complete user profile with organization data
+      try {
+        final profileResult =
+            await _profileService.fetchUserProfileWithOrganization(
+          user['id'],
+        );
+
+        if (profileResult.success && profileResult.data != null) {
+          final profile = profileResult.data!;
+
+          // Save complete user data including profile and organization
+          _sessionManager.saveCompleteUserData(
+            userId: user['id'],
+            role: userData.value.role ?? 'agent',
+            token: accessToken,
+            userName: profile.fullName ?? userData.value.fullName ?? '',
+            timeLoggedIn: DateTime.now().toIso8601String(),
+            profile: profile.toJson(),
           );
 
-          if (profileResult.success && profileResult.data != null) {
-            final profile = profileResult.data!;
-
-            // Save complete user data including profile and organization
-            _sessionManager.saveCompleteUserData(
-              userId: response.user!.id,
-              role: userData.value.role ?? 'agent',
-              token: response.session?.accessToken ?? '',
-              userName: profile.fullName ?? userData.value.fullName ?? '',
-              timeLoggedIn: DateTime.now().toIso8601String(),
-              profile: profile.toJson(),
-            );
-
-            logger.d(
-                'User profile with organization saved: ${profile.organization?.name}');
-          } else {
-            // Fallback to basic user data if profile fetch fails
-            logger.w('Failed to fetch user profile: ${profileResult.message}');
-            _sessionManager.saveUser(
-              userId: response.user!.id,
-              role: userData.value.role ?? 'agent',
-              token: response.session?.accessToken ?? '',
-              userName: userData.value.fullName ?? '',
-              timeLoggedIn: DateTime.now().toIso8601String(),
-            );
-          }
-        } catch (e) {
-          logger.e('Error fetching user profile: $e');
-          // Fallback to basic user data
+          logger.d(
+              'User profile with organization saved: ${profile.organization?.name}');
+        } else {
+          // Fallback to basic user data if profile fetch fails
+          logger.w('Failed to fetch user profile: ${profileResult.message}');
           _sessionManager.saveUser(
-            userId: response.user!.id,
+            userId: user['id'],
             role: userData.value.role ?? 'agent',
-            token: response.session?.accessToken ?? '',
+            token: accessToken,
             userName: userData.value.fullName ?? '',
             timeLoggedIn: DateTime.now().toIso8601String(),
           );
         }
-
-        logger.d(response.session?.accessToken);
-        //SAVE USER SESSION FROM SUPABASE
-        if (response.session != null) {
-          _sessionManager.saveSupabaseSession(response.session);
-        }
-        if (userData.value.role == 'admin') {
-          Get.offAllNamed(AppRoutes.ADMIN_HOME);
-        } else {
-          Get.offAllNamed(AppRoutes.AGENT_HOME);
-        }
-        showSuccessToast(
-          // context: context,
-          message: 'Login successful!',
-          title: 'Success',
-        );
-      } else {
-        // This else block might not be reached if an exception is thrown directly
-        // by signInWithPassword for invalid credentials.
-        // The try-catch block below will handle the AuthException.
-        showInfoToast(
-          message: 'An unexpected error occurred during login.',
-          title: 'Login Status',
+      } catch (e) {
+        logger.e('Error fetching user profile: $e');
+        // Fallback to basic user data
+        _sessionManager.saveUser(
+          userId: user['id'],
+          role: userData.value.role ?? 'agent',
+          token: accessToken,
+          userName: userData.value.fullName ?? '',
+          timeLoggedIn: DateTime.now().toIso8601String(),
         );
       }
+
+      logger.d(accessToken);
+      // Save user session from Supabase
+      _sessionManager.saveSupabaseSession(session);
+
+      if (userData.value.role == 'admin') {
+        Get.offAllNamed(AppRoutes.ADMIN_HOME);
+      } else {
+        Get.offAllNamed(AppRoutes.AGENT_HOME);
+      }
+      showSuccessToast(
+        message: 'Login successful!',
+        title: 'Success',
+      );
     } on AuthException catch (e) {
-      logger.e('Error fetching user profile: $e');
+      logger.e('Auth error: $e');
       showInfoToast(
         message: e.message,
         title: 'Login Status',
       );
     } catch (e) {
+      logger.e('Login error: $e');
       showInfoToast(
         message: 'An unexpected error occurred: ${e.toString()}',
         title: 'Login Status',
@@ -124,13 +148,11 @@ class LoginController extends GetxController {
     isPasswordObscured.value = !isPasswordObscured.value;
   }
 
-  String? validateEmail(String? value) {
+  String? validateIdentifier(String? value) {
     if (value == null || value.isEmpty) {
-      return 'Email cannot be empty';
+      return 'Username or email cannot be empty';
     }
-    if (!GetUtils.isEmail(value)) {
-      return 'Enter a valid email';
-    }
+    // Accept both username and email formats
     return null;
   }
 

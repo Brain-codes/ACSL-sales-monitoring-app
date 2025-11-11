@@ -37,6 +37,7 @@ The code was creating a user for **every new organization**, but it didn't check
 ### The Issue
 
 If you synced the same organization multiple times (e.g., to update stove IDs), the system would:
+
 1. First sync: Create organization ✅ → Create user ✅
 2. Second sync: Organization exists, so update ✅ (no user creation)
 3. **BUT** if the organization was deleted and re-created, it would try to create a duplicate user ❌
@@ -76,7 +77,9 @@ const { data: existingProfile, error: profileCheckError } = await supabase
   .maybeSingle();
 
 if (existingProfile) {
-  console.log(`ℹ️ User already exists for organization (email: ${existingProfile.email}), skipping user creation`);
+  console.log(
+    `ℹ️ User already exists for organization (email: ${existingProfile.email}), skipping user creation`
+  );
 } else {
   console.log(`👤 No existing user found, creating admin user...`);
   // ... proceed with user creation
@@ -97,13 +100,14 @@ if (existingProfile) {
 ✅ **No more duplicate user errors** when syncing existing organizations  
 ✅ **Idempotent sync operations** - you can run the same sync multiple times safely  
 ✅ **Credentials are only created once** per organization  
-✅ **Existing users are preserved** and not overwritten  
+✅ **Existing users are preserved** and not overwritten
 
 ---
 
 ## Updated Behavior
 
 ### Scenario 1: First-time sync of new organization
+
 ```
 Input: Organization "LAPO MFB GBONGAN" with email "N/A"
 
@@ -119,6 +123,7 @@ Result: Organization created with new user account
 ```
 
 ### Scenario 2: Syncing same organization again (e.g., updating stove IDs)
+
 ```
 Input: Same organization "LAPO MFB GBONGAN" with new stove IDs
 
@@ -131,6 +136,7 @@ Result: Organization updated, existing user preserved
 ```
 
 ### Scenario 3: Organization was deleted and recreated
+
 ```
 Input: Organization "LAPO MFB GBONGAN" (recreated after deletion)
 
@@ -170,6 +176,7 @@ Content-Type: application/json
 **Expected Log Output:**
 
 First sync:
+
 ```
 🆕 New organization created, checking if user needs to be created...
 👤 No existing user found, creating admin user...
@@ -177,12 +184,14 @@ First sync:
 ```
 
 Second sync (same organization):
+
 ```
 ℹ️ Organization already exists, updating...
 ✅ Organization updated successfully
 ```
 
 Third sync (if organization recreated):
+
 ```
 🆕 New organization created, checking if user needs to be created...
 ℹ️ User already exists for organization (email: lapo_mfb_gbongan_598581@atmosfair.site), skipping user creation
@@ -195,7 +204,7 @@ Third sync (if organization recreated):
 ✅ `supabase/functions/external-csv-sync/index.ts` - CSV bulk sync endpoint  
 ✅ `supabase/functions/external-sync/index.ts` - Single organization sync endpoint  
 ✅ `supabase_codes/edge_functions/external-csv-sync/index.ts` - Backup copy  
-✅ `supabase_codes/edge_functions/external-sync/index.ts` - Backup copy  
+✅ `supabase_codes/edge_functions/external-sync/index.ts` - Backup copy
 
 ---
 
@@ -203,7 +212,7 @@ Third sync (if organization recreated):
 
 ✅ Both edge functions deployed successfully to Supabase  
 ✅ Backup files synchronized  
-✅ Ready for production use  
+✅ Ready for production use
 
 ---
 
@@ -212,6 +221,7 @@ Third sync (if organization recreated):
 This fix ensures **idempotent sync operations** - you can safely sync organizations multiple times without creating duplicate users. The system now checks if a user already exists before attempting to create one, preventing the duplicate key constraint violation error.
 
 The fix maintains all existing functionality:
+
 - Email validation
 - Dummy email generation for invalid emails
 - Secure password generation

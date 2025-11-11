@@ -43,6 +43,7 @@ The previous code flow was:
 ```
 
 **The problem**: There was no check to see if:
+
 - An auth user already exists with this email
 - A profile already exists with this user ID
 
@@ -58,7 +59,9 @@ Added **comprehensive checks** before creating users:
 // Check if user already exists in auth.users by email
 const { data: existingAuthUsers } = await supabase.auth.admin.listUsers();
 
-const existingUser = existingAuthUsers.users.find((u: any) => u.email === email);
+const existingUser = existingAuthUsers.users.find(
+  (u: any) => u.email === email
+);
 if (existingUser) {
   console.log(`⚠️ Auth user already exists, using existing user`);
   authUserId = existingUser.id;
@@ -80,9 +83,9 @@ if (!authUserId) {
 ```typescript
 // Check if profile already exists for this user ID
 const { data: existingProfile } = await supabase
-  .from('profiles')
-  .select('*')
-  .eq('id', authUserId)
+  .from("profiles")
+  .select("*")
+  .eq("id", authUserId)
   .maybeSingle();
 
 if (existingProfile) {
@@ -129,13 +132,14 @@ if (profileError) {
 ✅ **Handles orphaned profiles** - reuses existing profiles  
 ✅ **Handles failed cleanups** - doesn't try to recreate conflicting users  
 ✅ **Idempotent operations** - can safely retry failed syncs  
-✅ **Better error recovery** - smarter cleanup logic  
+✅ **Better error recovery** - smarter cleanup logic
 
 ---
 
 ## Scenarios Fixed
 
 ### Scenario 1: Clean First-Time Sync
+
 ```
 Input: New organization "LAPO MFB IKEJA 1" (never synced before)
 
@@ -149,6 +153,7 @@ Result: SUCCESS - Organization created with new user
 ```
 
 ### Scenario 2: Retry After Failed Sync
+
 ```
 Input: Organization "LAPO MFB IKEJA 1" (failed on first attempt)
 State: Auth user exists, but profile creation failed previously
@@ -163,6 +168,7 @@ Result: SUCCESS - Profile created for existing auth user
 ```
 
 ### Scenario 3: Orphaned Profile (Worst Case)
+
 ```
 Input: Organization "LAPO MFB IKEJA 1"
 State: Both auth user AND profile exist (orphaned from previous sync)
@@ -177,6 +183,7 @@ Result: SUCCESS - Reuses existing user, no duplication
 ```
 
 ### Scenario 4: Multiple Sync Retries
+
 ```
 Input: Same organization synced 5 times in a row
 
@@ -207,6 +214,7 @@ The `profiles_pkey` constraint is on the `id` column (UUID), which must match th
 ### Why Email Check Is Not Enough
 
 Checking only the email can miss cases where:
+
 - Auth user was deleted but profile remains (orphaned profile)
 - Profile was created with different email than auth.users
 - Email was updated in auth.users but not in profiles
@@ -220,21 +228,24 @@ Checking only the email can miss cases where:
 ### Added Functions
 
 1. **Check existing auth users by email**
+
    ```typescript
    const { data: existingAuthUsers } = await supabase.auth.admin.listUsers();
-   const existingUser = existingAuthUsers.users.find(u => u.email === email);
+   const existingUser = existingAuthUsers.users.find((u) => u.email === email);
    ```
 
 2. **Check existing profile by user ID**
+
    ```typescript
    const { data: existingProfile } = await supabase
-     .from('profiles')
-     .select('*')
-     .eq('id', authUserId)
+     .from("profiles")
+     .select("*")
+     .eq("id", authUserId)
      .maybeSingle();
    ```
 
 3. **Conditional auth user creation**
+
    ```typescript
    if (!authUserId) {
      // Only create if doesn't exist
@@ -243,7 +254,7 @@ Checking only the email can miss cases where:
 
 4. **Smarter cleanup on failure**
    ```typescript
-   if (!existingAuthUsers?.users?.find(u => u.id === authUserId)) {
+   if (!existingAuthUsers?.users?.find((u) => u.id === authUserId)) {
      // Only clean up newly created users
    }
    ```
@@ -305,7 +316,7 @@ POST https://[project-ref].supabase.co/functions/v1/external-csv-sync
 ✅ `supabase/functions/external-csv-sync/index.ts` - CSV bulk sync endpoint  
 ✅ `supabase/functions/external-sync/index.ts` - Single organization sync endpoint  
 ✅ `supabase_codes/edge_functions/external-csv-sync/index.ts` - Backup copy  
-✅ `supabase_codes/edge_functions/external-sync/index.ts` - Backup copy  
+✅ `supabase_codes/edge_functions/external-sync/index.ts` - Backup copy
 
 ---
 
@@ -313,23 +324,26 @@ POST https://[project-ref].supabase.co/functions/v1/external-csv-sync
 
 ✅ Both edge functions deployed successfully to Supabase  
 ✅ Backup files synchronized  
-✅ Ready for production use  
+✅ Ready for production use
 
 ---
 
 ## Comparison with Previous Fix
 
 ### Previous Fix (DUPLICATE_USER_FIX.md)
+
 - Fixed: `duplicate key value violates unique constraint "profiles_email_key"`
 - Issue: Trying to create user for existing organization
 - Solution: Check if organization already has a user
 
 ### This Fix (PRIMARY_KEY_CONFLICT_FIX.md)
+
 - Fixed: `duplicate key value violates unique constraint "profiles_pkey"`
 - Issue: UUID conflicts from failed syncs or orphaned profiles
 - Solution: Check both auth.users (by email) and profiles (by ID) before creating
 
 **Both fixes work together** to ensure:
+
 1. No duplicate users for same organization
 2. No UUID conflicts from failed syncs
 3. Complete idempotency and retry safety
@@ -346,6 +360,7 @@ This fix resolves the `profiles_pkey` (primary key) constraint violation by:
 4. **Idempotent operations** (safe to retry unlimited times)
 
 The system now gracefully handles:
+
 - First-time syncs
 - Failed sync retries
 - Orphaned profiles

@@ -7,6 +7,7 @@ import 'package:get_storage/get_storage.dart';
 import 'package:stove_transaction/core/config/env_config.dart';
 import 'package:stove_transaction/core/routes/app_pages.dart';
 import 'package:stove_transaction/core/services/session_manager.dart';
+import 'package:stove_transaction/core/services/supabase_service.dart';
 import 'package:stove_transaction/core/theme/app_theme.dart';
 import 'package:stove_transaction/core/routes/app_routes.dart';
 import 'package:stove_transaction/core/services/auth_service.dart';
@@ -124,6 +125,9 @@ Future<void> main() async {
 
   // Restore Supabase session if available
   await _restoreSupabaseSession();
+
+  // Initialize core services
+  Get.put(SupabaseService());
 
   // Initialize offline services
   await Get.putAsync(() => OfflineStorageService().init());
