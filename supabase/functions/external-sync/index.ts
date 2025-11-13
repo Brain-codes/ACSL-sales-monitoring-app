@@ -718,10 +718,11 @@ async function processOrganizationSync(
         if (isValidEmail(orgData.email)) {
           // Use provided email for authentication (traditional email-based users)
           userEmail = orgData.email.trim();
-          username = undefined;
+          username = generateUsername(orgData.partner_name, orgData.partner_id);
           isInternalEmail = false;
           isDummyEmail = false; // Real email provided
           console.log(`✅ Using provided email: ${userEmail}`);
+          console.log(`✅ Generated username for profile: ${username}`);
         } else {
           // Generate username for authentication (new username-based users)
           username = generateUsername(orgData.partner_name, orgData.partner_id);

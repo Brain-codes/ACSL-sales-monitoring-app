@@ -128,8 +128,8 @@ function generateUsername(partnerName: string, partnerId: string): string {
     .replace(/[^a-z0-9\s]/g, "") // Remove special characters
     .trim()
     .split(/\s+/) // Split into words
-    .filter(word => word.length > 2); // Filter out short words like "of", "to", etc.
-  
+    .filter((word) => word.length > 2); // Filter out short words like "of", "to", etc.
+
   // Get first significant word (max 8 chars)
   let namePrefix = words[0] || "user";
   if (namePrefix.length > 8) {
@@ -148,15 +148,20 @@ function generateUsername(partnerName: string, partnerId: string): string {
  */
 function normalizeBranch(branch: string | undefined): string {
   if (!branch) return "Main Branch";
-  
+
   const trimmed = branch.trim();
   const normalized = trimmed.toUpperCase();
-  
+
   // Check for NA variations
-  if (normalized === "NA" || normalized === "N/A" || normalized === "N.A." || normalized === "NOT AVAILABLE") {
+  if (
+    normalized === "NA" ||
+    normalized === "N/A" ||
+    normalized === "N.A." ||
+    normalized === "NOT AVAILABLE"
+  ) {
     return "Main Branch";
   }
-  
+
   return trimmed; // Return original case if not NA
 }
 
@@ -245,7 +250,9 @@ async function createUserForOrganization(
     }
 
     // Check if profile already exists for this user ID
-    console.log(`\n🔍 Checking if profile exists for user ID: ${authUserId}...`);
+    console.log(
+      `\n🔍 Checking if profile exists for user ID: ${authUserId}...`
+    );
     const { data: existingProfile, error: profileCheckError } = await supabase
       .from("profiles")
       .select("*")
@@ -254,9 +261,16 @@ async function createUserForOrganization(
 
     console.log(`📊 Profile check result:`);
     console.log(`   Profile exists: ${!!existingProfile}`);
-    console.log(`   Profile check error: ${profileCheckError ? JSON.stringify(profileCheckError) : 'none'}`);
+    console.log(
+      `   Profile check error: ${
+        profileCheckError ? JSON.stringify(profileCheckError) : "none"
+      }`
+    );
     if (existingProfile) {
-      console.log(`   Existing profile data:`, JSON.stringify(existingProfile, null, 2));
+      console.log(
+        `   Existing profile data:`,
+        JSON.stringify(existingProfile, null, 2)
+      );
     }
 
     if (existingProfile) {
@@ -264,14 +278,14 @@ async function createUserForOrganization(
         `\n⚠️ Profile already exists for user ID: ${authUserId}, attempting to update...`
       );
       console.log(`📋 Current Values in Database:`);
-      console.log(`   username: ${existingProfile.username || 'NULL'}`);
-      console.log(`   role: ${existingProfile.role || 'NULL'}`);
-      console.log(`   email: ${existingProfile.email || 'NULL'}`);
-      console.log(`   full_name: ${existingProfile.full_name || 'NULL'}`);
+      console.log(`   username: ${existingProfile.username || "NULL"}`);
+      console.log(`   role: ${existingProfile.role || "NULL"}`);
+      console.log(`   email: ${existingProfile.email || "NULL"}`);
+      console.log(`   full_name: ${existingProfile.full_name || "NULL"}`);
       console.log(`\n📝 New Values to Set:`);
       console.log(`   username: ${username}`);
       console.log(`   role: admin`);
-      
+
       console.log(`\n🚀 Executing UPDATE query...`);
       // ✅ FIX: Update existing profile to ensure username and role are set
       const { data: updatedProfile, error: updateError } = await supabase
@@ -290,15 +304,25 @@ async function createUserForOrganization(
         console.error(`   Error message: ${updateError.message}`);
         console.error(`   Error code: ${updateError.code}`);
         console.error(`   Error hint: ${updateError.hint}`);
-        console.error(`   Full error details:`, JSON.stringify(updateError, null, 2));
+        console.error(
+          `   Full error details:`,
+          JSON.stringify(updateError, null, 2)
+        );
       } else {
         console.log(`✅ UPDATE SUCCESSFUL!`);
         console.log(`   Rows affected: ${updatedProfile?.length || 0}`);
         if (updatedProfile && updatedProfile.length > 0) {
-          console.log(`   Updated profile:`, JSON.stringify(updatedProfile[0], null, 2));
+          console.log(
+            `   Updated profile:`,
+            JSON.stringify(updatedProfile[0], null, 2)
+          );
           console.log(`\n✅ VERIFICATION:`);
-          console.log(`   username is now: ${updatedProfile[0].username || 'STILL NULL!'}`);
-          console.log(`   role is now: ${updatedProfile[0].role || 'STILL NULL!'}`);
+          console.log(
+            `   username is now: ${updatedProfile[0].username || "STILL NULL!"}`
+          );
+          console.log(
+            `   role is now: ${updatedProfile[0].role || "STILL NULL!"}`
+          );
         } else {
           console.log(`   ⚠️ No data returned from update!`);
         }
@@ -893,10 +917,12 @@ async function processOrganizationSync(
         if (isValidEmail(orgData.email)) {
           // Use provided email for authentication (traditional email-based users)
           userEmail = orgData.email!.trim();
-          username = undefined;
+          // ✅ FIX: Generate username even for email-based users (needed for profile)
+          username = generateUsername(orgData.partner_name, orgData.partner_id);
           isInternalEmail = false;
           isDummyEmail = false; // Real email provided
           console.log(`✅ Using provided email: ${userEmail}`);
+          console.log(`✅ Generated username for profile: ${username}`);
         } else {
           // Generate username for authentication (new username-based users)
           username = generateUsername(orgData.partner_name, orgData.partner_id);
@@ -1039,7 +1065,15 @@ async function processOrganizationSync(
       // console.log(`⚠️ No stove IDs provided or empty array`);
     }
 
-    console.log(`\n📊 STOVE ID SUMMARY: Total processed: ${stoveIdResults.length}, Created: ${stoveIdResults.filter((s) => s.action === "created").length}, Already existed: ${stoveIdResults.filter((s) => s.action === "already_exists").length}`);
+    console.log(
+      `\n📊 STOVE ID SUMMARY: Total processed: ${
+        stoveIdResults.length
+      }, Created: ${
+        stoveIdResults.filter((s) => s.action === "created").length
+      }, Already existed: ${
+        stoveIdResults.filter((s) => s.action === "already_exists").length
+      }`
+    );
 
     // console.log(`\n📊 ========== STOVE ID PROCESSING SUMMARY ==========`);
     // console.log(`Total processed: ${stoveIdResults.length}`);
