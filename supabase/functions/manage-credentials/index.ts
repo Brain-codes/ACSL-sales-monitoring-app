@@ -54,7 +54,7 @@ serve(async (req) => {
 
     // Handle the request
     console.log("📨 Processing request...");
-    const response = await handleRequest(req, authResult.supabase);
+    const response = await handleRequest(req, authResult.supabase, authResult.user);
     console.log("✅ Request processed successfully");
     console.log("=".repeat(80));
 
