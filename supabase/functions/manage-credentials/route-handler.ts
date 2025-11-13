@@ -8,12 +8,14 @@ import {
 } from "./read-operations.ts";
 import {
   updateOrganizationPassword,
+  resetOrganizationPassword,
   generateSecurePassword,
 } from "./update-operations.ts";
 
 export async function handleRequest(
   req: Request,
-  supabase: SupabaseClient
+  supabase: SupabaseClient,
+  authenticatedUser?: { id: string; email: string; role: string }
 ): Promise<Response> {
   const url = new URL(req.url);
   const method = req.method;
@@ -101,8 +103,91 @@ export async function handleRequest(
       );
     }
 
-    // PUT /manage-credentials/update-password - Update organization password
+    // PUT /manage-credentials/update-password - Reset organization password (Auto-generate OR Custom)
     if (method === "PUT" && url.pathname.includes("/update-password")) {
+      console.log("🔐 Route matched: PUT /update-password (Reset Password)");
+      const body = await req.json();
+
+      console.log("📋 Request body:", JSON.stringify(body, null, 2));
+
+      // Validate required fields
+      if (!body.partner_id || !body.super_admin_password) {
+        console.error("❌ Missing required fields");
+        return withCors(
+          new Response(
+            JSON.stringify({
+              success: false,
+              error:
+                "Missing required fields: partner_id, super_admin_password",
+            }),
+            { status: 400, headers: { "Content-Type": "application/json" } }
+          )
+        );
+      }
+
+      // Use authenticated user's email
+      const superAdminEmail = authenticatedUser?.email;
+      if (!superAdminEmail) {
+        console.error("❌ Authenticated user email not found");
+        return withCors(
+          new Response(
+            JSON.stringify({
+              success: false,
+              error: "Super Admin email not found in session",
+            }),
+            { status: 400, headers: { "Content-Type": "application/json" } }
+          )
+        );
+      }
+
+      // Check if custom password is provided, otherwise auto-generate
+      const customPassword = body.new_password?.trim();
+      const passwordMode = customPassword ? "custom" : "auto-generated";
+
+      console.log(
+        `🔄 Resetting password for partner: ${body.partner_id} by ${superAdminEmail}`
+      );
+      console.log(`🔑 Password mode: ${passwordMode}`);
+
+      const result = await resetOrganizationPassword(
+        supabase,
+        body.partner_id,
+        superAdminEmail,
+        body.super_admin_password,
+        customPassword // Pass custom password if provided, undefined otherwise
+      );
+
+      if (!result.success) {
+        console.error("❌ Password reset failed:", result.error);
+        return withCors(
+          new Response(
+            JSON.stringify({ success: false, error: result.error }),
+            { status: 400, headers: { "Content-Type": "application/json" } }
+          )
+        );
+      }
+
+      console.log("✅ Password reset successful!");
+      console.log(`🔑 Password ${passwordMode}: ${result.newPassword}`);
+
+      return withCors(
+        new Response(
+          JSON.stringify({
+            success: true,
+            message: result.message,
+            newPassword: result.newPassword,
+            passwordMode: passwordMode,
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        )
+      );
+    }
+
+    // PUT /manage-credentials/update-password-custom - Update with custom password (legacy)
+    if (
+      method === "PUT" &&
+      url.pathname.includes("/update-password-custom")
+    ) {
       const body = await req.json();
 
       // Validate required fields

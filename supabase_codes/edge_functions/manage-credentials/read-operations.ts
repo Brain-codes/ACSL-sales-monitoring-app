@@ -19,9 +19,7 @@ export interface CredentialRecord {
 /**
  * Get all credentials (Super Admin only)
  */
-export async function getAllCredentials(
-  supabase: SupabaseClient
-): Promise<{
+export async function getAllCredentials(supabase: SupabaseClient): Promise<{
   success: boolean;
   data?: CredentialRecord[];
   error?: string;
@@ -59,7 +57,7 @@ export async function getAllCredentials(
         partner_id: cred.partner_id,
         partner_name: cred.partner_name,
         password: cred.password,
-        role: cred.role || 'admin', // Include role, default to admin if not set
+        role: cred.role || "admin", // Include role, default to admin if not set
         organization_id: cred.organization_id,
         user_id: cred.user_id,
         is_dummy_email: cred.is_dummy_email,
@@ -126,7 +124,7 @@ export async function getCredentialByPartnerId(
       partner_id: data.partner_id,
       partner_name: data.partner_name,
       password: data.password,
-      role: data.role || 'admin', // Include role, default to admin if not set
+      role: data.role || "admin", // Include role, default to admin if not set
       organization_id: data.organization_id,
       user_id: data.user_id,
       is_dummy_email: data.is_dummy_email,
@@ -186,7 +184,7 @@ export async function getCredentialByOrganizationId(
       partner_id: data.partner_id,
       partner_name: data.partner_name,
       password: data.password,
-      role: data.role || 'admin', // Include role, default to admin if not set
+      role: data.role || "admin", // Include role, default to admin if not set
       organization_id: data.organization_id,
       user_id: data.user_id,
       is_dummy_email: data.is_dummy_email,

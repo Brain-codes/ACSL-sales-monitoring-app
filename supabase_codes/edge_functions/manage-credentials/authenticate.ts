@@ -23,16 +23,19 @@ export async function authenticateSuperAdmin(req: Request): Promise<{
 }> {
   try {
     console.log("🔍 Starting authentication process...");
-    
+
     const authHeader = req.headers.get("Authorization");
     console.log("📋 Authorization header present:", !!authHeader);
-    
+
     if (!authHeader) {
       console.error("❌ Missing Authorization header");
       return { success: false, error: "Missing Authorization header" };
     }
 
-    console.log("🔑 Authorization header format:", authHeader.substring(0, 20) + "...");
+    console.log(
+      "🔑 Authorization header format:",
+      authHeader.substring(0, 20) + "..."
+    );
 
     // Extract JWT token from Authorization header
     const token = authHeader.replace("Bearer ", "");
@@ -59,14 +62,18 @@ export async function authenticateSuperAdmin(req: Request): Promise<{
     console.log("🔐 Setting session with extracted token...");
 
     // Set the session with the extracted token
-    const { data: sessionData, error: sessionError } = await supabase.auth.setSession({
-      access_token: token,
-      refresh_token: token, // Using same token as we don't have refresh token
-    });
+    const { data: sessionData, error: sessionError } =
+      await supabase.auth.setSession({
+        access_token: token,
+        refresh_token: token, // Using same token as we don't have refresh token
+      });
 
     if (sessionError) {
       console.error("❌ Session error:", sessionError.message);
-      console.error("❌ Session error details:", JSON.stringify(sessionError, null, 2));
+      console.error(
+        "❌ Session error details:",
+        JSON.stringify(sessionError, null, 2)
+      );
       return { success: false, error: "Invalid or expired token" };
     }
 
@@ -82,7 +89,10 @@ export async function authenticateSuperAdmin(req: Request): Promise<{
 
     if (authError) {
       console.error("❌ Auth error:", authError.message);
-      console.error("❌ Auth error details:", JSON.stringify(authError, null, 2));
+      console.error(
+        "❌ Auth error details:",
+        JSON.stringify(authError, null, 2)
+      );
       return { success: false, error: "Invalid or expired token" };
     }
 
@@ -104,7 +114,10 @@ export async function authenticateSuperAdmin(req: Request): Promise<{
 
     if (profileError) {
       console.error("❌ Profile fetch error:", profileError.message);
-      console.error("❌ Profile error details:", JSON.stringify(profileError, null, 2));
+      console.error(
+        "❌ Profile error details:",
+        JSON.stringify(profileError, null, 2)
+      );
       return { success: false, error: "User profile not found" };
     }
 

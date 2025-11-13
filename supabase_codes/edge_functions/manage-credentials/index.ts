@@ -12,7 +12,10 @@ serve(async (req) => {
   console.log("📅 Timestamp:", new Date().toISOString());
   console.log("🌐 Method:", req.method);
   console.log("🔗 URL:", req.url);
-  console.log("📋 Headers:", JSON.stringify(Object.fromEntries(req.headers.entries()), null, 2));
+  console.log(
+    "📋 Headers:",
+    JSON.stringify(Object.fromEntries(req.headers.entries()), null, 2)
+  );
   console.log("=".repeat(80));
 
   // Handle CORS preflight
@@ -23,7 +26,7 @@ serve(async (req) => {
 
   try {
     console.log("🔍 Starting authentication...");
-    
+
     // Authenticate and verify Super Admin
     const authResult = await authenticateSuperAdmin(req);
 
@@ -32,7 +35,7 @@ serve(async (req) => {
       console.error("❌ Error:", authResult.error);
       console.error("❌ User present:", !!authResult.user);
       console.error("❌ Supabase client present:", !!authResult.supabase);
-      
+
       return withCors(
         new Response(
           JSON.stringify({
@@ -51,10 +54,10 @@ serve(async (req) => {
 
     // Handle the request
     console.log("📨 Processing request...");
-    const response = await handleRequest(req, authResult.supabase);
+    const response = await handleRequest(req, authResult.supabase, authResult.user);
     console.log("✅ Request processed successfully");
     console.log("=".repeat(80));
-    
+
     return response;
   } catch (error) {
     console.error("=".repeat(80));
@@ -63,7 +66,7 @@ serve(async (req) => {
     console.error("❌ Error message:", error.message);
     console.error("❌ Error stack:", error.stack);
     console.error("=".repeat(80));
-    
+
     return withCors(
       new Response(
         JSON.stringify({
