@@ -1,31 +1,35 @@
 import 'package:flutter/material.dart';
 
 class AppColors {
-  static const Color primaryColor = Color(0xFF051B52);
-  static const Color backgroundColor = Color(0xFFFFFFFF);
-  static const Color primaryTextColor = Color(0xFF1E1F24);
-  static const Color secondaryTextColor = Color(0xFF81838E);
-  static const Color disabledColor = Color(0xFFB9BBC6);
-  static const Color white = Color(0xFFFFFFFF);
-  static const Color red = Color(0xFFFF0000);
-  static const Color deepRed = Color(0xFFAF0000);
-  static const Color errorColor = Color(0xFFAF0000);
-  static const Color warningColor = Color(0xFFFFC107);
-  static const Color green = Color(0xFF008000);
-  static const Color successColor = Color(0xFF008000);
-  static const Color hintTextColor = AppColors.secondaryTextColor;
-  static const Color borderColor = AppColors.borderGrey;
-  static const Color borderGrey = Color(0xFFD8D9E0);
-  static const Color borderGrey2 = Color(0xFFE2E3EA);
-  static const Color lightGrey = Color(0xFFF5F5F5);
-  static const Color borderPrimary = Color(0xFF579000);
-  static const inactiveTextFormFieldColor = Color(0xFFE4E4E4);
-  static const Color cardColor = Color(0xFFFFFFFF);
-  static const Color bgGrey = Color(0xFFF5F5F5);
-  static const Color faintPrimaryColor = Color(0xFFF5F6FF);
-  static const Color orange = Color(0xFFFF4F18);
-  static const Color backgroundGray = Color(0xFFF8F9FA);
-  static const Color textDark = Color(0xFF1E1F24);
-  static const Color textMedium = Color(0xFF81838E);
-  static const Color textLight = Color(0xFFB9BBC6);
+  static const brandPrimary = Color(0xFF07376A);
+  static const brandHeader = Color(0xFF194977);
+  static const brandLight = Color(0xFFEFF6FF);
+  static const textPrimary = Color(0xFF0F172A);
+  static const textMuted = Color(0xFF64748B);
+  static const error = Color(0xFFEF4444);
+  static const success = Color(0xFF22C55E);
+  static const warning = Color(0xFFF59E0B);
+  static const white = Color(0xFFFFFFFF);
+  static const cardBg = Color(0xFFF8FAFC);
+  static const borderColor = Color(0xFFE2E8F0);
+  static const offlineBanner = Color(0xFFFEF3C7);
+  static const offlineBannerText = Color(0xFF92400E);
+
+  // KPI gradient pairs [start, end]
+  static const gradientNavy = [Color(0xFF07376A), Color(0xFF1E5FA3)];
+  static const gradientTeal = [Color(0xFF0F766E), Color(0xFF14B8A6)];
+  static const gradientPurple = [Color(0xFF7C3AED), Color(0xFFA78BFA)];
+  static const gradientGold = [Color(0xFFB45309), Color(0xFFF59E0B)];
+  static const gradientGreen = [Color(0xFF15803D), Color(0xFF4ADE80)];
+  static const gradientRed = [Color(0xFFDC2626), Color(0xFFF87171)];
+
+  // Chart colors for pie chart slices
+  static const chartColors = [
+    Color(0xFF22C55E),
+    Color(0xFF3B82F6),
+    Color(0xFF8B5CF6),
+    Color(0xFFF59E0B),
+    Color(0xFFEF4444),
+    Color(0xFF06B6D4),
+  ];
 }

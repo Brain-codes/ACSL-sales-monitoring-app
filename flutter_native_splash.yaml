@@ -2,8 +2,7 @@ flutter_native_splash:
   # Background color (hex or named color)
   color: "#FFFFFF"
 
-  # Splash screen image (comment out since we don't have the image yet)
-  # image: "assets/images/splash/splash-icon.png"
+  image: "assets/images/splash/splash-icon.png"
 
   # Android specific settings
   android: true
@@ -18,7 +17,7 @@ flutter_native_splash:
 
   # Android 12+ specific
   android_12:
-    # image: "assets/images/splash/splash-icon.png"
+    image: "assets/images/splash/splash-icon.png"
     color: "#FFFFFF"
 
   # Fullscreen mode

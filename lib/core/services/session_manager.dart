@@ -2,7 +2,6 @@ import 'package:get/get.dart';
 import 'package:get_storage/get_storage.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:stove_transaction/core/model/profile_model.dart';
-import 'package:stove_transaction/core/services/offline_storage_service.dart';
 
 class SessionManager extends GetxService {
   final GetStorage _box = GetStorage();
@@ -33,6 +32,8 @@ class SessionManager extends GetxService {
 
   bool get isAdmin => role == 'admin';
   bool get isAgent => role == 'agent';
+  bool get isAcslAgent => role == 'acsl_agent';
+  bool get isPartnerAgent => role == 'partner_agent';
 
   // Stove availability keys
   static const String _stoveAvailableKey = 'totalStoveAvailable';
@@ -261,17 +262,7 @@ class SessionManager extends GetxService {
     _box.remove(_organizationKey);
   }
 
-  /// Logout and clear all offline data
   void logoutAndClearOfflineData() {
-    // Clear session data
     logout();
-
-    // Clear offline data through service
-    try {
-      final offlineStorage = Get.find<OfflineStorageService>();
-      offlineStorage.clearAllOfflineData();
-    } catch (e) {
-      // If offline storage service is not available, just continue with logout
-    }
   }
 }
