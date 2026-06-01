@@ -8,7 +8,6 @@ import 'package:stove_transaction/core/constants/app_config.dart';
 import 'package:stove_transaction/core/model/supabase_api_response.dart';
 import 'package:stove_transaction/core/services/session_manager.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:stove_transaction/shared/ui/toastification_snackbar.dart';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
 
@@ -25,7 +24,8 @@ class SupabaseService {
     bool requireAuth = true,
     bool isFormData = false,
     Map<String, dynamic>? queryParams,
-    bool isRetryAfterRefresh = false, // Flag to prevent infinite recursion
+    String method = 'POST',
+    bool isRetryAfterRefresh = false,
   }) async {
     try {
       var session = _client.auth.currentSession;
@@ -62,86 +62,72 @@ class SupabaseService {
           queryParams: queryParams,
         );
       } else {
-        // Standard JSON request using Supabase SDK
-        // If we have query parameters, we need to build the URL manually
+        // Build URL — always use http package so we can control the HTTP method
+        final baseUrl =
+            '${AppConfig.acslSupabaseURL}/functions/v1/$functionName';
+        var uri = Uri.parse(baseUrl);
         if (queryParams != null && queryParams.isNotEmpty) {
-          final baseUrl =
-              '${AppConfig.acslSupabaseURL}/functions/v1/$functionName';
-          final uri = Uri.parse(baseUrl).replace(
-              queryParameters: queryParams.map(
-            (key, value) => MapEntry(key, value.toString()),
-          ));
-
-          final response = await http.post(
-            uri,
-            headers: {
-              ...headers,
-              'Content-Type': 'application/json',
-            },
-            body: json.encode(body),
+          uri = uri.replace(
+            queryParameters: queryParams.map(
+              (key, value) => MapEntry(key, value.toString()),
+            ),
           );
+        }
 
-          if (response.statusCode == 200) {
-            return SupabaseApiResponse.success(json.decode(response.body));
-          } else if (response.statusCode == 401 && !isRetryAfterRefresh) {
-            // Try refresh once
-            final refreshed = await _refreshToken();
-            if (refreshed) {
-              return await callEdgeFunction(
-                functionName,
-                body: body,
-                requireAuth: requireAuth,
-                isFormData: isFormData,
-                queryParams: queryParams,
-                isRetryAfterRefresh: true,
-              );
-            } else {
-              return SupabaseApiResponse.error(
-                'Session expired. Please login again.',
-                code: 401,
-              );
-            }
+        final reqHeaders = {
+          ...headers,
+          'Content-Type': 'application/json',
+        };
+
+        http.Response response;
+        final upperMethod = method.toUpperCase();
+        if (upperMethod == 'GET') {
+          response = await http.get(uri, headers: reqHeaders);
+        } else if (upperMethod == 'DELETE') {
+          response = await http.delete(uri, headers: reqHeaders);
+        } else if (upperMethod == 'PUT') {
+          response = await http.put(uri,
+              headers: reqHeaders, body: json.encode(body));
+        } else if (upperMethod == 'PATCH') {
+          response = await http.patch(uri,
+              headers: reqHeaders, body: json.encode(body));
+        } else {
+          response = await http.post(uri,
+              headers: reqHeaders, body: json.encode(body));
+        }
+
+        if (response.statusCode == 200) {
+          return SupabaseApiResponse.success(json.decode(response.body));
+        } else if (response.statusCode == 401 && requireAuth && !isRetryAfterRefresh) {
+          final refreshed = await _refreshToken();
+          if (refreshed) {
+            return await callEdgeFunction(
+              functionName,
+              body: body,
+              requireAuth: requireAuth,
+              isFormData: isFormData,
+              queryParams: queryParams,
+              method: method,
+              isRetryAfterRefresh: true,
+            );
           } else {
-            _logger.e('Function [$functionName] failed: ${response.body}');
             return SupabaseApiResponse.error(
-              'Error: ${response.body}',
-              code: response.statusCode,
+              'Session expired. Please login again.',
+              code: 401,
             );
           }
         } else {
-          // Use the standard Supabase SDK for requests without query parameters
-          final response = await _client.functions.invoke(
-            functionName,
-            body: body,
-            headers: headers,
-          );
-
-          if (response.status == 200) {
-            return SupabaseApiResponse.success(response.data);
-          } else if (response.status == 401 && !isRetryAfterRefresh) {
-            // Try refresh once
-            final refreshed = await _refreshToken();
-            if (refreshed) {
-              return await callEdgeFunction(
-                functionName,
-                body: body,
-                requireAuth: requireAuth,
-                isFormData: isFormData,
-                isRetryAfterRefresh: true,
-              );
-            } else {
-              return SupabaseApiResponse.error(
-                'Session expired. Please login again.',
-                code: 401,
-              );
+          _logger.e('Function [$functionName] failed: ${response.body}');
+          String errorMsg = 'Something went wrong. Please try again.';
+          try {
+            final parsed = json.decode(response.body);
+            if (parsed is Map) {
+              errorMsg = parsed['message']?.toString() ??
+                  parsed['error']?.toString() ??
+                  errorMsg;
             }
-          } else {
-            _logger.e('Function [$functionName] failed: ${response.data}');
-            return SupabaseApiResponse.error(
-              'Error: ${response.data}',
-              code: response.status,
-            );
-          }
+          } catch (_) {}
+          return SupabaseApiResponse.error(errorMsg, code: response.statusCode);
         }
       }
     } on FunctionException catch (e) {
@@ -158,6 +144,7 @@ class SupabaseService {
             requireAuth: requireAuth,
             isFormData: isFormData,
             queryParams: queryParams,
+            method: method,
             isRetryAfterRefresh: true,
           );
         } else {
@@ -167,10 +154,19 @@ class SupabaseService {
           );
         }
       } else {
-        return SupabaseApiResponse.error(
-          'Function error: ${e.details?['message'] ?? e.reasonPhrase ?? 'Unknown error'}',
-          code: e.status,
-        );
+        String errorMsg = e.reasonPhrase ?? 'Unknown error';
+        final details = e.details;
+        if (details is Map) {
+          errorMsg = details['message']?.toString() ?? errorMsg;
+        } else if (details is String && details.isNotEmpty) {
+          try {
+            final parsed = json.decode(details) as Map?;
+            errorMsg = parsed?['message']?.toString() ?? errorMsg;
+          } catch (_) {
+            errorMsg = details;
+          }
+        }
+        return SupabaseApiResponse.error('Function error: $errorMsg', code: e.status);
       }
     } on TimeoutException {
       return SupabaseApiResponse.error('Request timed out. Try again.');
