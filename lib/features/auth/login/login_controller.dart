@@ -76,7 +76,7 @@ class LoginController extends GetxController {
       _logger.e('Login error: $e');
       _showError('An unexpected error occurred.');
     } finally {
-      isLoading.value = false;
+      if (!isClosed) isLoading.value = false;
     }
   }
 

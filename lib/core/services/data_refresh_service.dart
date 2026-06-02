@@ -38,20 +38,124 @@ class DataRefreshService extends GetxService {
 
     isRefreshing.value = true;
     try {
+      final session = Get.find<SessionManager>();
+      if (session.isAcslAgent) {
+        await _refreshAcslAgentData(session);
+      } else {
+        await Future.wait([
+          _refreshStoves(),
+          _refreshPaymentModels(),
+        ]);
+      }
       await Future.wait([
-        _refreshStoves(),
-        _refreshPaymentModels(),
         _refreshSales(),
         _refreshGoogleKeys(),
       ]);
       lastRefreshedAt.value = DateTime.now();
-      Get.find<LocalCacheService>(); // ensure accessible
     } catch (e) {
       _logger.e('DataRefreshService.refreshAll error: $e');
     } finally {
       isRefreshing.value = false;
     }
   }
+
+  // ── ACSL agent: fetch partners, then stoves + models for every partner org ──
+
+  Future<void> _refreshAcslAgentData(SessionManager session) async {
+    final agentId = session.userId;
+    if (agentId == null || agentId.isEmpty) return;
+
+    final supabase = Get.find<SupabaseService>();
+    final cache = Get.find<LocalCacheService>();
+
+    // 1. Fetch assigned partners
+    final partnerResp = await supabase.callEdgeFunction(
+      'super-admin-agents/$agentId/organizations',
+      body: {},
+      method: 'GET',
+    );
+    if (!partnerResp.success || partnerResp.data == null) {
+      _logger.w('ACSL partner refresh failed');
+      return;
+    }
+
+    final raw = partnerResp.data is List
+        ? partnerResp.data as List
+        : ((partnerResp.data as Map?))?['data'] as List? ?? [];
+    final partners = raw.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    cache.saveAssignedPartners(partners);
+    _logger.d('Cached ${partners.length} assigned partners');
+
+    // 2. For each partner org, fetch stoves + payment models in parallel
+    await Future.wait(
+      partners.map((p) {
+        final orgId = p['id']?.toString() ?? '';
+        if (orgId.isEmpty) return Future.value();
+        return Future.wait([
+          _refreshStovesForOrg(orgId, supabase, cache),
+          _refreshPaymentModelsForOrg(orgId, supabase, cache),
+        ]);
+      }),
+    );
+  }
+
+  Future<void> _refreshStovesForOrg(
+    String orgId,
+    SupabaseService supabase,
+    LocalCacheService cache,
+  ) async {
+    try {
+      final resp = await supabase.callEdgeFunction(
+        'get-stove-ids',
+        body: {'status': 'available', 'organization_id': orgId},
+      );
+      if (resp.success && resp.data != null) {
+        final list = resp.data is List
+            ? resp.data as List
+            : ((resp.data as Map?))?['data'] as List? ?? [];
+        final stoves = list
+            .map((e) => StoveModel.fromJson(Map<String, dynamic>.from(e as Map)))
+            .where((s) => s.stoveId.isNotEmpty)
+            .toList();
+        cache.saveStovesForOrg(orgId, stoves);
+        _logger.d('Cached ${stoves.length} stoves for org $orgId');
+      }
+    } catch (e) {
+      _logger.w('Stove refresh failed for org $orgId: $e');
+    }
+  }
+
+  Future<void> _refreshPaymentModelsForOrg(
+    String orgId,
+    SupabaseService supabase,
+    LocalCacheService cache,
+  ) async {
+    try {
+      final resp = await supabase.callEdgeFunction(
+        'organization-payment-models/$orgId',
+        body: {},
+        method: 'GET',
+      );
+      if (resp.success && resp.data != null) {
+        final raw = resp.data is List
+            ? resp.data as List
+            : ((resp.data as Map?))?['data'] as List? ?? [];
+        final list = raw.map((e) {
+          final map = Map<String, dynamic>.from(e as Map);
+          return map.containsKey('payment_model') && map['payment_model'] is Map
+              ? Map<String, dynamic>.from(map['payment_model'] as Map)
+              : map;
+        }).where((m) => m['id'] != null).toList();
+        final models = list.map((e) => PaymentModel.fromJson(e)).toList();
+        cache.savePaymentModelsForOrg(orgId, models);
+        _logger.d('Cached ${models.length} payment models for org $orgId');
+      }
+    } catch (e) {
+      _logger.w('Payment models refresh failed for org $orgId: $e');
+    }
+  }
+
+  // ── Regular (non-ACSL) agents ─────────────────────────────────────────────
 
   Future<void> _refreshStoves() async {
     try {

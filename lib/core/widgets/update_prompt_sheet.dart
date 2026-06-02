@@ -4,23 +4,36 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:stove_transaction/core/services/app_release_service.dart';
 
 /// Shows the update bottom sheet if an update is available.
-/// Call this once from your home screen's initState / onReady.
+/// Call this once from your home screen's initState.
+/// Handles both cases: fetch already done, or still in-flight.
 void checkAndShowUpdatePrompt() {
   final service = Get.find<AppReleaseService>();
-  if (!service.hasUpdate.value) return;
 
-  final info = service.latestRelease.value;
-  if (info == null) return;
+  void show() {
+    final info = service.latestRelease.value;
+    if (info == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (Get.context == null) return;
+      showModalBottomSheet(
+        context: Get.context!,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        isDismissible: !service.isForceUpdate.value,
+        enableDrag: !service.isForceUpdate.value,
+        builder: (_) => UpdatePromptSheet(info: info, isForce: service.isForceUpdate.value),
+      );
+    });
+  }
 
-  WidgetsBinding.instance.addPostFrameCallback((_) {
-    showModalBottomSheet(
-      context: Get.context!,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      isDismissible: !service.isForceUpdate.value,
-      enableDrag: !service.isForceUpdate.value,
-      builder: (_) => UpdatePromptSheet(info: info, isForce: service.isForceUpdate.value),
-    );
+  // Already fetched before the screen mounted
+  if (service.hasUpdate.value) {
+    show();
+    return;
+  }
+
+  // Fetch still in-flight — react when it resolves
+  ever(service.hasUpdate, (bool hasUpdate) {
+    if (hasUpdate) show();
   });
 }
 

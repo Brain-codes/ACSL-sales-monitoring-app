@@ -103,15 +103,19 @@ class CreateSaleScreen extends StatelessWidget {
 class _StepProgress extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    final c = Get.find<CreateSaleController>();
     return Obx(() {
+      final c = Get.find<CreateSaleController>();
       final current = c.currentStep.value;
-      // Map physical page index to visible step number (step 4/index 3 is hidden)
-      final displayStep = current <= 2 ? current + 1 : current;
+      // ACSL agents see all 9 steps (partner step is visible).
+      // Other roles skip step 3 (partner hidden), so map index to display number.
+      final totalSteps = c.isAcslAgent ? 9 : 8;
+      final displayStep = c.isAcslAgent
+          ? current + 1
+          : (current <= 2 ? current + 1 : current);
       return Column(
         children: [
           LinearProgressIndicator(
-            value: displayStep / 8,
+            value: displayStep / totalSteps,
             backgroundColor: AppColors.borderColor,
             color: AppColors.brandPrimary,
             minHeight: 4,
@@ -121,9 +125,9 @@ class _StepProgress extends StatelessWidget {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text('Step $displayStep of 8',
+                Text('Step $displayStep of $totalSteps',
                     style: Theme.of(context).textTheme.bodySmall),
-                Text('${(displayStep / 8 * 100).round()}% complete',
+                Text('${(displayStep / totalSteps * 100).round()}% complete',
                     style: Theme.of(context).textTheme.bodySmall),
               ],
             ),
@@ -233,145 +237,359 @@ void _handleSubmitRequest(BuildContext context, CreateSaleController c) {
 
 // ──────────────────────────── STEP 1: Transaction ────────────────────────────
 
-class _Step1Transaction extends StatelessWidget {
+class _Step1Transaction extends StatefulWidget {
   final bool singleView;
   const _Step1Transaction({this.singleView = false});
+
+  @override
+  State<_Step1Transaction> createState() => _Step1TransactionState();
+}
+
+class _Step1TransactionState extends State<_Step1Transaction> {
+  final _partnerSearchCtrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _partnerSearchCtrl.dispose();
+    super.dispose();
+  }
+
+  List<Map<String, dynamic>> _filteredPartners(CreateSaleController c) {
+    final q = c.partnerSearchQuery.value.toLowerCase();
+    if (q.isEmpty) return c.assignedPartners;
+    return c.assignedPartners.where((p) {
+      final name = (p['partner_name'] ?? p['name'] ?? '').toString().toLowerCase();
+      final branch = (p['branch'] ?? '').toString().toLowerCase();
+      return name.contains(q) || branch.contains(q);
+    }).toList();
+  }
 
   @override
   Widget build(BuildContext context) {
     final c = Get.find<CreateSaleController>();
     final col = _buildColumn(context, c);
-    if (singleView) return Padding(padding: const EdgeInsets.all(16), child: col);
+    if (widget.singleView) return Padding(padding: const EdgeInsets.all(16), child: col);
     return SingleChildScrollView(padding: const EdgeInsets.all(16), child: col);
   }
 
   Widget _buildColumn(BuildContext context, CreateSaleController c) {
     return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const SectionHeader(title: 'Transaction Information'),
-          Obx(() => AppTextField(
-              label: 'Transaction ID',
-              controller: TextEditingController(text: c.transactionId.value),
-              readOnly: true)),
-          const SizedBox(height: 16),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SectionHeader(title: 'Transaction Information'),
+        Obx(() => AppTextField(
+            label: 'Transaction ID',
+            controller: TextEditingController(text: c.transactionId.value),
+            readOnly: true)),
+        const SizedBox(height: 16),
+
+        // ── Partner picker (ACSL agents only) ─────────────────────────────
+        if (c.isAcslAgent) ...[
+          const Text('Partner *',
+              style: TextStyle(fontWeight: FontWeight.w500, fontSize: 13)),
+          const SizedBox(height: 8),
           Obx(() {
-            if (c.isLoadingStoves.value)
-              return const Center(child: CircularProgressIndicator());
-            final selected = c.selectedStove.value;
+            final orgSelected = c.selectedOrgId.value.isNotEmpty;
+            if (orgSelected) {
+              return Row(
+                children: [
+                  Expanded(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                      decoration: BoxDecoration(
+                        color: AppColors.brandPrimary.withValues(alpha: 0.07),
+                        border: Border.all(color: AppColors.brandPrimary),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.check_circle,
+                              color: AppColors.brandPrimary, size: 18),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              c.partnerNameCtrl.text,
+                              style: const TextStyle(
+                                  color: AppColors.brandPrimary,
+                                  fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton(
+                    icon: const Icon(Icons.close, color: AppColors.textMuted),
+                    tooltip: 'Change partner',
+                    onPressed: () {
+                      c.selectedOrgId.value = '';
+                      c.partnerNameCtrl.clear();
+                      c.availableStoves.clear();
+                      c.paymentModels.clear();
+                      c.selectedStove.value = null;
+                      c.selectedModel.value = null;
+                      _partnerSearchCtrl.clear();
+                      c.partnerSearchQuery.value = '';
+                    },
+                  ),
+                ],
+              );
+            }
+
+            // Partner not yet selected — show search + list
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Stove Serial No. *',
-                    style:
-                        TextStyle(fontWeight: FontWeight.w500, fontSize: 13)),
-                const SizedBox(height: 8),
-                // Show selected chip if a stove has been picked; search field otherwise
-                if (selected != null)
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 14),
-                          decoration: BoxDecoration(
-                            color:
-                                AppColors.brandPrimary.withValues(alpha: 0.07),
-                            border: Border.all(color: AppColors.brandPrimary),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Row(
-                            children: [
-                              const Icon(Icons.check_circle,
-                                  color: AppColors.brandPrimary, size: 18),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                  child: Text(selected.displayId,
-                                      style: const TextStyle(
-                                          color: AppColors.brandPrimary,
-                                          fontWeight: FontWeight.w600))),
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      IconButton(
-                        onPressed: () {
-                          c.selectedStove.value = null;
-                          c.stoveSearchQuery.value = '';
-                        },
-                        icon:
-                            const Icon(Icons.close, color: AppColors.textMuted),
-                        tooltip: 'Clear selection',
-                      ),
-                    ],
-                  )
-                else ...[
-                  TextFormField(
-                    decoration: const InputDecoration(
-                        hintText: 'Type to search stove serial…',
-                        prefixIcon: Icon(Icons.search)),
-                    textInputAction: TextInputAction.search,
-                    onChanged: (v) => c.stoveSearchQuery.value = v,
+                TextField(
+                  controller: _partnerSearchCtrl,
+                  onChanged: (v) => c.partnerSearchQuery.value = v,
+                  decoration: InputDecoration(
+                    hintText: 'Search assigned partners…',
+                    prefixIcon: const Icon(Icons.search),
+                    suffixIcon: c.isLoadingPartners.value
+                        ? const Padding(
+                            padding: EdgeInsets.all(12),
+                            child: SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(strokeWidth: 2)),
+                          )
+                        : null,
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10)),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: AppColors.borderColor),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide:
+                          const BorderSide(color: AppColors.brandPrimary, width: 1.5),
+                    ),
+                    contentPadding:
+                        const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
                   ),
-                  const SizedBox(height: 4),
-                  Obx(() {
-                    final query = c.stoveSearchQuery.value;
-                    if (query.isEmpty) return const SizedBox.shrink();
-                    final stoves = c.filteredStoves;
-                    if (stoves.isEmpty) {
-                      return const Padding(
-                        padding: EdgeInsets.all(8),
-                        child: Text('No matching stoves found',
-                            style: TextStyle(color: AppColors.textMuted)),
-                      );
-                    }
-                    return Container(
-                      constraints: const BoxConstraints(maxHeight: 200),
-                      decoration: BoxDecoration(
-                        color: AppColors.white,
-                        border: Border.all(color: AppColors.borderColor),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: ListView.builder(
-                        shrinkWrap: true,
-                        itemCount: stoves.length,
-                        itemBuilder: (_, i) => ListTile(
-                          title: Text(stoves[i].displayId),
-                          onTap: () {
-                            c.selectedStove.value = stoves[i];
-                            c.stoveSearchQuery.value = '';
-                          },
-                        ),
+                ),
+                const SizedBox(height: 6),
+                Obx(() {
+                  final partners = _filteredPartners(c);
+                  if (partners.isEmpty && !c.isLoadingPartners.value) {
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: Text(
+                        c.assignedPartners.isEmpty
+                            ? 'No partners assigned to your account.'
+                            : 'No partners match your search.',
+                        style: const TextStyle(
+                            color: AppColors.textMuted, fontSize: 13),
                       ),
                     );
-                  }),
-                ],
+                  }
+                  return Container(
+                    constraints: const BoxConstraints(maxHeight: 220),
+                    decoration: BoxDecoration(
+                      color: AppColors.white,
+                      border: Border.all(color: AppColors.borderColor),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: partners.length,
+                      separatorBuilder: (_, __) =>
+                          const Divider(height: 1, indent: 16),
+                      itemBuilder: (_, i) {
+                        final p = partners[i];
+                        final name =
+                            (p['partner_name'] ?? p['name'] ?? '').toString();
+                        final branch = (p['branch'] ?? '').toString();
+                        return ListTile(
+                          dense: true,
+                          title: Text(name,
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.w500, fontSize: 14)),
+                          subtitle: branch.isNotEmpty
+                              ? Text(branch,
+                                  style: const TextStyle(
+                                      fontSize: 12,
+                                      color: AppColors.textMuted))
+                              : null,
+                          trailing: const Icon(Icons.chevron_right,
+                              color: AppColors.textMuted),
+                          onTap: () {
+                            c.onPartnerSelected(p);
+                            _partnerSearchCtrl.clear();
+                          },
+                        );
+                      },
+                    ),
+                  );
+                }),
               ],
             );
           }),
           const SizedBox(height: 16),
-          Obx(() => ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Sales Date',
-                    style:
-                        TextStyle(fontWeight: FontWeight.w500, fontSize: 13)),
-                subtitle:
-                    Text(DateFormat('d MMMM yyyy').format(c.salesDate.value)),
-                trailing: const Icon(Icons.calendar_today_outlined,
-                    color: AppColors.brandPrimary),
-                onTap: () async {
-                  final picked = await showDatePicker(
-                    context: context,
-                    initialDate: c.salesDate.value,
-                    firstDate: DateTime(2020),
-                    lastDate: DateTime.now(),
-                  );
-                  if (picked != null) c.salesDate.value = picked;
-                },
-              )),
         ],
-      );
+
+        // ── Stove serial ──────────────────────────────────────────────────
+        Obx(() {
+          final partnerRequired = c.isAcslAgent && c.selectedOrgId.value.isEmpty;
+          final isLoading = c.isLoadingStoves.value;
+
+          if (isLoading) {
+            return const Padding(
+              padding: EdgeInsets.symmetric(vertical: 8),
+              child: Row(
+                children: [
+                  SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2)),
+                  SizedBox(width: 10),
+                  Text('Loading stoves…',
+                      style: TextStyle(
+                          fontSize: 13, color: AppColors.textMuted)),
+                ],
+              ),
+            );
+          }
+
+          final selected = c.selectedStove.value;
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Stove Serial No. *',
+                  style:
+                      TextStyle(fontWeight: FontWeight.w500, fontSize: 13)),
+              const SizedBox(height: 8),
+              if (partnerRequired)
+                // Locked placeholder — no partner yet
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 14, vertical: 16),
+                  decoration: BoxDecoration(
+                    color: AppColors.borderColor.withValues(alpha: 0.4),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: AppColors.borderColor),
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(Icons.lock_outline,
+                          size: 16, color: AppColors.textMuted),
+                      SizedBox(width: 8),
+                      Text('Select a partner first',
+                          style: TextStyle(
+                              color: AppColors.textMuted, fontSize: 14)),
+                    ],
+                  ),
+                )
+              else if (selected != null)
+                Row(
+                  children: [
+                    Expanded(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 14),
+                        decoration: BoxDecoration(
+                          color: AppColors.brandPrimary
+                              .withValues(alpha: 0.07),
+                          border: Border.all(color: AppColors.brandPrimary),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.check_circle,
+                                color: AppColors.brandPrimary, size: 18),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(selected.displayId,
+                                  style: const TextStyle(
+                                      color: AppColors.brandPrimary,
+                                      fontWeight: FontWeight.w600)),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    IconButton(
+                      onPressed: () {
+                        c.selectedStove.value = null;
+                        c.stoveSearchQuery.value = '';
+                      },
+                      icon: const Icon(Icons.close,
+                          color: AppColors.textMuted),
+                      tooltip: 'Clear selection',
+                    ),
+                  ],
+                )
+              else ...[
+                TextFormField(
+                  decoration: const InputDecoration(
+                      hintText: 'Type to search stove serial…',
+                      prefixIcon: Icon(Icons.search)),
+                  textInputAction: TextInputAction.search,
+                  onChanged: (v) => c.stoveSearchQuery.value = v,
+                ),
+                const SizedBox(height: 4),
+                Obx(() {
+                  final query = c.stoveSearchQuery.value;
+                  if (query.isEmpty) return const SizedBox.shrink();
+                  final stoves = c.filteredStoves;
+                  if (stoves.isEmpty) {
+                    return const Padding(
+                      padding: EdgeInsets.all(8),
+                      child: Text('No matching stoves found',
+                          style:
+                              TextStyle(color: AppColors.textMuted)),
+                    );
+                  }
+                  return Container(
+                    constraints: const BoxConstraints(maxHeight: 200),
+                    decoration: BoxDecoration(
+                      color: AppColors.white,
+                      border: Border.all(color: AppColors.borderColor),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: stoves.length,
+                      itemBuilder: (_, i) => ListTile(
+                        title: Text(stoves[i].displayId),
+                        onTap: () {
+                          c.selectedStove.value = stoves[i];
+                          c.stoveSearchQuery.value = '';
+                        },
+                      ),
+                    ),
+                  );
+                }),
+              ],
+            ],
+          );
+        }),
+
+        const SizedBox(height: 16),
+        Obx(() => ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Sales Date',
+                  style: TextStyle(fontWeight: FontWeight.w500, fontSize: 13)),
+              subtitle:
+                  Text(DateFormat('d MMMM yyyy').format(c.salesDate.value)),
+              trailing: const Icon(Icons.calendar_today_outlined,
+                  color: AppColors.brandPrimary),
+              onTap: () async {
+                final picked = await showDatePicker(
+                  context: context,
+                  initialDate: c.salesDate.value,
+                  firstDate: DateTime(2020),
+                  lastDate: DateTime.now(),
+                );
+                if (picked != null) c.salesDate.value = picked;
+              },
+            )),
+      ],
+    );
   }
 }
 
@@ -796,13 +1014,20 @@ class _Step4Partner extends StatelessWidget {
       child: Column(
         children: [
           const SectionHeader(title: 'Partner / Retailer Info'),
-          AppTextField(
-              label: 'Partner Name',
-              controller: c.partnerNameCtrl,
-              required: true),
+          // For ACSL agents partner was already selected on Step 1 — show read-only
+          if (c.isAcslAgent)
+            Obx(() => AppTextField(
+                label: 'Partner',
+                controller: TextEditingController(text: c.partnerNameCtrl.text),
+                readOnly: true))
+          else
+            AppTextField(
+                label: 'Partner Name',
+                controller: c.partnerNameCtrl,
+                required: true),
           const SizedBox(height: 12),
           AppTextField(
-              label: 'Retailer Branch', controller: c.retailerBranchCtrl),
+              label: 'Retailer Branch / CSO', controller: c.retailerBranchCtrl),
         ],
       ),
     );

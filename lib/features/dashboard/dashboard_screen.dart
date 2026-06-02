@@ -5,6 +5,7 @@ import 'package:stove_transaction/core/constants/app_colors.dart';
 import 'package:stove_transaction/core/widgets/empty_state.dart';
 import 'package:stove_transaction/core/widgets/kpi_card.dart';
 import 'package:stove_transaction/core/widgets/offline_banner.dart';
+import 'package:stove_transaction/core/routes/app_routes.dart';
 import 'package:stove_transaction/features/dashboard/models/dashboard_model.dart';
 import 'dashboard_controller.dart';
 
@@ -35,6 +36,14 @@ class DashboardScreen extends StatelessWidget {
           )),
           const SizedBox(width: 8),
         ],
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        heroTag: 'dashboard_create_sale',
+        onPressed: () => Get.toNamed(AppRoutes.salesCreate),
+        icon: const Icon(Icons.add),
+        label: const Text('Create Sale'),
+        backgroundColor: AppColors.brandPrimary,
+        foregroundColor: Colors.white,
       ),
       body: Column(
         children: [
