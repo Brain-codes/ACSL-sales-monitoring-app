@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:stove_transaction/core/services/offline_queue_service.dart';
+import 'package:stove_transaction/core/widgets/update_prompt_sheet.dart';
 import 'package:stove_transaction/features/dashboard/dashboard_screen.dart';
 import 'package:stove_transaction/features/partners/partners_screen.dart';
 import 'package:stove_transaction/features/profile/profile_screen.dart';
@@ -15,6 +16,12 @@ class AcslAgentLayout extends StatefulWidget {
 
 class _AcslAgentLayoutState extends State<AcslAgentLayout> {
   int _index = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    checkAndShowUpdatePrompt();
+  }
 
   final _pages = const [
     DashboardScreen(),

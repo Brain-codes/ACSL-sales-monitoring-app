@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:stove_transaction/core/services/offline_queue_service.dart';
+import 'package:stove_transaction/core/widgets/update_prompt_sheet.dart';
 import 'package:stove_transaction/features/profile/profile_screen.dart';
 import 'package:stove_transaction/features/sales/list/sales_list_screen.dart';
 
@@ -13,6 +14,12 @@ class PartnerAgentLayout extends StatefulWidget {
 
 class _PartnerAgentLayoutState extends State<PartnerAgentLayout> {
   int _index = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    checkAndShowUpdatePrompt();
+  }
 
   final _pages = const [
     SalesListScreen(),
