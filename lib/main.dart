@@ -12,6 +12,7 @@ import 'package:stove_transaction/core/services/local_cache_service.dart';
 import 'package:stove_transaction/core/services/offline_queue_service.dart';
 import 'package:stove_transaction/core/services/session_manager.dart';
 import 'package:stove_transaction/core/services/supabase_service.dart';
+import 'package:stove_transaction/core/services/app_release_service.dart';
 import 'package:stove_transaction/core/services/sync_service.dart';
 import 'package:stove_transaction/core/theme/app_theme.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -41,6 +42,7 @@ Future<void> main() async {
   await Get.putAsync(() => ConnectivityService().init());
   Get.put(DataRefreshService());
   Get.put(AuthService());
+  Get.put(AppReleaseService());
 
   // Set baseline system UI style before the first frame.
   // Screens with AppBar override via AppBarTheme.systemOverlayStyle.
