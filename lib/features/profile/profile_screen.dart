@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:stove_transaction/core/constants/app_colors.dart';
+import 'package:stove_transaction/core/services/app_release_service.dart';
 import 'package:stove_transaction/core/services/connectivity_service.dart';
 import 'package:stove_transaction/core/services/sync_service.dart';
 import 'package:stove_transaction/core/widgets/offline_banner.dart';
+import 'package:stove_transaction/core/widgets/update_prompt_sheet.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'profile_controller.dart';
 
 class ProfileScreen extends StatelessWidget {
@@ -49,6 +52,8 @@ class ProfileScreen extends StatelessWidget {
                   ]),
                   const SizedBox(height: 24),
                   _SyncCard(c: c),
+                  const SizedBox(height: 16),
+                  _UpdateBanner(),
                   const SizedBox(height: 16),
                   SizedBox(
                     width: double.infinity,
@@ -107,6 +112,62 @@ class ProfileScreen extends StatelessWidget {
         ),
       );
     }
+  }
+}
+
+class _UpdateBanner extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final service = Get.find<AppReleaseService>();
+    return Obx(() {
+      if (!service.hasUpdate.value) return const SizedBox.shrink();
+      final info = service.latestRelease.value;
+      return GestureDetector(
+        onTap: () async {
+          if (info == null) return;
+          final uri = Uri.parse(info.appPageUrl);
+          if (await canLaunchUrl(uri)) {
+            await launchUrl(uri, mode: LaunchMode.externalApplication);
+          }
+        },
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            color: const Color(0xFFEFF6FF),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFF93C5FD)),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.system_update_rounded, color: Color(0xFF2563EB), size: 22),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Update available${info != null ? ' — v${info.version}' : ''}',
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF1D4ED8),
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    const Text(
+                      'Tap to download the latest version',
+                      style: TextStyle(fontSize: 12, color: Color(0xFF3B82F6)),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right, color: Color(0xFF3B82F6), size: 20),
+            ],
+          ),
+        ),
+      );
+    });
   }
 }
 

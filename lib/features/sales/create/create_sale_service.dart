@@ -18,14 +18,36 @@ class CreateSaleService {
     );
   }
 
+  Future<SupabaseApiResponse<dynamic>> getAvailableStovesForOrg(String orgId) {
+    return _supabase.callEdgeFunction(
+      'get-stove-ids',
+      body: {'status': 'available', 'organization_id': orgId},
+    );
+  }
+
   Future<SupabaseApiResponse<dynamic>> getPaymentModels() {
     final orgId = Get.find<SessionManager>().organizationId;
     if (orgId == null) {
       return Future.value(SupabaseApiResponse.success([]));
     }
-    // Payment models are org-scoped: GET organization-payment-models/{orgId}
     return _supabase.callEdgeFunction(
       'organization-payment-models/$orgId',
+      body: {},
+      method: 'GET',
+    );
+  }
+
+  Future<SupabaseApiResponse<dynamic>> getPaymentModelsForOrg(String orgId) {
+    return _supabase.callEdgeFunction(
+      'organization-payment-models/$orgId',
+      body: {},
+      method: 'GET',
+    );
+  }
+
+  Future<SupabaseApiResponse<dynamic>> getAssignedPartners(String agentId) {
+    return _supabase.callEdgeFunction(
+      'super-admin-agents/$agentId/organizations',
       body: {},
       method: 'GET',
     );

@@ -38,16 +38,20 @@ class PartnerModel {
         partnerName: json["partner_name"] ?? json["name"] ?? "",
         branch: json["branch"] ?? "",
         state: json["state"] ?? "",
-        stovesAllocated: json["stoves_allocated"] != null
-            ? (json["stoves_allocated"] as num).toInt()
-            : json["stovesAllocated"] != null
-                ? (json["stovesAllocated"] as num).toInt()
-                : 0,
-        stovesSold: json["stoves_sold"] != null
-            ? (json["stoves_sold"] as num).toInt()
-            : json["stovesSold"] != null
-                ? (json["stovesSold"] as num).toInt()
-                : 0,
+        stovesAllocated: json["total_sales"] != null
+            ? (json["total_sales"] as num).toInt()
+            : json["stoves_allocated"] != null
+                ? (json["stoves_allocated"] as num).toInt()
+                : json["stovesAllocated"] != null
+                    ? (json["stovesAllocated"] as num).toInt()
+                    : 0,
+        stovesSold: json["approved_sales"] != null
+            ? (json["approved_sales"] as num).toInt()
+            : json["stoves_sold"] != null
+                ? (json["stoves_sold"] as num).toInt()
+                : json["stovesSold"] != null
+                    ? (json["stovesSold"] as num).toInt()
+                    : 0,
         contactPerson: json["contact_person"],
         contactPhone: json["contact_phone"],
         email: json["email"],

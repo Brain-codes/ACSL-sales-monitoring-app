@@ -65,6 +65,60 @@ class LocalCacheService extends GetxService {
 
   bool get hasPaymentModels => _box.read<String>(_keyPaymentModels) != null;
 
+  // ── Per-org stoves (ACSL agents) ──────────────────────────────────────────
+
+  void saveStovesForOrg(String orgId, List<StoveModel> stoves) {
+    _box.write('cache_stoves_$orgId', jsonEncode(stoves.map((s) => s.toJson()).toList()));
+    _box.write('cache_stoves_${orgId}_at', DateTime.now().toIso8601String());
+  }
+
+  List<StoveModel> getStovesForOrg(String orgId) {
+    final raw = _box.read<String>('cache_stoves_$orgId');
+    if (raw == null) return [];
+    try {
+      final list = jsonDecode(raw) as List;
+      return list.map((e) => StoveModel.fromJson(Map<String, dynamic>.from(e as Map))).toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  // ── Per-org payment models (ACSL agents) ──────────────────────────────────
+
+  void savePaymentModelsForOrg(String orgId, List<PaymentModel> models) {
+    _box.write('cache_payment_models_$orgId', jsonEncode(models.map((m) => m.toJson()).toList()));
+    _box.write('cache_payment_models_${orgId}_at', DateTime.now().toIso8601String());
+  }
+
+  List<PaymentModel> getPaymentModelsForOrg(String orgId) {
+    final raw = _box.read<String>('cache_payment_models_$orgId');
+    if (raw == null) return [];
+    try {
+      final list = jsonDecode(raw) as List;
+      return list.map((e) => PaymentModel.fromJson(Map<String, dynamic>.from(e as Map))).toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  // ── Assigned partners (ACSL agents) ───────────────────────────────────────
+
+  void saveAssignedPartners(List<Map<String, dynamic>> partners) {
+    _box.write('cache_assigned_partners', jsonEncode(partners));
+    _box.write('cache_assigned_partners_at', DateTime.now().toIso8601String());
+  }
+
+  List<Map<String, dynamic>> getAssignedPartners() {
+    final raw = _box.read<String>('cache_assigned_partners');
+    if (raw == null) return [];
+    try {
+      final list = jsonDecode(raw) as List;
+      return list.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
   // ── Sales ─────────────────────────────────────────────────────────────────
 
   void saveSales(List<SaleModel> sales) {

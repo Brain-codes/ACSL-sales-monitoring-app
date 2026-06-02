@@ -3,6 +3,7 @@ import 'package:get/get.dart';
 import 'package:stove_transaction/core/constants/app_colors.dart';
 import 'package:stove_transaction/core/routes/app_routes.dart';
 import 'package:stove_transaction/core/services/session_manager.dart';
+import 'package:stove_transaction/core/widgets/update_prompt_sheet.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -20,6 +21,7 @@ class _SplashScreenState extends State<SplashScreen> {
 
   Future<void> _navigate() async {
     await Future.delayed(const Duration(seconds: 2));
+    checkAndShowUpdatePrompt();
     final session = Get.find<SessionManager>();
     if (session.isAuthenticated) {
       final role = session.role ?? '';

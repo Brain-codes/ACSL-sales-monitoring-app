@@ -44,6 +44,7 @@ class SalesListScreen extends StatelessWidget {
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
+        heroTag: 'sales_list_create_sale',
         backgroundColor: AppColors.brandPrimary,
         foregroundColor: Colors.white,
         icon: const Icon(Icons.add),

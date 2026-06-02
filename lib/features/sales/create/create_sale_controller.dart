@@ -74,6 +74,13 @@ class CreateSaleController extends GetxController {
   final partnerNameCtrl = TextEditingController();
   final retailerBranchCtrl = TextEditingController();
 
+  // ACSL agent: partner picker state
+  bool get isAcslAgent => _session.isAcslAgent;
+  final selectedOrgId = ''.obs;
+  final partnerSearchQuery = ''.obs;
+  final RxList<Map<String, dynamic>> assignedPartners = <Map<String, dynamic>>[].obs;
+  final isLoadingPartners = false.obs;
+
   // Step 5 — Sale Details
   final amountCtrl = TextEditingController();
   final RxList<PaymentModel> paymentModels = <PaymentModel>[].obs;
@@ -164,9 +171,108 @@ class CreateSaleController extends GetxController {
     retailerBranchCtrl.text = _session.organizationBranch ?? '';
     isOfflineMode.value = !_connectivity.isOnline.value;
     ever(_connectivity.isOnline, (online) => isOfflineMode.value = !online);
-    _loadStoves();
-    _loadPaymentModels();
+    if (isAcslAgent) {
+      // ACSL agents pick a partner first; stoves/models load after partner selection
+      _fetchAssignedPartners();
+    } else {
+      _loadStoves();
+      _loadPaymentModels();
+    }
     _fetchGoogleKeys();
+  }
+
+  Future<void> _fetchAssignedPartners() async {
+    final agentId = _session.userId;
+    if (agentId == null || agentId.isEmpty) return;
+    final cache = Get.find<LocalCacheService>();
+
+    // Populate from cache immediately so offline users see something
+    final cached = cache.getAssignedPartners();
+    if (cached.isNotEmpty) assignedPartners.assignAll(cached);
+
+    if (!_connectivity.isOnline.value) return;
+
+    isLoadingPartners.value = true;
+    final resp = await _service.getAssignedPartners(agentId);
+    isLoadingPartners.value = false;
+    if (resp.success && resp.data != null) {
+      final raw = resp.data is List
+          ? resp.data as List
+          : ((resp.data as Map?))?['data'] as List? ?? [];
+      final partners = raw.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+      assignedPartners.assignAll(partners);
+      cache.saveAssignedPartners(partners);
+    }
+  }
+
+  void onPartnerSelected(Map<String, dynamic> partner) {
+    final orgId = partner['id']?.toString() ?? '';
+    final name = partner['partner_name']?.toString() ?? partner['name']?.toString() ?? '';
+    selectedOrgId.value = orgId;
+    partnerNameCtrl.text = name;
+    partnerSearchQuery.value = '';
+    if (orgId.isNotEmpty) {
+      _loadStovesForOrg(orgId);
+      _loadPaymentModelsForOrg(orgId);
+    }
+  }
+
+  Future<void> _loadStovesForOrg(String orgId) async {
+    final cache = Get.find<LocalCacheService>();
+    isLoadingStoves.value = true;
+
+    List<StoveModel> stoves;
+    if (_connectivity.isOnline.value) {
+      final resp = await _service.getAvailableStovesForOrg(orgId);
+      if (resp.success && resp.data != null) {
+        final list = resp.data is List
+            ? resp.data as List
+            : ((resp.data as Map?))?['data'] as List? ?? [];
+        stoves = list
+            .map((e) => StoveModel.fromJson(Map<String, dynamic>.from(e as Map)))
+            .where((s) => s.stoveId.isNotEmpty)
+            .toList();
+        cache.saveStovesForOrg(orgId, stoves);
+      } else {
+        stoves = cache.getStovesForOrg(orgId);
+      }
+    } else {
+      stoves = cache.getStovesForOrg(orgId);
+    }
+
+    final pendingIds = await _queue.getPendingStoveIds();
+    availableStoves.assignAll(
+      pendingIds.isEmpty
+          ? stoves
+          : stoves.where((s) => !pendingIds.contains(s.stoveId)).toList(),
+    );
+    isLoadingStoves.value = false;
+  }
+
+  Future<void> _loadPaymentModelsForOrg(String orgId) async {
+    final cache = Get.find<LocalCacheService>();
+
+    if (_connectivity.isOnline.value) {
+      final resp = await _service.getPaymentModelsForOrg(orgId);
+      if (resp.success && resp.data != null) {
+        final raw = resp.data is List
+            ? resp.data as List
+            : ((resp.data as Map?))?['data'] as List? ?? [];
+        final list = raw.map((e) {
+          final map = Map<String, dynamic>.from(e as Map);
+          return map.containsKey('payment_model') && map['payment_model'] is Map
+              ? Map<String, dynamic>.from(map['payment_model'] as Map)
+              : map;
+        }).where((m) => m['id'] != null).toList();
+        final models = list.map((e) => PaymentModel.fromJson(e)).toList();
+        paymentModels.assignAll(models);
+        cache.savePaymentModelsForOrg(orgId, models);
+      } else {
+        paymentModels.assignAll(cache.getPaymentModelsForOrg(orgId));
+      }
+    } else {
+      paymentModels.assignAll(cache.getPaymentModelsForOrg(orgId));
+    }
   }
 
   Future<void> _fetchGoogleKeys() async {
@@ -387,7 +493,7 @@ class CreateSaleController extends GetxController {
       case 0: return selectedStove.value != null;
       case 1: return endUserNameCtrl.text.isNotEmpty && phoneCtrl.text.isNotEmpty;
       case 2: return selectedState.value.isNotEmpty && fullAddressCtrl.text.isNotEmpty;
-      case 3: return partnerNameCtrl.text.isNotEmpty;
+      case 3: return isAcslAgent ? selectedOrgId.value.isNotEmpty : partnerNameCtrl.text.isNotEmpty;
       case 4: return amountCtrl.text.isNotEmpty;
       case 5: return true;
       case 6: return true;
@@ -487,17 +593,17 @@ class CreateSaleController extends GetxController {
       return;
     }
     if (currentStep.value < 8) {
-      // step 3 (Partner Info) is hidden — skip index 3 in both directions
-      final next = currentStep.value == 2 ? 4 : currentStep.value + 1;
+      // For ACSL agents step 3 (Partner) is shown, so navigate normally.
+      // For all others step 3 is hidden — skip from 2 → 4.
+      final next = (!isAcslAgent && currentStep.value == 2) ? 4 : currentStep.value + 1;
       currentStep.value = next;
       pageController.animateToPage(next, duration: const Duration(milliseconds: 300), curve: Curves.easeInOut);
     }
-    // Step 8: submit is handled by the screen via _handleSubmitRequest
   }
 
   void previousStep() {
     if (currentStep.value > 0) {
-      final prev = currentStep.value == 4 ? 2 : currentStep.value - 1;
+      final prev = (!isAcslAgent && currentStep.value == 4) ? 2 : currentStep.value - 1;
       currentStep.value = prev;
       pageController.animateToPage(prev, duration: const Duration(milliseconds: 300), curve: Curves.easeInOut);
     }
