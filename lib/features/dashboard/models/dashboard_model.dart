@@ -30,22 +30,32 @@ class DashboardStats {
   });
 
   factory DashboardStats.fromJson(Map<String, dynamic> json) => DashboardStats(
-        stovesReceived: _int(json["totalStovesReceived"] ?? json["stoves_received"]),
-        stovesSold: _int(json["totalStovesSold"] ?? json["stoves_sold"]),
-        availableStoves: _int(json["totalStovesAvailable"] ?? json["available_stoves"]),
-        expectedReceivable: _double(json["totalExpectedAmount"] ?? json["expected_receivable"]),
-        amountReceived: _double(json["totalAmountPaid"] ?? json["amount_received"]),
-        outstandingBalance: _double(json["totalAmountOwed"] ?? json["outstanding_balance"]),
-        salesByState: json["salesByState"] != null
-            ? List<SalesByState>.from((json["salesByState"] as List).map((x) => SalesByState.fromJson(x)))
-            : json["by_state"] != null
-                ? List<SalesByState>.from((json["by_state"] as List).map((x) => SalesByState.fromJson(x)))
-                : [],
-        salesByModel: json["salesByModel"] != null
-            ? List<SalesByModel>.from((json["salesByModel"] as List).map((x) => SalesByModel.fromJson(x)))
-            : json["by_model"] != null
-                ? List<SalesByModel>.from((json["by_model"] as List).map((x) => SalesByModel.fromJson(x)))
-                : [],
+        stovesReceived: _int(
+          json["stovesReceived"] ?? json["totalStovesReceived"] ?? json["stoves_received"],
+        ),
+        stovesSold: _int(
+          json["stovesSold"] ?? json["totalStovesSold"] ?? json["stoves_sold"],
+        ),
+        availableStoves: _int(
+          json["availableStoves"] ?? json["totalStovesAvailable"] ?? json["available_stoves"],
+        ),
+        expectedReceivable: _double(
+          json["expectedReceivable"] ?? json["totalExpectedAmount"] ?? json["expected_receivable"],
+        ),
+        amountReceived: _double(
+          json["amountReceived"] ?? json["totalAmountPaid"] ?? json["amount_received"],
+        ),
+        outstandingBalance: _double(
+          json["outstandingBalance"] ?? json["totalAmountOwed"] ?? json["outstanding_balance"],
+        ),
+        salesByState: (json["byState"] ?? json["salesByState"] ?? json["by_state"] as List?)
+                ?.map<SalesByState>((x) => SalesByState.fromJson(x))
+                .toList() ??
+            [],
+        salesByModel: (json["salesModelData"] ?? json["salesByModel"] ?? json["by_model"] as List?)
+                ?.map<SalesByModel>((x) => SalesByModel.fromJson(x))
+                .toList() ??
+            [],
       );
 
   Map<String, dynamic> toJson() => {

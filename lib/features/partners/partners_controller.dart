@@ -1,9 +1,11 @@
 import 'package:get/get.dart';
 import 'package:stove_transaction/core/services/supabase_service.dart';
+import 'package:stove_transaction/core/services/session_manager.dart';
 import 'package:stove_transaction/features/partners/models/partner_model.dart';
 
 class PartnersController extends GetxController {
   final _supabase = Get.find<SupabaseService>();
+  final _session = Get.find<SessionManager>();
   final isLoading = false.obs;
   final RxList<PartnerModel> partners = <PartnerModel>[].obs;
   final error = ''.obs;
@@ -15,12 +17,18 @@ class PartnersController extends GetxController {
   }
 
   Future<void> fetchPartners() async {
+    final agentId = _session.userId;
+    if (agentId == null || agentId.isEmpty) {
+      error.value = 'Unable to identify agent. Please log in again.';
+      return;
+    }
+
     isLoading.value = true;
     error.value = '';
     final resp = await _supabase.callEdgeFunction(
-      'manage-organizations',
+      'super-admin-agents/$agentId/organizations',
       body: {},
-      queryParams: {'limit': '100', 'offset': '0'},
+      method: 'GET',
     );
     isLoading.value = false;
 
