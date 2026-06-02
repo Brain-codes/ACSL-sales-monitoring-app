@@ -31,9 +31,11 @@ class DashboardController extends GetxController {
     isLoading.value = false;
 
     if (resp.success && resp.data != null) {
-      stats.value = DashboardStats.fromJson(
-        Map<String, dynamic>.from(resp.data as Map),
-      );
+      final raw = resp.data as Map;
+      final payload = raw.containsKey('data') && raw['data'] is Map
+          ? Map<String, dynamic>.from(raw['data'] as Map)
+          : Map<String, dynamic>.from(raw);
+      stats.value = DashboardStats.fromJson(payload);
     }
   }
 }
