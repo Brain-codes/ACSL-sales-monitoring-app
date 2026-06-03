@@ -35,9 +35,12 @@ class KpiCard extends StatelessWidget {
             value,
             style: const TextStyle(
               color: Colors.white,
-              fontSize: 20,
+              fontSize: 18,
               fontWeight: FontWeight.w700,
             ),
+            softWrap: true,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
           ),
           const SizedBox(height: 4),
           Text(
@@ -47,6 +50,9 @@ class KpiCard extends StatelessWidget {
               fontSize: 12,
               fontWeight: FontWeight.w500,
             ),
+            softWrap: true,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
           ),
         ],
       ),

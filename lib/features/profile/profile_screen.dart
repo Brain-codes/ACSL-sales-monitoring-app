@@ -21,7 +21,10 @@ class ProfileScreen extends StatelessWidget {
         children: [
           const OfflineBanner(),
           Expanded(
-            child: SingleChildScrollView(
+            child: RefreshIndicator(
+              onRefresh: () async => showUpdatePromptIfNeeded(),
+              child: SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
               padding: const EdgeInsets.all(20),
               child: Column(
                 children: [
@@ -67,6 +70,7 @@ class ProfileScreen extends StatelessWidget {
                 ],
               ),
             ),
+          ),
           ),
         ],
       ),

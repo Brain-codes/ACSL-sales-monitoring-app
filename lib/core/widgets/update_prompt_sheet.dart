@@ -1,17 +1,35 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:get_storage/get_storage.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:stove_transaction/core/services/app_release_service.dart';
 
-/// Shows the update bottom sheet if an update is available.
-/// Call this once from your home screen's initState.
-/// Handles both cases: fetch already done, or still in-flight.
-void checkAndShowUpdatePrompt() {
+const _kSnoozeKey = 'update_snoozed_until';
+const _kSnoozeDuration = Duration(hours: 12);
+
+/// Shows the update bottom sheet only if:
+///   • an update is available, AND
+///   • the user hasn't snoozed within the last 12 hours.
+///
+/// Call this on pull-to-refresh on the dashboard / profile screen.
+void showUpdatePromptIfNeeded({bool forceShow = false}) {
   final service = Get.find<AppReleaseService>();
 
-  void show() {
+  void tryShow() {
+    if (!service.hasUpdate.value) return;
+
+    if (!forceShow) {
+      final box = GetStorage();
+      final raw = box.read<String?>(_kSnoozeKey);
+      if (raw != null) {
+        final until = DateTime.tryParse(raw);
+        if (until != null && DateTime.now().isBefore(until)) return;
+      }
+    }
+
     final info = service.latestRelease.value;
     if (info == null) return;
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (Get.context == null) return;
       showModalBottomSheet(
@@ -25,16 +43,21 @@ void checkAndShowUpdatePrompt() {
     });
   }
 
-  // Already fetched before the screen mounted
   if (service.hasUpdate.value) {
-    show();
-    return;
+    tryShow();
+  } else {
+    ever(service.hasUpdate, (bool hasUpdate) {
+      if (hasUpdate) tryShow();
+    });
   }
+}
 
-  // Fetch still in-flight — react when it resolves
-  ever(service.hasUpdate, (bool hasUpdate) {
-    if (hasUpdate) show();
-  });
+/// Legacy alias used on app first-launch (no snooze check).
+void checkAndShowUpdatePrompt() => showUpdatePromptIfNeeded(forceShow: true);
+
+void _snooze() {
+  final box = GetStorage();
+  box.write(_kSnoozeKey, DateTime.now().add(_kSnoozeDuration).toIso8601String());
 }
 
 class UpdatePromptSheet extends StatelessWidget {
@@ -143,14 +166,14 @@ class UpdatePromptSheet extends StatelessWidget {
                       borderRadius: BorderRadius.circular(10),
                       border: Border.all(color: const Color(0xFFFED7AA)),
                     ),
-                    child: Row(
+                    child: const Row(
                       children: [
-                        const Icon(Icons.warning_amber_rounded, color: Color(0xFFD97706), size: 18),
-                        const SizedBox(width: 8),
+                        Icon(Icons.warning_amber_rounded, color: Color(0xFFD97706), size: 18),
+                        SizedBox(width: 8),
                         Expanded(
                           child: Text(
                             'This update is required to continue using the app.',
-                            style: const TextStyle(fontSize: 12, color: Color(0xFF92400E)),
+                            style: TextStyle(fontSize: 12, color: Color(0xFF92400E)),
                           ),
                         ),
                       ],
@@ -159,7 +182,7 @@ class UpdatePromptSheet extends StatelessWidget {
                   const SizedBox(height: 20),
                 ],
 
-                // Buttons
+                // Update button
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
@@ -181,21 +204,32 @@ class UpdatePromptSheet extends StatelessWidget {
 
                 if (!isForce) ...[
                   const SizedBox(height: 10),
-                  SizedBox(
-                    width: double.infinity,
-                    child: TextButton(
-                      onPressed: () => Get.back(),
-                      style: TextButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                      ),
-                      child: Text(
-                        'Maybe later',
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.grey[600],
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextButton(
+                          onPressed: () {
+                            _snooze();
+                            Get.back();
+                          },
+                          style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 12)),
+                          child: Text(
+                            'Remind me later',
+                            style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+                          ),
                         ),
                       ),
-                    ),
+                      Expanded(
+                        child: TextButton(
+                          onPressed: () => Get.back(),
+                          style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 12)),
+                          child: Text(
+                            'Skip',
+                            style: TextStyle(fontSize: 14, color: Colors.grey[400]),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
 

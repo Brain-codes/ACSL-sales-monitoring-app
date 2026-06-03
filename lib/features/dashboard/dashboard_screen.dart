@@ -6,6 +6,8 @@ import 'package:stove_transaction/core/widgets/empty_state.dart';
 import 'package:stove_transaction/core/widgets/kpi_card.dart';
 import 'package:stove_transaction/core/widgets/offline_banner.dart';
 import 'package:stove_transaction/core/routes/app_routes.dart';
+import 'package:stove_transaction/core/services/session_manager.dart';
+import 'package:stove_transaction/core/widgets/update_prompt_sheet.dart';
 import 'package:stove_transaction/features/dashboard/models/dashboard_model.dart';
 import 'dashboard_controller.dart';
 
@@ -61,7 +63,10 @@ class DashboardScreen extends StatelessWidget {
                 );
               }
               return RefreshIndicator(
-                onRefresh: c.fetchStats,
+                onRefresh: () async {
+                  await c.fetchStats();
+                  showUpdatePromptIfNeeded();
+                },
                 child: SingleChildScrollView(
                   physics: const AlwaysScrollableScrollPhysics(),
                   padding: const EdgeInsets.all(16),
@@ -86,11 +91,11 @@ class DashboardScreen extends StatelessWidget {
                           KpiCard(title: 'Outstanding Balance', value: c.fmt(stats.outstandingBalance), icon: Icons.warning_amber_outlined, gradient: AppColors.gradientRed),
                         ],
                       ),
-                      if (stats.salesByState.isNotEmpty) ...[
+                      if (!Get.find<SessionManager>().isAcslAgent && stats.salesByState.isNotEmpty) ...[
                         const SizedBox(height: 24),
                         _ChartCard(title: 'Sales by State', child: _BarChart(data: stats.salesByState)),
                       ],
-                      if (stats.salesByModel.isNotEmpty) ...[
+                      if (!Get.find<SessionManager>().isAcslAgent && stats.salesByModel.isNotEmpty) ...[
                         const SizedBox(height: 16),
                         _ChartCard(title: 'Sales by Model', child: _PieChart(data: stats.salesByModel)),
                       ],

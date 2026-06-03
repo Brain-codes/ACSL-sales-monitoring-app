@@ -6,17 +6,20 @@ import 'package:stove_transaction/core/services/offline_queue_service.dart';
 import 'package:stove_transaction/core/services/supabase_service.dart';
 import 'package:stove_transaction/features/sales/models/sale_model.dart';
 
-enum SalesFilter { all, today, week, month }
+enum SalesFilter { all, today, week, month, custom }
 
 class SalesListController extends GetxController {
   final _supabase = Get.find<SupabaseService>();
   final _connectivity = Get.find<ConnectivityService>();
+
   final isLoading = false.obs;
   final RxList<SaleModel> sales = <SaleModel>[].obs;
   final RxList<SaleModel> pendingSales = <SaleModel>[].obs;
   final filter = SalesFilter.all.obs;
   final error = ''.obs;
   final isTableView = false.obs;
+  final customStart = Rxn<DateTime>();
+  final customEnd = Rxn<DateTime>();
 
   void toggleView() => isTableView.value = !isTableView.value;
 
@@ -32,6 +35,12 @@ class SalesListController extends GetxController {
       case SalesFilter.today: return 'Today';
       case SalesFilter.week: return 'This Week';
       case SalesFilter.month: return 'This Month';
+      case SalesFilter.custom:
+        final s = customStart.value;
+        final e = customEnd.value;
+        if (s == null) return 'Custom';
+        String fmtD(DateTime d) => '${d.day}/${d.month}/${d.year}';
+        return e != null ? '${fmtD(s)} – ${fmtD(e)}' : 'From ${fmtD(s)}';
     }
   }
 
@@ -42,20 +51,25 @@ class SalesListController extends GetxController {
     try {
       if (_connectivity.isOnline.value) {
         final result = await _fetchViaEdgeFunction();
-        if (result.isNotEmpty) {
+        // Always reflect exactly what the API returned for the active filter
+        sales.assignAll(result);
+        // Only persist the unfiltered full list to cache
+        if (filter.value == SalesFilter.all && result.isNotEmpty) {
           Get.find<LocalCacheService>().saveSales(result);
-          sales.assignAll(result);
-        } else if (sales.isEmpty) {
+        }
+        // For "All" filter only: fall back to cache if API gave nothing
+        if (result.isEmpty && filter.value == SalesFilter.all) {
           sales.assignAll(Get.find<LocalCacheService>().getSales());
         }
       } else {
-        final cached = Get.find<LocalCacheService>().getSales();
-        sales.assignAll(cached);
+        sales.assignAll(Get.find<LocalCacheService>().getSales());
       }
     } catch (e) {
       error.value = 'Failed to load sales.';
-      final cached = Get.find<LocalCacheService>().getSales();
-      if (cached.isNotEmpty) sales.assignAll(cached);
+      if (filter.value == SalesFilter.all) {
+        final cached = Get.find<LocalCacheService>().getSales();
+        if (cached.isNotEmpty) sales.assignAll(cached);
+      }
     } finally {
       await _loadPendingSales();
       isLoading.value = false;
@@ -118,18 +132,29 @@ class SalesListController extends GetxController {
       case SalesFilter.month:
         final now = DateTime.now();
         return ('${now.year}-${now.month.toString().padLeft(2, '0')}-01', null);
+      case SalesFilter.custom:
+        final s = customStart.value;
+        if (s == null) return null;
+        return (s.toIso8601String().substring(0, 10), customEnd.value?.toIso8601String().substring(0, 10));
       default:
         return null;
     }
   }
 
+  void setCustomDateRange(DateTime start, DateTime? end) {
+    customStart.value = start;
+    customEnd.value = end;
+    filter.value = SalesFilter.custom;
+    fetchSales();
+  }
+
   Map<String, dynamic> _buildRequestBody() {
     final range = _dateRange();
+    final isCustom = filter.value == SalesFilter.custom;
     return {
       'page': 1,
-      'limit': 100,
+      'limit': isCustom ? 500 : 100,
       'responseFormat': 'format2',
-      'includeCreator': true,
       if (range != null) 'dateFrom': range.$1,
       if (range != null && range.$2 != null) 'dateTo': range.$2!,
     };
