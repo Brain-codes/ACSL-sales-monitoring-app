@@ -802,6 +802,7 @@ class CreateSaleController extends GetxController {
         'demonstration': tcDemonstration.value,
       },
       'agentId': _session.userId,
+      if (selectedOrgId.value.isNotEmpty) 'organizationId': selectedOrgId.value,
       // installment fields
       if (selectedModel.value != null) 'paymentModelId': selectedModel.value!.id,
       if (selectedModel.value != null) 'isInstallment': true,

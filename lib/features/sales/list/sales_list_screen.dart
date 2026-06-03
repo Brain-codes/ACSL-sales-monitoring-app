@@ -276,25 +276,56 @@ class _FilterRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = Get.find<SalesListController>();
+    const quickFilters = [SalesFilter.all, SalesFilter.today, SalesFilter.week, SalesFilter.month];
     return Container(
       color: AppColors.white,
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
       child: Obx(() => SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         child: Row(
-          children: SalesFilter.values.map((f) {
-            final selected = c.filter.value == f;
-            return Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: FilterChip(
-                label: Text(_label(f)),
-                selected: selected,
-                selectedColor: AppColors.brandPrimary,
-                labelStyle: TextStyle(color: selected ? Colors.white : AppColors.textPrimary, fontSize: 13),
-                onSelected: (_) => c.setFilter(f),
+          children: [
+            ...quickFilters.map((f) {
+              final selected = c.filter.value == f;
+              return Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: FilterChip(
+                  label: Text(_label(f)),
+                  selected: selected,
+                  selectedColor: AppColors.brandPrimary,
+                  labelStyle: TextStyle(color: selected ? Colors.white : AppColors.textPrimary, fontSize: 13),
+                  onSelected: (_) => c.setFilter(f),
+                ),
+              );
+            }),
+            // Custom date range chip
+            if (c.filter.value == SalesFilter.custom)
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: InputChip(
+                  avatar: const Icon(Icons.date_range_outlined, size: 16, color: Colors.white),
+                  label: Text(c.filterLabel, style: const TextStyle(color: Colors.white, fontSize: 13)),
+                  backgroundColor: AppColors.brandPrimary,
+                  deleteIconColor: Colors.white.withValues(alpha: 0.8),
+                  onDeleted: () {
+                    c.customStart.value = null;
+                    c.customEnd.value = null;
+                    c.setFilter(SalesFilter.all);
+                  },
+                  onPressed: () => _showDateRangePicker(context, c),
+                ),
+              )
+            else
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: FilterChip(
+                  avatar: const Icon(Icons.date_range_outlined, size: 16, color: AppColors.textPrimary),
+                  label: const Text('Custom Range'),
+                  selected: false,
+                  labelStyle: const TextStyle(color: AppColors.textPrimary, fontSize: 13),
+                  onSelected: (_) => _showDateRangePicker(context, c),
+                ),
               ),
-            );
-          }).toList(),
+          ],
         ),
       )),
     );
@@ -306,7 +337,208 @@ class _FilterRow extends StatelessWidget {
       case SalesFilter.today: return 'Today';
       case SalesFilter.week: return 'This Week';
       case SalesFilter.month: return 'This Month';
+      case SalesFilter.custom: return 'Custom Range';
     }
+  }
+
+  void _showDateRangePicker(BuildContext context, SalesListController c) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _DateRangeSheet(controller: c),
+    );
+  }
+}
+
+class _DateRangeSheet extends StatefulWidget {
+  final SalesListController controller;
+  const _DateRangeSheet({required this.controller});
+
+  @override
+  State<_DateRangeSheet> createState() => _DateRangeSheetState();
+}
+
+class _DateRangeSheetState extends State<_DateRangeSheet> {
+  DateTime? _start;
+  DateTime? _end;
+  final _dateFmt2 = DateFormat('d MMM yyyy');
+
+  @override
+  void initState() {
+    super.initState();
+    _start = widget.controller.customStart.value;
+    _end = widget.controller.customEnd.value;
+  }
+
+  Future<void> _pickStart() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _start ?? DateTime.now(),
+      firstDate: DateTime(2010),
+      lastDate: DateTime.now(),
+      helpText: 'Select start date',
+    );
+    if (picked != null) {
+      setState(() {
+        _start = picked;
+        if (_end != null && _end!.isBefore(picked)) _end = null;
+      });
+    }
+  }
+
+  Future<void> _pickEnd() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _end ?? (_start ?? DateTime.now()),
+      firstDate: _start ?? DateTime(2010),
+      lastDate: DateTime.now(),
+      helpText: 'Select end date',
+    );
+    if (picked != null) setState(() => _end = picked);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom + 24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Center(
+            child: Container(
+              margin: const EdgeInsets.only(top: 12, bottom: 8),
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.date_range_outlined, color: AppColors.brandPrimary, size: 22),
+                    const SizedBox(width: 8),
+                    const Text('Custom Date Range', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                _DatePickerTile(
+                  label: 'Start Date',
+                  value: _start != null ? _dateFmt2.format(_start!) : null,
+                  onTap: _pickStart,
+                ),
+                const SizedBox(height: 12),
+                _DatePickerTile(
+                  label: 'End Date',
+                  value: _end != null ? _dateFmt2.format(_end!) : null,
+                  placeholder: _start == null ? 'Pick a start date first' : 'Select end date (optional)',
+                  enabled: _start != null,
+                  onTap: _pickEnd,
+                ),
+                const SizedBox(height: 24),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text('Cancel'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      flex: 2,
+                      child: ElevatedButton(
+                        onPressed: _start == null
+                            ? null
+                            : () {
+                                Navigator.pop(context);
+                                widget.controller.setCustomDateRange(_start!, _end);
+                              },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.brandPrimary,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                        ),
+                        child: const Text('Apply Filter'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DatePickerTile extends StatelessWidget {
+  final String label;
+  final String? value;
+  final String? placeholder;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  const _DatePickerTile({
+    required this.label,
+    required this.onTap,
+    this.value,
+    this.placeholder,
+    this.enabled = true,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: enabled ? onTap : null,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        decoration: BoxDecoration(
+          color: enabled ? Colors.white : Colors.grey.shade50,
+          border: Border.all(
+            color: value != null ? AppColors.brandPrimary : AppColors.borderColor,
+          ),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              Icons.calendar_today_outlined,
+              size: 18,
+              color: value != null ? AppColors.brandPrimary : AppColors.textMuted,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(label, style: const TextStyle(fontSize: 11, color: AppColors.textMuted, fontWeight: FontWeight.w500)),
+                  const SizedBox(height: 2),
+                  Text(
+                    value ?? placeholder ?? 'Select date',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: value != null ? FontWeight.w600 : FontWeight.normal,
+                      color: value != null ? AppColors.textPrimary : AppColors.textMuted,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right, size: 20, color: enabled ? AppColors.textMuted : Colors.grey.shade300),
+          ],
+        ),
+      ),
+    );
   }
 }
 

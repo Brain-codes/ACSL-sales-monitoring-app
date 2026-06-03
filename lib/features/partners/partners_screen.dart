@@ -16,10 +16,48 @@ class PartnersScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = Get.put(PartnersController());
     return Scaffold(
-      appBar: AppBar(title: const Text('My Partners')),
+      appBar: AppBar(
+        title: const Text('My Partners'),
+        actions: [
+          Obx(() => PopupMenuButton<PartnerSort>(
+            icon: const Icon(Icons.sort_rounded),
+            tooltip: 'Sort partners',
+            initialValue: c.sortBy.value,
+            onSelected: (v) => c.sortBy.value = v,
+            itemBuilder: (_) => const [
+              PopupMenuItem(value: PartnerSort.name, child: Text('Sort by Name')),
+              PopupMenuItem(value: PartnerSort.stovesSold, child: Text('Sort by Stoves Sold')),
+              PopupMenuItem(value: PartnerSort.stovesReceived, child: Text('Sort by Stoves Received')),
+            ],
+          )),
+        ],
+      ),
       body: Column(
         children: [
           const OfflineBanner(),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
+            child: Obx(() => TextField(
+              onChanged: (v) => c.searchQuery.value = v,
+              decoration: InputDecoration(
+                hintText: 'Search partners…',
+                prefixIcon: const Icon(Icons.search, size: 20),
+                suffixIcon: c.searchQuery.value.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.close, size: 18),
+                        onPressed: () => c.searchQuery.value = '',
+                      )
+                    : null,
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: const BorderSide(color: AppColors.borderColor),
+                ),
+              ),
+            )),
+          ),
           Expanded(
             child: Obx(() {
               if (c.isLoading.value) return const Center(child: CircularProgressIndicator());
@@ -29,13 +67,17 @@ class PartnersScreen extends StatelessWidget {
               if (c.partners.isEmpty) {
                 return const EmptyState(message: 'No partners assigned yet.', icon: Icons.people_outline);
               }
+              final displayed = c.displayedPartners;
+              if (displayed.isEmpty) {
+                return const EmptyState(message: 'No partners match your search.', icon: Icons.search_off_outlined);
+              }
               return RefreshIndicator(
                 onRefresh: c.fetchPartners,
                 child: ListView.separated(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: c.partners.length,
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                  itemCount: displayed.length,
                   separatorBuilder: (_, __) => const SizedBox(height: 8),
-                  itemBuilder: (_, i) => _PartnerCard(partner: c.partners[i]),
+                  itemBuilder: (_, i) => _PartnerCard(partner: displayed[i]),
                 ),
               );
             }),
@@ -149,64 +191,144 @@ class _PartnerCard extends StatelessWidget {
     );
   }
 
+  /// Returns the status color based on sold/allocated ratio.
+  /// Green: sold >= 2/3 of allocated
+  /// Yellow: sold >= 1/3 of allocated
+  /// Red: sold < 1/3 of allocated (or nothing sold)
+  _PartnerStatus _status() {
+    final allocated = partner.stovesAllocated;
+    final sold = partner.stovesSold;
+    if (allocated == 0) return _PartnerStatus.red;
+    final ratio = sold / allocated;
+    if (ratio >= 2 / 3) return _PartnerStatus.green;
+    if (ratio >= 1 / 3) return _PartnerStatus.yellow;
+    return _PartnerStatus.red;
+  }
+
   @override
   Widget build(BuildContext context) {
+    final status = _status();
+    final cardColor = status.cardColor;
+    final accentColor = status.accentColor;
+    final progressRatio = partner.stovesAllocated > 0
+        ? (partner.stovesSold / partner.stovesAllocated).clamp(0.0, 1.0)
+        : 0.0;
+
     return InkWell(
       onTap: () => _showOptions(context),
       borderRadius: BorderRadius.circular(12),
-      child: Card(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  CircleAvatar(
-                    radius: 20,
-                    backgroundColor: AppColors.brandLight,
-                    child: Text(partner.initials, style: const TextStyle(color: AppColors.brandPrimary, fontWeight: FontWeight.w700)),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(partner.partnerName, style: Theme.of(context).textTheme.titleMedium),
-                        if (partner.branch.isNotEmpty || partner.state.isNotEmpty)
-                          Text(
-                            [if (partner.branch.isNotEmpty) partner.branch, if (partner.state.isNotEmpty) partner.state].join(' · '),
-                            style: Theme.of(context).textTheme.bodySmall,
-                          ),
-                      ],
-                    ),
-                  ),
-                  const Icon(Icons.chevron_right, color: AppColors.textMuted, size: 20),
-                ],
-              ),
-              const SizedBox(height: 12),
-              const Divider(height: 1),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  _StatChip(label: 'Stoves Received', value: '${partner.stovesAllocated}', color: AppColors.brandPrimary),
-                  const SizedBox(width: 8),
-                  _StatChip(label: 'Stoves Sold', value: '${partner.stovesSold}', color: AppColors.success),
-                ],
-              ),
-              if (partner.contactPerson != null || partner.contactPhone != null) ...[
-                const SizedBox(height: 10),
-                Row(children: [
-                  const Icon(Icons.person_outline, size: 14, color: AppColors.textMuted),
-                  const SizedBox(width: 4),
-                  Text(partner.contactPerson ?? partner.contactPhone ?? '', style: Theme.of(context).textTheme.bodySmall),
-                ]),
-              ],
-            ],
+      child: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [cardColor.withValues(alpha: 0.08), cardColor.withValues(alpha: 0.03)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
           ),
+          border: Border.all(color: accentColor.withValues(alpha: 0.18)),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                CircleAvatar(
+                  radius: 20,
+                  backgroundColor: accentColor.withValues(alpha: 0.08),
+                  child: Text(partner.initials, style: TextStyle(color: accentColor, fontWeight: FontWeight.w700)),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(partner.partnerName, style: Theme.of(context).textTheme.titleMedium),
+                      if (partner.branch.isNotEmpty || partner.state.isNotEmpty)
+                        Text(
+                          [if (partner.branch.isNotEmpty) partner.branch, if (partner.state.isNotEmpty) partner.state].join(' · '),
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: accentColor.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    status.label,
+                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: accentColor),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            // Progress bar
+            ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                value: progressRatio,
+                backgroundColor: accentColor.withValues(alpha: 0.07),
+                valueColor: AlwaysStoppedAnimation<Color>(accentColor),
+                minHeight: 5,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                _StatChip(label: 'Received', value: '${partner.stovesAllocated}', color: AppColors.brandPrimary),
+                const SizedBox(width: 8),
+                _StatChip(label: 'Sold', value: '${partner.stovesSold}', color: accentColor),
+                const Spacer(),
+                Text(
+                  '${(progressRatio * 100).round()}% sold',
+                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: accentColor),
+                ),
+              ],
+            ),
+            if (partner.contactPerson != null || partner.contactPhone != null) ...[
+              const SizedBox(height: 8),
+              Row(children: [
+                Icon(Icons.person_outline, size: 14, color: accentColor.withValues(alpha: 0.7)),
+                const SizedBox(width: 4),
+                Text(partner.contactPerson ?? partner.contactPhone ?? '', style: Theme.of(context).textTheme.bodySmall),
+              ]),
+            ],
+          ],
         ),
       ),
     );
+  }
+}
+
+enum _PartnerStatus { green, yellow, red }
+
+extension _PartnerStatusX on _PartnerStatus {
+  Color get cardColor {
+    switch (this) {
+      case _PartnerStatus.green: return const Color(0xFF16A34A);
+      case _PartnerStatus.yellow: return const Color(0xFFD97706);
+      case _PartnerStatus.red: return const Color(0xFFDC2626);
+    }
+  }
+
+  Color get accentColor {
+    switch (this) {
+      case _PartnerStatus.green: return const Color(0xFF15803D);
+      case _PartnerStatus.yellow: return const Color(0xFFB45309);
+      case _PartnerStatus.red: return const Color(0xFFB91C1C);
+    }
+  }
+
+  String get label {
+    switch (this) {
+      case _PartnerStatus.green: return 'High Sales';
+      case _PartnerStatus.yellow: return 'Mid Sales';
+      case _PartnerStatus.red: return 'Low Sales';
+    }
   }
 }
 

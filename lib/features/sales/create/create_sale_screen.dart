@@ -957,17 +957,21 @@ class _Step3LocationState extends State<_Step3Location> {
           const Text('State *',
               style: TextStyle(fontWeight: FontWeight.w500, fontSize: 13)),
           const SizedBox(height: 8),
-          Obx(() => DropdownButtonFormField<String>(
+          Obx(() => _SearchablePickerField(
                 value: c.selectedState.value.isEmpty ? null : c.selectedState.value,
-                hint: const Text('Select state'),
-                items: NigeriaData.states
-                    .map((s) => DropdownMenuItem(value: s, child: Text(s)))
-                    .toList(),
-                onChanged: (v) {
-                  c.selectedState.value = v ?? '';
-                  c.selectedLga.value = '';
+                hint: 'Select state',
+                onTap: () async {
+                  final picked = await _showSearchPicker(
+                    context,
+                    title: 'Select State',
+                    items: NigeriaData.states,
+                    selected: c.selectedState.value,
+                  );
+                  if (picked != null) {
+                    c.selectedState.value = picked;
+                    c.selectedLga.value = '';
+                  }
                 },
-                decoration: const InputDecoration(),
               )),
 
           const SizedBox(height: 16),
@@ -976,15 +980,25 @@ class _Step3LocationState extends State<_Step3Location> {
           const Text('LGA',
               style: TextStyle(fontWeight: FontWeight.w500, fontSize: 13)),
           const SizedBox(height: 8),
-          Obx(() => DropdownButtonFormField<String>(
-                value: c.selectedLga.value.isEmpty ? null : c.selectedLga.value,
-                hint: const Text('Select LGA'),
-                items: c.lgas
-                    .map((s) => DropdownMenuItem(value: s, child: Text(s)))
-                    .toList(),
-                onChanged: (v) => c.selectedLga.value = v ?? '',
-                decoration: const InputDecoration(),
-              )),
+          Obx(() {
+            final stateSelected = c.selectedState.value.isNotEmpty;
+            return _SearchablePickerField(
+              value: c.selectedLga.value.isEmpty ? null : c.selectedLga.value,
+              hint: stateSelected ? 'Select LGA' : 'Select a state first',
+              enabled: stateSelected,
+              onTap: stateSelected
+                  ? () async {
+                      final picked = await _showSearchPicker(
+                        context,
+                        title: 'Select LGA',
+                        items: c.lgas,
+                        selected: c.selectedLga.value,
+                      );
+                      if (picked != null) c.selectedLga.value = picked;
+                    }
+                  : null,
+            );
+          }),
 
           const SizedBox(height: 16),
 
@@ -1726,6 +1740,192 @@ class _ImagePickerTile extends StatelessWidget {
         ),
       );
     });
+  }
+}
+
+// ──────────────────────────── Searchable picker ───────────────────────────────
+
+/// Tappable field that opens a searchable bottom-sheet picker.
+class _SearchablePickerField extends StatelessWidget {
+  final String? value;
+  final String hint;
+  final bool enabled;
+  final VoidCallback? onTap;
+
+  const _SearchablePickerField({
+    required this.hint,
+    this.value,
+    this.enabled = true,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: enabled ? onTap : null,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        decoration: BoxDecoration(
+          color: enabled ? Colors.white : AppColors.borderColor.withValues(alpha: 0.3),
+          border: Border.all(
+            color: value != null ? AppColors.brandPrimary : AppColors.borderColor,
+          ),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                value ?? hint,
+                style: TextStyle(
+                  fontSize: 14,
+                  color: value != null ? AppColors.textPrimary : AppColors.textMuted,
+                  fontWeight: value != null ? FontWeight.w500 : FontWeight.normal,
+                ),
+              ),
+            ),
+            Icon(
+              Icons.arrow_drop_down_rounded,
+              color: enabled ? AppColors.textMuted : Colors.grey.shade400,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Shows a bottom-sheet with a search field and scrollable list of [items].
+/// Returns the selected item, or null if dismissed.
+Future<String?> _showSearchPicker(
+  BuildContext context, {
+  required String title,
+  required List<String> items,
+  String selected = '',
+}) {
+  return showModalBottomSheet<String>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (_) => _SearchPickerSheet(title: title, items: items, selected: selected),
+  );
+}
+
+class _SearchPickerSheet extends StatefulWidget {
+  final String title;
+  final List<String> items;
+  final String selected;
+  const _SearchPickerSheet({required this.title, required this.items, required this.selected});
+
+  @override
+  State<_SearchPickerSheet> createState() => _SearchPickerSheetState();
+}
+
+class _SearchPickerSheetState extends State<_SearchPickerSheet> {
+  final _ctrl = TextEditingController();
+  List<String> _filtered = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _filtered = widget.items;
+    _ctrl.addListener(() {
+      final q = _ctrl.text.toLowerCase();
+      setState(() {
+        _filtered = q.isEmpty
+            ? widget.items
+            : widget.items.where((s) => s.toLowerCase().contains(q)).toList();
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final maxH = MediaQuery.of(context).size.height * 0.82;
+    return Container(
+      constraints: BoxConstraints(maxHeight: maxH),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      child: Column(
+        children: [
+          Center(
+            child: Container(
+              margin: const EdgeInsets.only(top: 12, bottom: 8),
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: Row(
+              children: [
+                Text(widget.title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                const Spacer(),
+                IconButton(
+                  icon: const Icon(Icons.close),
+                  onPressed: () => Navigator.pop(context),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: TextField(
+              controller: _ctrl,
+              autofocus: true,
+              decoration: InputDecoration(
+                hintText: 'Search…',
+                prefixIcon: const Icon(Icons.search, size: 20),
+                suffixIcon: _ctrl.text.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.close, size: 18),
+                        onPressed: () => _ctrl.clear(),
+                      )
+                    : null,
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: const BorderSide(color: AppColors.borderColor),
+                ),
+              ),
+            ),
+          ),
+          const Divider(height: 1),
+          Expanded(
+            child: _filtered.isEmpty
+                ? const Center(child: Text('No results found', style: TextStyle(color: AppColors.textMuted)))
+                : ListView.separated(
+                    padding: const EdgeInsets.only(bottom: 24),
+                    itemCount: _filtered.length,
+                    separatorBuilder: (_, __) => const Divider(height: 1, indent: 16),
+                    itemBuilder: (_, i) {
+                      final item = _filtered[i];
+                      final isSelected = item == widget.selected;
+                      return ListTile(
+                        title: Text(item, style: TextStyle(fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal)),
+                        trailing: isSelected
+                            ? const Icon(Icons.check_circle, color: AppColors.brandPrimary, size: 20)
+                            : null,
+                        tileColor: isSelected ? AppColors.brandPrimary.withValues(alpha: 0.06) : null,
+                        onTap: () => Navigator.pop(context, item),
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
   }
 }
 

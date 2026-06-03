@@ -5,6 +5,8 @@ import 'package:stove_transaction/core/services/supabase_service.dart';
 import 'package:stove_transaction/core/services/session_manager.dart';
 import 'package:stove_transaction/features/partners/models/partner_model.dart';
 
+enum PartnerSort { name, stovesSold, stovesReceived }
+
 class PartnersController extends GetxController {
   final _supabase = Get.find<SupabaseService>();
   final _session = Get.find<SessionManager>();
@@ -13,6 +15,28 @@ class PartnersController extends GetxController {
   final isLoading = false.obs;
   final RxList<PartnerModel> partners = <PartnerModel>[].obs;
   final error = ''.obs;
+  final searchQuery = ''.obs;
+  final sortBy = PartnerSort.name.obs;
+
+  List<PartnerModel> get displayedPartners {
+    var list = partners.where((p) {
+      final q = searchQuery.value.toLowerCase();
+      if (q.isEmpty) return true;
+      return p.partnerName.toLowerCase().contains(q) ||
+          p.branch.toLowerCase().contains(q) ||
+          p.state.toLowerCase().contains(q);
+    }).toList();
+
+    switch (sortBy.value) {
+      case PartnerSort.name:
+        list.sort((a, b) => a.partnerName.compareTo(b.partnerName));
+      case PartnerSort.stovesSold:
+        list.sort((a, b) => b.stovesSold.compareTo(a.stovesSold));
+      case PartnerSort.stovesReceived:
+        list.sort((a, b) => b.stovesAllocated.compareTo(a.stovesAllocated));
+    }
+    return list;
+  }
 
   @override
   void onInit() {
