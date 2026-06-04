@@ -81,7 +81,7 @@ class LoginController extends GetxController {
   }
 
   void _navigateByRole(String role) {
-    if (role == 'acsl_agent' || role == 'admin') {
+    if (role == 'acsl_agent' || role == 'admin' || role == 'acsl_agent_manager') {
       Get.offAllNamed(AppRoutes.acslHome);
     } else if (role == 'partner_agent') {
       Get.offAllNamed(AppRoutes.partnerHome);

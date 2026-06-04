@@ -83,7 +83,7 @@ class AcslSalesApp extends StatelessWidget {
     final String initial;
     if (!session.isAuthenticated) {
       initial = AppRoutes.splash;
-    } else if (session.isAcslAgent || session.isAdmin) {
+    } else if (session.isAcslAgent || session.isAdmin || session.isAcslAgentManager) {
       initial = AppRoutes.acslHome;
     } else if (session.isPartnerAgent) {
       initial = AppRoutes.partnerHome;

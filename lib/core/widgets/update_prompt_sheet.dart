@@ -67,9 +67,18 @@ class UpdatePromptSheet extends StatelessWidget {
   const UpdatePromptSheet({super.key, required this.info, required this.isForce});
 
   Future<void> _openUpdatePage() async {
-    final uri = Uri.parse(info.appPageUrl);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    final uri = Uri.parse(info.downloadUrl);
+    try {
+      final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!launched) {
+        // Fallback: try platform default mode
+        await launchUrl(uri, mode: LaunchMode.platformDefault);
+      }
+    } catch (_) {
+      // Fallback: try platform default mode if externalApplication fails
+      try {
+        await launchUrl(uri, mode: LaunchMode.platformDefault);
+      } catch (_) {}
     }
   }
 

@@ -8,8 +8,8 @@ class DashboardService {
 
   Future<SupabaseApiResponse<dynamic>> getStats({required int year}) async {
     final role = Get.find<SessionManager>().role;
-    // ACSL agents have their own dedicated dashboard endpoint
-    final functionName = role == 'acsl_agent'
+    // ACSL agents and managers use the agent dashboard; super admin uses the global one
+    final functionName = (role == 'acsl_agent' || role == 'acsl_agent_manager')
         ? 'super-admin-agent-dashboard'
         : 'get-dashboard-stats';
     return _supabase.callEdgeFunction(functionName, body: {'year': year});

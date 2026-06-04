@@ -75,7 +75,7 @@ class CreateSaleController extends GetxController {
   final retailerBranchCtrl = TextEditingController();
 
   // ACSL agent: partner picker state
-  bool get isAcslAgent => _session.isAcslAgent;
+  bool get isAcslAgent => _session.isAcslAgent || _session.isAcslAgentManager;
   final selectedOrgId = ''.obs;
   final partnerSearchQuery = ''.obs;
   final RxList<Map<String, dynamic>> assignedPartners = <Map<String, dynamic>>[].obs;
