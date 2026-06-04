@@ -129,9 +129,12 @@ class _UpdateBanner extends StatelessWidget {
       return GestureDetector(
         onTap: () async {
           if (info == null) return;
-          final uri = Uri.parse(info.appPageUrl);
-          if (await canLaunchUrl(uri)) {
-            await launchUrl(uri, mode: LaunchMode.externalApplication);
+          final uri = Uri.parse(info.downloadUrl);
+          try {
+            final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+            if (!launched) await launchUrl(uri, mode: LaunchMode.platformDefault);
+          } catch (_) {
+            try { await launchUrl(uri, mode: LaunchMode.platformDefault); } catch (_) {}
           }
         },
         child: Container(

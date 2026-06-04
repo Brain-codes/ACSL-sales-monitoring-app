@@ -24,7 +24,8 @@ class AuthService extends GetxService {
   }
 
   bool get _isAcslOrAdmin =>
-      _session.isAcslAgent || _session.isAdmin || _session.role == 'acsl_agent';
+      _session.isAcslAgent || _session.isAdmin ||
+      _session.isAcslAgentManager || _session.role == 'acsl_agent';
 
   Future<void> signOut() async {
     _session.logout();

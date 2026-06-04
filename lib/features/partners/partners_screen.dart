@@ -191,24 +191,23 @@ class _PartnerCard extends StatelessWidget {
     );
   }
 
-  /// Returns the status color based on sold/allocated ratio.
-  /// Green: sold >= 2/3 of allocated
-  /// Yellow: sold >= 1/3 of allocated
-  /// Red: sold < 1/3 of allocated (or nothing sold)
+  /// Returns the status based on sold/allocated ratio.
+  /// Green (High Sales): >= 90% sold
+  /// Yellow (Mid Sales): 65%–89% sold
+  /// Red (Low Sales): < 65% sold
   _PartnerStatus _status() {
     final allocated = partner.stovesAllocated;
     final sold = partner.stovesSold;
     if (allocated == 0) return _PartnerStatus.red;
     final ratio = sold / allocated;
-    if (ratio >= 2 / 3) return _PartnerStatus.green;
-    if (ratio >= 1 / 3) return _PartnerStatus.yellow;
+    if (ratio >= 0.90) return _PartnerStatus.green;
+    if (ratio >= 0.65) return _PartnerStatus.yellow;
     return _PartnerStatus.red;
   }
 
   @override
   Widget build(BuildContext context) {
     final status = _status();
-    final cardColor = status.cardColor;
     final accentColor = status.accentColor;
     final progressRatio = partner.stovesAllocated > 0
         ? (partner.stovesSold / partner.stovesAllocated).clamp(0.0, 1.0)
@@ -220,11 +219,14 @@ class _PartnerCard extends StatelessWidget {
       child: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
-            colors: [cardColor.withValues(alpha: 0.08), cardColor.withValues(alpha: 0.03)],
+            colors: [
+              AppColors.brandPrimary.withValues(alpha: 0.07),
+              AppColors.brandPrimary.withValues(alpha: 0.02),
+            ],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
-          border: Border.all(color: accentColor.withValues(alpha: 0.18)),
+          border: Border.all(color: AppColors.brandPrimary.withValues(alpha: 0.15)),
           borderRadius: BorderRadius.circular(12),
         ),
         padding: const EdgeInsets.all(16),
@@ -235,8 +237,8 @@ class _PartnerCard extends StatelessWidget {
               children: [
                 CircleAvatar(
                   radius: 20,
-                  backgroundColor: accentColor.withValues(alpha: 0.08),
-                  child: Text(partner.initials, style: TextStyle(color: accentColor, fontWeight: FontWeight.w700)),
+                  backgroundColor: AppColors.brandPrimary.withValues(alpha: 0.1),
+                  child: Text(partner.initials, style: TextStyle(color: AppColors.brandPrimary, fontWeight: FontWeight.w700)),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -252,10 +254,11 @@ class _PartnerCard extends StatelessWidget {
                     ],
                   ),
                 ),
+                // Status badge — this is where the red/orange/green color lives
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(
-                    color: accentColor.withValues(alpha: 0.08),
+                    color: accentColor.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Text(
@@ -266,12 +269,12 @@ class _PartnerCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 12),
-            // Progress bar
+            // Progress bar — status color shows here too
             ClipRRect(
               borderRadius: BorderRadius.circular(4),
               child: LinearProgressIndicator(
                 value: progressRatio,
-                backgroundColor: accentColor.withValues(alpha: 0.07),
+                backgroundColor: accentColor.withValues(alpha: 0.1),
                 valueColor: AlwaysStoppedAnimation<Color>(accentColor),
                 minHeight: 5,
               ),
@@ -281,7 +284,7 @@ class _PartnerCard extends StatelessWidget {
               children: [
                 _StatChip(label: 'Received', value: '${partner.stovesAllocated}', color: AppColors.brandPrimary),
                 const SizedBox(width: 8),
-                _StatChip(label: 'Sold', value: '${partner.stovesSold}', color: accentColor),
+                _StatChip(label: 'Sold', value: '${partner.stovesSold}', color: AppColors.brandPrimary),
                 const Spacer(),
                 Text(
                   '${(progressRatio * 100).round()}% sold',
@@ -292,7 +295,7 @@ class _PartnerCard extends StatelessWidget {
             if (partner.contactPerson != null || partner.contactPhone != null) ...[
               const SizedBox(height: 8),
               Row(children: [
-                Icon(Icons.person_outline, size: 14, color: accentColor.withValues(alpha: 0.7)),
+                Icon(Icons.person_outline, size: 14, color: AppColors.brandPrimary.withValues(alpha: 0.6)),
                 const SizedBox(width: 4),
                 Text(partner.contactPerson ?? partner.contactPhone ?? '', style: Theme.of(context).textTheme.bodySmall),
               ]),
@@ -307,14 +310,6 @@ class _PartnerCard extends StatelessWidget {
 enum _PartnerStatus { green, yellow, red }
 
 extension _PartnerStatusX on _PartnerStatus {
-  Color get cardColor {
-    switch (this) {
-      case _PartnerStatus.green: return const Color(0xFF16A34A);
-      case _PartnerStatus.yellow: return const Color(0xFFD97706);
-      case _PartnerStatus.red: return const Color(0xFFDC2626);
-    }
-  }
-
   Color get accentColor {
     switch (this) {
       case _PartnerStatus.green: return const Color(0xFF15803D);

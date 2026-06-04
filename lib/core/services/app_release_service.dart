@@ -5,7 +5,7 @@ import 'package:logger/logger.dart';
 import 'package:stove_transaction/core/constants/app_config.dart';
 
 /// Current hard-coded app version — keep in sync with pubspec.yaml version field.
-const String kAppVersion = '1.0.3';
+const String kAppVersion = '1.0.5';
 
 class AppReleaseInfo {
   final String version;
@@ -30,8 +30,11 @@ class AppReleaseInfo {
         isForceUpdate: json['is_force_update'] == true,
       );
 
-  /// Full URL users are sent to when they tap "Update".
-  String get appPageUrl => '$baseUrl/sales-monitoring-app';
+  /// Direct APK download URL — opens in the browser and triggers a download.
+  String get downloadUrl {
+    final path = apkPath.startsWith('/') ? apkPath : '/$apkPath';
+    return '$baseUrl$path';
+  }
 }
 
 class AppReleaseService extends GetxService {

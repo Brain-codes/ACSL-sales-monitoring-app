@@ -33,6 +33,7 @@ class SessionManager extends GetxService {
   bool get isAdmin => role == 'admin';
   bool get isAgent => role == 'agent';
   bool get isAcslAgent => role == 'acsl_agent';
+  bool get isAcslAgentManager => role == 'acsl_agent_manager';
   bool get isPartnerAgent => role == 'partner_agent';
 
   // Stove availability keys
