@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:intl/intl.dart';
@@ -9,6 +11,8 @@ import 'package:stove_transaction/core/utils/formatters.dart';
 import 'package:stove_transaction/core/widgets/empty_state.dart';
 import 'package:stove_transaction/core/widgets/offline_banner.dart';
 import 'package:stove_transaction/features/sales/models/sale_model.dart';
+import 'package:stove_transaction/features/sales/services/agreement_pdf_generator.dart';
+import 'package:printing/printing.dart';
 import 'sales_list_controller.dart';
 
 final _dateFmt = DateFormat('d MMM yyyy');
@@ -750,9 +754,10 @@ class _SaleDetailSheet extends StatelessWidget {
                     ]),
                   _DetailSection('Documents', [
                     _DetailRow('Stove Image', sale.stoveImageId != null ? '✓  Attached' : '—'),
-                    _DetailRow('Agreement Image', sale.agreementImageId != null ? '✓  Attached' : '—'),
                     _DetailRow('Signature', sale.signatureId != null ? '✓  Captured' : '—'),
                   ]),
+                  const SizedBox(height: 4),
+                  _AgreementActions(sale: sale),
                   if (sale.creatorName != null)
                     _DetailSection('Recorded By', [
                       _DetailRow('Name', sale.creatorName!),
@@ -775,6 +780,123 @@ class _SaleDetailSheet extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ── Agreement PDF actions ─────────────────────────────────────────────────────
+
+class _AgreementActions extends StatefulWidget {
+  final SaleModel sale;
+  const _AgreementActions({required this.sale});
+
+  @override
+  State<_AgreementActions> createState() => _AgreementActionsState();
+}
+
+class _AgreementActionsState extends State<_AgreementActions> {
+  bool _busy = false;
+
+  Future<List<int>> _build() => AgreementPDFGenerator.generate(widget.sale);
+
+  Future<void> _view() async {
+    setState(() => _busy = true);
+    try {
+      final bytes = await _build();
+      if (!mounted) return;
+      Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => _AgreementViewer(
+          sale: widget.sale,
+          bytes: Uint8List.fromList(bytes),
+        ),
+      ));
+    } catch (e) {
+      _showError();
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _download() async {
+    setState(() => _busy = true);
+    try {
+      final bytes = await _build();
+      await Printing.sharePdf(
+        bytes: Uint8List.fromList(bytes),
+        filename: 'Agreement_${widget.sale.transactionId}.pdf',
+      );
+    } catch (e) {
+      _showError();
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  void _showError() {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Could not generate agreement PDF')),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: OutlinedButton.icon(
+            onPressed: _busy ? null : _view,
+            icon: _busy
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.picture_as_pdf_outlined, size: 18),
+            label: const Text('View Agreement'),
+          ),
+        ),
+        const SizedBox(width: 8),
+        OutlinedButton(
+          onPressed: _busy ? null : _download,
+          style: OutlinedButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          ),
+          child: const Icon(Icons.download_rounded, size: 18),
+        ),
+      ],
+    );
+  }
+}
+
+class _AgreementViewer extends StatelessWidget {
+  final SaleModel sale;
+  final Uint8List bytes;
+  const _AgreementViewer({required this.sale, required this.bytes});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Agreement'),
+        actions: [
+          IconButton(
+            tooltip: 'Download PDF',
+            icon: const Icon(Icons.download_rounded),
+            onPressed: () => Printing.sharePdf(
+              bytes: bytes,
+              filename: 'Agreement_${sale.transactionId}.pdf',
+            ),
+          ),
+        ],
+      ),
+      body: PdfPreview(
+        build: (_) => bytes,
+        canChangePageFormat: false,
+        canChangeOrientation: false,
+        canDebug: false,
+        pdfFileName: 'Agreement_${sale.transactionId}.pdf',
       ),
     );
   }

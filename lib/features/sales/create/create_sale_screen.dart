@@ -1565,17 +1565,18 @@ class _Step9Media extends StatelessWidget {
             uploadProgressObs: c.stoveImageUploadProgress,
             onClear: () => c.clearImage('stove'),
           ),
-          const SizedBox(height: 12),
-          _ImagePickerTile(
-            label: 'Agreement Document *',
-            onCamera: () => c.pickImage(ImageSource.camera, field: 'agreement'),
-            onGallery: () =>
-                c.pickImage(ImageSource.gallery, field: 'agreement'),
-            setObs: c.agreementImageSet,
-            fileObs: c.agreementImageFile,
-            uploadProgressObs: c.agreementImageUploadProgress,
-            onClear: () => c.clearImage('agreement'),
-          ),
+          // Agreement document no longer required — commented out
+          // const SizedBox(height: 12),
+          // _ImagePickerTile(
+          //   label: 'Agreement Document *',
+          //   onCamera: () => c.pickImage(ImageSource.camera, field: 'agreement'),
+          //   onGallery: () =>
+          //       c.pickImage(ImageSource.gallery, field: 'agreement'),
+          //   setObs: c.agreementImageSet,
+          //   fileObs: c.agreementImageFile,
+          //   uploadProgressObs: c.agreementImageUploadProgress,
+          //   onClear: () => c.clearImage('agreement'),
+          // ),
           const SizedBox(height: 16),
           const Text('Customer Signature *',
               style: TextStyle(fontWeight: FontWeight.w500, fontSize: 13)),
@@ -2147,7 +2148,8 @@ class _SalePreviewSheet extends StatelessWidget {
                   ]),
                   _PreviewSection('Documents', [
                     _PreviewRow('Stove Image', c.stoveImageSet.value ? '✓  Attached' : '—'),
-                    _PreviewRow('Agreement Image', c.agreementImageSet.value ? '✓  Attached' : '—'),
+                    // Agreement image no longer required
+                    // _PreviewRow('Agreement Image', c.agreementImageSet.value ? '✓  Attached' : '—'),
                     if (c.isInstallment) _PreviewRow('Payment Proof', c.paymentProofSet.value ? '✓  Attached' : '—'),
                     _PreviewRow('Signature', c.hasSignature ? '✓  Captured' : '—'),
                   ]),

@@ -5,7 +5,7 @@ import 'package:logger/logger.dart';
 import 'package:stove_transaction/core/constants/app_config.dart';
 
 /// Current hard-coded app version — keep in sync with pubspec.yaml version field.
-const String kAppVersion = '1.0.5';
+const String kAppVersion = '1.0.6';
 
 class AppReleaseInfo {
   final String version;
