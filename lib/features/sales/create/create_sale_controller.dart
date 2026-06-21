@@ -498,7 +498,7 @@ class CreateSaleController extends GetxController {
       case 5: return true;
       case 6: return true;
       case 7: return allTcAccepted;
-      case 8: return stoveImageSet.value && agreementImageSet.value && hasSignature;
+      case 8: return stoveImageSet.value && hasSignature; // && agreementImageSet.value (agreement image no longer required)
       default: return true;
     }
   }
@@ -577,9 +577,10 @@ class CreateSaleController extends GetxController {
     if (!stoveImageSet.value) {
       errors.add(const ValidationError(step: 8, stepTitle: 'Documents & Signature', field: 'Stove Image', message: 'Stove image is required'));
     }
-    if (!agreementImageSet.value) {
-      errors.add(const ValidationError(step: 8, stepTitle: 'Documents & Signature', field: 'Agreement Image', message: 'Agreement image is required'));
-    }
+    // Agreement image no longer required
+    // if (!agreementImageSet.value) {
+    //   errors.add(const ValidationError(step: 8, stepTitle: 'Documents & Signature', field: 'Agreement Image', message: 'Agreement image is required'));
+    // }
     if (!hasSignature) {
       errors.add(const ValidationError(step: 8, stepTitle: 'Documents & Signature', field: 'Signature', message: 'Customer signature is required'));
     }
