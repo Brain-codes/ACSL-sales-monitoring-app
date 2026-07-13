@@ -1,6 +1,6 @@
-import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:stove_transaction/core/constants/app_colors.dart';
 import 'package:stove_transaction/core/services/connectivity_service.dart';
@@ -10,9 +10,8 @@ import 'package:stove_transaction/core/services/supabase_service.dart';
 import 'package:stove_transaction/core/widgets/empty_state.dart';
 import 'package:stove_transaction/core/widgets/kpi_card.dart';
 import 'package:stove_transaction/core/widgets/offline_banner.dart';
-import 'package:stove_transaction/core/routes/app_routes.dart';
 import 'package:stove_transaction/core/widgets/update_prompt_sheet.dart';
-import 'package:stove_transaction/features/dashboard/models/dashboard_model.dart';
+import 'package:stove_transaction/features/sales/resolve/location_resolution_banner.dart';
 import 'package:stove_transaction/features/sales/models/sale_model.dart';
 import 'package:stove_transaction/features/sales/models/stove_model.dart';
 import 'dashboard_controller.dart';
@@ -49,7 +48,7 @@ class DashboardScreen extends StatelessWidget {
       ),
       floatingActionButton: FloatingActionButton.extended(
         heroTag: 'dashboard_create_sale',
-        onPressed: () => Get.toNamed(AppRoutes.salesCreate),
+        onPressed: () => context.push('/sales/create'),
         icon: const Icon(Icons.add),
         label: const Text('Create Sale'),
         backgroundColor: AppColors.brandPrimary,
@@ -58,6 +57,7 @@ class DashboardScreen extends StatelessWidget {
       body: Column(
         children: [
           const OfflineBanner(),
+          const LocationResolutionBanner(),
           Expanded(
             child: Obx(() {
               if (c.isLoading.value)
@@ -82,10 +82,16 @@ class DashboardScreen extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      if (c.isStale.value) _OfflineStatsNotice(label: c.lastUpdatedLabel),
                       Text('Overview',
                           style: Theme.of(context).textTheme.titleMedium),
                       const SizedBox(height: 12),
-                      GridView.count(
+                      // When showing cached (offline) figures, render the KPI grid
+                      // grayscale + dimmed + non-interactive so it visibly reads
+                      // as "not live data", not the real current totals.
+                      _StaleWrapper(
+                        stale: c.isStale.value,
+                        child: GridView.count(
                         crossAxisCount: 2,
                         crossAxisSpacing: 12,
                         mainAxisSpacing: 12,
@@ -143,23 +149,8 @@ class DashboardScreen extends StatelessWidget {
                                 mode: _SalesMode.outstandingBalance),
                           ),
                         ],
+                        ),
                       ),
-                      if (!Get.find<SessionManager>().isAcslAgent &&
-                          !Get.find<SessionManager>().isAcslAgentManager &&
-                          stats.salesByState.isNotEmpty) ...[
-                        const SizedBox(height: 24),
-                        _ChartCard(
-                            title: 'Sales by State',
-                            child: _BarChart(data: stats.salesByState)),
-                      ],
-                      if (!Get.find<SessionManager>().isAcslAgent &&
-                          !Get.find<SessionManager>().isAcslAgentManager &&
-                          stats.salesByModel.isNotEmpty) ...[
-                        const SizedBox(height: 16),
-                        _ChartCard(
-                            title: 'Sales by Model',
-                            child: _PieChart(data: stats.salesByModel)),
-                      ],
                       const SizedBox(height: 16),
                     ],
                   ),
@@ -210,6 +201,68 @@ class DashboardScreen extends StatelessWidget {
           mode: mode,
           scrollController: scrollController,
         ),
+      ),
+    );
+  }
+}
+
+// ── Offline (stale) stats treatment ─────────────────────────────────────────
+
+/// Banner shown above the KPI grid when the figures are cached offline data.
+class _OfflineStatsNotice extends StatelessWidget {
+  final String label;
+  const _OfflineStatsNotice({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppColors.offlineBanner,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.cloud_off, size: 16, color: AppColors.offlineBannerText),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '$label — not live figures. Reconnect to refresh.',
+              style: const TextStyle(
+                  fontSize: 12, color: AppColors.offlineBannerText, fontWeight: FontWeight.w500),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Renders [child] grayscale, dimmed and non-interactive when [stale] is true,
+/// so cached offline stats visibly read as inactive/disabled.
+class _StaleWrapper extends StatelessWidget {
+  final bool stale;
+  final Widget child;
+  const _StaleWrapper({required this.stale, required this.child});
+
+  // Luminance matrix — collapses all colour to grey.
+  static const List<double> _greyscale = <double>[
+    0.2126, 0.7152, 0.0722, 0, 0,
+    0.2126, 0.7152, 0.0722, 0, 0,
+    0.2126, 0.7152, 0.0722, 0, 0,
+    0, 0, 0, 1, 0,
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    if (!stale) return child;
+    return Opacity(
+      opacity: 0.55,
+      child: ColorFiltered(
+        colorFilter: const ColorFilter.matrix(_greyscale),
+        child: IgnorePointer(child: child),
       ),
     );
   }
@@ -744,7 +797,6 @@ class _SaleRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final name = sale.endUserName ?? sale.contactPerson ?? 'Unknown';
     final stoveId = sale.stoveId ?? sale.stoveSerialNo ?? '—';
-    final payStatus = sale.paymentStatus ?? sale.status ?? '';
 
     return Container(
       decoration: BoxDecoration(
@@ -809,159 +861,5 @@ class _SaleRow extends StatelessWidget {
       ),
     );
   }
-
-  Color _statusColor(String status) {
-    switch (status.toLowerCase()) {
-      case 'paid':
-      case 'fully_paid':
-        return AppColors.success;
-      case 'partial':
-        return const Color(0xFFD97706);
-      default:
-        return Colors.grey;
-    }
-  }
 }
 
-// ── Chart widgets ──────────────────────────────────────────────────────────────
-
-class _ChartCard extends StatelessWidget {
-  final String title;
-  final Widget child;
-  const _ChartCard({required this.title, required this.child});
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(title, style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 16),
-            child,
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _BarChart extends StatelessWidget {
-  final List<SalesByState> data;
-  const _BarChart({required this.data});
-
-  @override
-  Widget build(BuildContext context) {
-    final maxVal =
-        data.map((d) => d.count.toDouble()).fold(0.0, (a, b) => a > b ? a : b);
-    return SizedBox(
-      height: 200,
-      child: BarChart(
-        BarChartData(
-          maxY: maxVal * 1.2,
-          barGroups: data
-              .asMap()
-              .entries
-              .map((e) => BarChartGroupData(
-                    x: e.key,
-                    barRods: [
-                      BarChartRodData(
-                          toY: e.value.count.toDouble(),
-                          color: AppColors.brandPrimary,
-                          width: 16,
-                          borderRadius: BorderRadius.circular(4)),
-                    ],
-                  ))
-              .toList(),
-          titlesData: FlTitlesData(
-            bottomTitles: AxisTitles(
-              sideTitles: SideTitles(
-                showTitles: true,
-                getTitlesWidget: (v, _) {
-                  final i = v.toInt();
-                  if (i < 0 || i >= data.length) return const SizedBox.shrink();
-                  final label = data[i].state;
-                  return Padding(
-                    padding: const EdgeInsets.only(top: 4),
-                    child: Text(
-                        label.length > 6 ? label.substring(0, 6) : label,
-                        style: const TextStyle(fontSize: 10)),
-                  );
-                },
-              ),
-            ),
-            leftTitles: const AxisTitles(
-                sideTitles: SideTitles(showTitles: true, reservedSize: 28)),
-            topTitles:
-                const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            rightTitles:
-                const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          ),
-          gridData: const FlGridData(show: false),
-          borderData: FlBorderData(show: false),
-        ),
-      ),
-    );
-  }
-}
-
-class _PieChart extends StatelessWidget {
-  final List<SalesByModel> data;
-  const _PieChart({required this.data});
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 200,
-      child: Row(
-        children: [
-          Expanded(
-            child: PieChart(PieChartData(
-              sections: data.asMap().entries.map((e) {
-                final color =
-                    AppColors.chartColors[e.key % AppColors.chartColors.length];
-                return PieChartSectionData(
-                  value: e.value.count.toDouble(),
-                  color: color,
-                  radius: 60,
-                  title: '${e.value.count}',
-                  titleStyle: const TextStyle(
-                      fontSize: 11,
-                      color: Colors.white,
-                      fontWeight: FontWeight.w600),
-                );
-              }).toList(),
-              centerSpaceRadius: 0,
-            )),
-          ),
-          const SizedBox(width: 16),
-          Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: data.asMap().entries.map((e) {
-              final color =
-                  AppColors.chartColors[e.key % AppColors.chartColors.length];
-              final label = e.value.modelName;
-              return Padding(
-                padding: const EdgeInsets.symmetric(vertical: 3),
-                child: Row(children: [
-                  Container(
-                      width: 10,
-                      height: 10,
-                      decoration: BoxDecoration(
-                          color: color,
-                          borderRadius: BorderRadius.circular(2))),
-                  const SizedBox(width: 6),
-                  Text(label.length > 14 ? '${label.substring(0, 14)}…' : label,
-                      style: const TextStyle(fontSize: 11)),
-                ]),
-              );
-            }).toList(),
-          ),
-        ],
-      ),
-    );
-  }
-}

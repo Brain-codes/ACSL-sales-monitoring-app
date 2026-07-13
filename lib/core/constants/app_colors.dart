@@ -1,9 +1,32 @@
 import 'package:flutter/material.dart';
 
+/// Single source of truth for every color in the app.
+///
+/// HARD RULE: no widget may hardcode a hex value. Reference these named tokens
+/// only — changing the brand here propagates everywhere.
+///
+/// Brand is migrating blue -> green. The old blue values are kept commented out
+/// (NOT deleted) so we can flip back instantly if needed.
 class AppColors {
-  static const brandPrimary = Color(0xFF07376A);
-  static const brandHeader = Color(0xFF194977);
-  static const brandLight = Color(0xFFEFF6FF);
+  // ---- Brand: GREEN scale (active) ----
+  static const brandPrimary = Color(0xFF4A5D0F); // green 700-ish
+  static const brandHeader = Color(0xFF6B8519); // green mid
+  static const brandLight = Color(0xFFEEF3C4); // green tint (active-child bg)
+
+  /// Scaffold/page background — a VERY faint green (not the thick brand tint).
+  static const scaffoldBg = Color(0xFFF6F8EE);
+
+  // ---- Brand: BLUE scale (old, kept for rollback) ----
+  // static const brandPrimary = Color(0xFF07376A);
+  // static const brandHeader = Color(0xFF194977);
+  // static const brandLight = Color(0xFFEFF6FF);
+
+  // Sidebar active states (mirror the web sidebar)
+  static const navActiveBg = brandPrimary; // selected parent bg
+  static const navActiveText = white; // selected parent text
+  static const navChildActiveBg = brandLight; // selected child bg
+  static const navChildActiveText = brandPrimary; // selected child text
+
   static const textPrimary = Color(0xFF0F172A);
   static const textMuted = Color(0xFF64748B);
   static const error = Color(0xFFEF4444);

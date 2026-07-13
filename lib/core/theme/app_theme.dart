@@ -12,7 +12,7 @@ class AppTheme {
           surface: AppColors.white,
           error: AppColors.error,
         ),
-        scaffoldBackgroundColor: AppColors.brandLight,
+        scaffoldBackgroundColor: AppColors.scaffoldBg,
         appBarTheme: const AppBarTheme(
           backgroundColor: AppColors.brandPrimary,
           foregroundColor: AppColors.white,

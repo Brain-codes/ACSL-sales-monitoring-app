@@ -22,6 +22,10 @@ class SessionManager extends GetxService {
   static const String _userProfileKey = 'userProfile';
   static const String _organizationKey = 'organization';
 
+  /// Persists across (soft) logout so the next login can tell whether the same
+  /// user or a different user is signing in. Only cleared on a full data wipe.
+  static const String _lastUserIdKey = 'lastUserId';
+
   // Basic getters
   String? get userId => _box.read(_userIdKey);
   String? get role => _box.read(_roleKey);
@@ -30,11 +34,29 @@ class SessionManager extends GetxService {
   String? get supabaseSession => _box.read(_supabaseSessionKey);
   String? get timeLoggedIn => _box.read(_timeLoggedInKey);
 
+  /// Id of the last user who signed in. Survives (soft) logout and token
+  /// expiry; only cleared by [wipeAll].
+  String? get lastUserId => _box.read(_lastUserIdKey);
+  void setLastUserId(String id) => _box.write(_lastUserIdKey, id);
+
   bool get isAdmin => role == 'admin';
   bool get isAgent => role == 'agent';
   bool get isAcslAgent => role == 'acsl_agent';
   bool get isAcslAgentManager => role == 'acsl_agent_manager';
   bool get isPartnerAgent => role == 'partner_agent';
+
+  /// Sync mode. Offline-first default is MANUAL: sales stay queued until the
+  /// user reviews and presses sync. Auto-sync is opt-in (a "flex") — when on,
+  /// queued sales upload automatically on reconnect. Persists across sessions;
+  /// reset to manual only on a full data wipe. Exposed as an [RxBool] so the
+  /// profile toggle and any gating UI react instantly.
+  static const String _autoSyncKey = 'autoSyncEnabled';
+  late final RxBool autoSyncEnabled = RxBool(_box.read(_autoSyncKey) ?? false);
+
+  void setAutoSync(bool enabled) {
+    autoSyncEnabled.value = enabled;
+    _box.write(_autoSyncKey, enabled);
+  }
 
   // Stove availability keys
   static const String _stoveAvailableKey = 'totalStoveAvailable';
@@ -248,9 +270,23 @@ class SessionManager extends GetxService {
     _box.remove(_supabaseSessionKey);
   }
 
-  /// Check if user is authenticated (has valid session)
+  /// Check if user is authenticated with a currently-VALID (unexpired) token.
+  /// Use this only to decide whether an authenticated API call can be made
+  /// right now — NOT for routing/gating the UI.
   bool get isAuthenticated {
     return userId != null && token != null && isSessionValid();
+  }
+
+  /// OFFLINE-FIRST sign-in check used for routing/UI gating.
+  ///
+  /// A user counts as signed in as long as we hold their identity + profile
+  /// locally, REGARDLESS of whether the access token has expired. An expired
+  /// token only means "can't hit the server right now"; it must never eject a
+  /// field user from the app while they're offline. Re-login is forced only
+  /// when the server actively rejects the refresh token (see main._restoreSession
+  /// and AuthService.refreshSessionIfPossible).
+  bool get isSignedIn {
+    return userId != null && token != null && getUserProfile() != null;
   }
 
   void logout() {

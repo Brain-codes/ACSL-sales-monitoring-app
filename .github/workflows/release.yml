@@ -1,0 +1,171 @@
+name: Release APK
+
+# Manual, controlled releases. Click "Run workflow" in the Actions tab and fill
+# in the version, release notes, and whether the update is forced. The pipeline
+# then does everything you used to do by hand:
+#   1. sets the version (pubspec + kAppVersion),
+#   2. builds a signed release APK (dev tools auto-stripped via kDebugMode),
+#   3. publishes it to frontend-transactions/public/downloads (Vercel serves it),
+#   4. updates the Supabase app_releases row so the in-app updater sees it,
+#   5. commits the version bump back to this repo.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "New version, e.g. 1.0.9 (no leading v)"
+        required: true
+      release_notes:
+        description: "What's new in this release"
+        required: true
+        default: "Bug fixes and improvements."
+      is_force_update:
+        description: "Force users to update before they can continue?"
+        type: boolean
+        default: false
+
+# Publisher config that isn't secret.
+env:
+  APK_BASENAME: sales-monitoring-app
+  DOWNLOADS_DIR: public/downloads
+  WEB_REPO: Brain-codes/frontend-transactions
+  RELEASE_ROW_ID: "00000000-0000-0000-0000-000000000002"
+
+permissions:
+  contents: write # commit the version bump back to this repo
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      # ── 1. Checkout this (mobile) repo ────────────────────────────────────
+      - name: Checkout mobile app
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── 2. Derive version numbers ─────────────────────────────────────────
+      - name: Compute version values
+        id: ver
+        run: |
+          set -euo pipefail
+          VERSION="${{ github.event.inputs.version }}"
+          # Validate x.y.z
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Version must look like 1.0.9 (got '$VERSION')"; exit 1
+          fi
+          IFS='.' read -r MAJ MIN PAT <<< "$VERSION"
+          # Monotonic Android versionCode derived from the semver.
+          CODE=$(( MAJ * 10000 + MIN * 100 + PAT ))
+          DASHED="${VERSION//./-}"
+          echo "version=$VERSION"        >> "$GITHUB_OUTPUT"
+          echo "code=$CODE"              >> "$GITHUB_OUTPUT"
+          echo "apk_file=${APK_BASENAME}-v${DASHED}.apk" >> "$GITHUB_OUTPUT"
+          echo "apk_path=/downloads/${APK_BASENAME}-v${DASHED}.apk" >> "$GITHUB_OUTPUT"
+
+      # ── 3. Toolchain ──────────────────────────────────────────────────────
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.41.9"
+          channel: stable
+          cache: true
+
+      # ── 4. Recreate build-time secrets ────────────────────────────────────
+      - name: Write .env
+        run: printf '%s' "${{ secrets.ENV_FILE }}" > .env
+
+      - name: Restore debug keystore (keeps APK signature stable for updates)
+        run: |
+          mkdir -p "$HOME/.android"
+          echo "${{ secrets.ANDROID_DEBUG_KEYSTORE_BASE64 }}" | base64 -d > "$HOME/.android/debug.keystore"
+
+      # ── 5. Stamp the version into the app ─────────────────────────────────
+      - name: Set version in pubspec + kAppVersion
+        run: |
+          set -euo pipefail
+          V="${{ steps.ver.outputs.version }}"
+          C="${{ steps.ver.outputs.code }}"
+          sed -i "s/^version: .*/version: ${V}+${C}/" pubspec.yaml
+          sed -i "s/^const String kAppVersion = .*/const String kAppVersion = '${V}';/" \
+            lib/core/services/app_release_service.dart
+          echo "pubspec -> $(grep '^version:' pubspec.yaml)"
+          echo "kAppVersion -> $(grep 'const String kAppVersion' lib/core/services/app_release_service.dart)"
+
+      # ── 6. Build ──────────────────────────────────────────────────────────
+      - name: Flutter pub get
+        run: flutter pub get
+
+      - name: Build release APK
+        run: flutter build apk --release
+
+      - name: Stage the renamed APK
+        id: apk
+        run: |
+          set -euo pipefail
+          SRC=build/app/outputs/flutter-apk/app-release.apk
+          DST="${{ steps.ver.outputs.apk_file }}"
+          cp "$SRC" "$DST"
+          SIZE_MB=$(( ( $(stat -c%s "$DST") + 1048575 ) / 1048576 ))
+          echo "size=~${SIZE_MB} MB" >> "$GITHUB_OUTPUT"
+          echo "Built $DST (~${SIZE_MB} MB)"
+
+      # ── 7. Publish the APK to the web repo (Vercel serves it) ─────────────
+      - name: Checkout web repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.WEB_REPO }}
+          token: ${{ secrets.WEB_REPO_PAT }}
+          path: web-repo
+
+      - name: Copy APK into downloads and push
+        run: |
+          set -euo pipefail
+          cp "${{ steps.ver.outputs.apk_file }}" "web-repo/${DOWNLOADS_DIR}/${{ steps.ver.outputs.apk_file }}"
+          cd web-repo
+          git config user.name "release-bot"
+          git config user.email "release-bot@users.noreply.github.com"
+          git add "${DOWNLOADS_DIR}/${{ steps.ver.outputs.apk_file }}"
+          git commit -m "chore(release): add ${{ steps.ver.outputs.apk_file }}"
+          git push
+
+      # ── 8. Update the Supabase release row (in-app updater reads this) ─────
+      - name: Update app_releases in Supabase
+        run: |
+          set -euo pipefail
+          PAYLOAD=$(jq -n \
+            --arg version "${{ steps.ver.outputs.version }}" \
+            --arg apk_path "${{ steps.ver.outputs.apk_path }}" \
+            --arg notes "${{ github.event.inputs.release_notes }}" \
+            --arg size "${{ steps.apk.outputs.size }}" \
+            --argjson force ${{ github.event.inputs.is_force_update }} \
+            '{version:$version, apk_path:$apk_path, release_notes:$notes, size:$size, is_force_update:$force}')
+          curl -fsS -X PATCH \
+            "${{ secrets.SUPABASE_URL }}/rest/v1/app_releases?id=eq.${RELEASE_ROW_ID}" \
+            -H "apikey: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            -H "Content-Type: application/json" \
+            -H "Prefer: return=minimal" \
+            -d "$PAYLOAD"
+          echo "Supabase app_releases updated to ${{ steps.ver.outputs.version }}"
+
+      # ── 9. Commit the version bump back to this repo ──────────────────────
+      - name: Commit version bump
+        run: |
+          set -euo pipefail
+          git config user.name "release-bot"
+          git config user.email "release-bot@users.noreply.github.com"
+          git add pubspec.yaml lib/core/services/app_release_service.dart
+          git commit -m "chore(release): v${{ steps.ver.outputs.version }}" || echo "nothing to commit"
+          git push
+
+      - name: Upload APK as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.ver.outputs.apk_file }}
+          path: ${{ steps.ver.outputs.apk_file }}

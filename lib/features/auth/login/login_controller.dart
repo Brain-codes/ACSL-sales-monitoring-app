@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:logger/logger.dart';
 import 'package:stove_transaction/core/model/login_response_model.dart';
-import 'package:stove_transaction/core/routes/app_routes.dart';
+import 'package:stove_transaction/core/router/app_navigator.dart';
+import 'package:stove_transaction/core/services/auth_service.dart';
 import 'package:stove_transaction/core/services/data_refresh_service.dart';
 import 'package:stove_transaction/core/services/session_manager.dart';
 import 'package:stove_transaction/core/services/supabase_service.dart';
@@ -49,6 +50,16 @@ class LoginController extends GetxController {
         return;
       }
 
+      // Different user than last time → wipe the previous user's cached/offline
+      // data and storage. Same user → keep it (reused offline, refetched
+      // online). First-ever login has no lastUserId, so nothing to wipe.
+      final lastUserId = _session.lastUserId;
+      final isDifferentUser =
+          lastUserId != null && lastUserId != loginResp.userId;
+      if (isDifferentUser) {
+        await Get.find<AuthService>().wipeAllData();
+      }
+
       _session.saveCompleteUserData(
         userId: loginResp.userId,
         role: loginResp.profile.role ?? '',
@@ -57,6 +68,7 @@ class LoginController extends GetxController {
         timeLoggedIn: DateTime.now().toIso8601String(),
         profile: loginResp.profile.toJson(),
       );
+      _session.setLastUserId(loginResp.userId);
 
       // Hydrate Supabase client with the returned tokens
       if (loginResp.refreshToken.isNotEmpty) {
@@ -71,7 +83,7 @@ class LoginController extends GetxController {
       }
 
       FocusManager.instance.primaryFocus?.unfocus();
-      _navigateByRole(loginResp.profile.role ?? '');
+      _goHomeAfterLogin();
     } catch (e) {
       _logger.e('Login error: $e');
       _showError('An unexpected error occurred.');
@@ -80,15 +92,9 @@ class LoginController extends GetxController {
     }
   }
 
-  void _navigateByRole(String role) {
-    if (role == 'acsl_agent' || role == 'admin' || role == 'acsl_agent_manager') {
-      Get.offAllNamed(AppRoutes.acslHome);
-    } else if (role == 'partner_agent') {
-      Get.offAllNamed(AppRoutes.partnerHome);
-    } else {
-      _showError('Your account does not have access to this app.');
-      return;
-    }
+  void _goHomeAfterLogin() {
+    // SUPER-ADMIN-ONLY build: any authenticated user gets the full surface.
+    goHome();
     try {
       Get.find<DataRefreshService>().refreshAll();
     } catch (_) {}
