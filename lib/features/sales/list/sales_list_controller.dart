@@ -82,16 +82,73 @@ class SalesListController extends GetxController {
       final pending = await queue.getPending();
       final pendingModels = pending.map((row) {
         final payload = jsonDecode(row['payload'] as String) as Map<String, dynamic>;
-        return SaleModel(
+        // Which images were captured (stored separately from the payload) —
+        // used to show "Attached / Captured" in the offline detail view.
+        Map<String, dynamic> images = const {};
+        final imagesRaw = row['images'];
+        if (imagesRaw is String && imagesRaw.isNotEmpty) {
+          try {
+            images = jsonDecode(imagesRaw) as Map<String, dynamic>;
+          } catch (_) {}
+        }
+        final addr = payload['addressData'] is Map
+            ? Map<String, dynamic>.from(payload['addressData'] as Map)
+            : const <String, dynamic>{};
+        final model = SaleModel(
           id: 'offline_${row['id']}',
           transactionId: payload['transactionId']?.toString() ?? '',
           endUserName: payload['endUserName']?.toString(),
+          aka: payload['aka']?.toString(),
+          contactPerson: payload['contactPerson']?.toString(),
+          contactPhone: payload['contactPhone']?.toString(),
+          phone: payload['phone']?.toString(),
+          otherPhone: payload['otherPhone']?.toString(),
+          partnerName: payload['partnerName']?.toString(),
+          retailerBranch: payload['retailerBranch']?.toString(),
           stoveSerialNo: payload['stoveSerialNo']?.toString(),
+          stoveId: payload['stoveId']?.toString(),
           state: payload['stateBackup']?.toString(),
+          lga: payload['lgaBackup']?.toString(),
+          address: addr['fullAddress']?.toString(),
+          latitude: (addr['latitude'] as num?)?.toDouble(),
+          longitude: (addr['longitude'] as num?)?.toDouble(),
+          salesDate: DateTime.tryParse(payload['salesDate']?.toString() ?? ''),
           amount: (payload['amount'] as num?)?.toDouble(),
+          // The pending card shows what the customer actually paid, not the
+          // full sale price — mirror amount_received (fallback initial payment).
+          amountReceived: (payload['amountReceived'] as num?)?.toDouble()
+              ?? (payload['initialPaymentAmount'] as num?)?.toDouble(),
+          initialPaymentAmount: (payload['initialPaymentAmount'] as num?)?.toDouble(),
+          initialPaymentMethod: payload['initialPaymentMethod']?.toString(),
+          isInstallment: payload['isInstallment'] == true,
+          paymentModelId: payload['paymentModelId']?.toString(),
+          potQuantity: (payload['potQuantity'] as num?)?.toInt(),
+          heatRetentionDevice: payload['heatRetentionDevice'] == true,
+          previousStoveType: (payload['previousStoveType']?.toString().isEmpty ?? true)
+              ? null : payload['previousStoveType']?.toString(),
+          previousStoveOther: payload['previousStoveOther']?.toString(),
+          mealsPerDay: (payload['mealsPerDay']?.toString().isEmpty ?? true)
+              ? null : payload['mealsPerDay']?.toString(),
+          cookingFuelSource: (payload['cookingFuelSource']?.toString().isEmpty ?? true)
+              ? null : payload['cookingFuelSource']?.toString(),
+          cookingLocation: (payload['cookingLocation']?.toString().isEmpty ?? true)
+              ? null : payload['cookingLocation']?.toString(),
+          termsAccepted: payload['termsAccepted'] is Map
+              ? Map<String, dynamic>.from(payload['termsAccepted'] as Map)
+                  .map((k, v) => MapEntry(k, v == true))
+              : null,
+          // Presence flags only (real ids assigned server-side on sync).
+          stoveImageId: images.containsKey('stove_image') ? 'offline' : null,
+          agreementImageId: images.containsKey('agreement_image') ? 'offline' : null,
+          signatureId: images.containsKey('signature') ? 'offline' : null,
           status: 'pending_sync',
           createdAt: DateTime.tryParse(row['created_at'] as String? ?? ''),
         );
+        model.queueId = row['id'] as int?;
+        model.syncError = (row['error'] as String?)?.trim().isEmpty ?? true
+            ? null
+            : (row['error'] as String).trim();
+        return model;
       }).toList();
       pendingSales.assignAll(pendingModels);
     } catch (_) {}
@@ -155,6 +212,7 @@ class SalesListController extends GetxController {
       'page': 1,
       'limit': isCustom ? 500 : 100,
       'responseFormat': 'format2',
+      'includeCreator': true,
       if (range != null) 'dateFrom': range.$1,
       if (range != null && range.$2 != null) 'dateTo': range.$2!,
     };

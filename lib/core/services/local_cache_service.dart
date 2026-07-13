@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:get/get.dart';
 import 'package:get_storage/get_storage.dart';
 import 'package:stove_transaction/features/sales/models/payment_model.dart';
@@ -17,12 +18,67 @@ class LocalCacheService extends GetxService {
   static const _keyGoogleKeys = 'cache_google_keys';
   static const _keyGoogleKeysAt = 'cache_google_keys_at';
 
+  static const _keyDevAutofill = 'dev_autofill_enabled';
+
+  /// Whether the create-sale test-autofill backdoor is enabled. Defaults to
+  /// [kDebugMode]: ON in debug/dev builds, OFF in release builds (e.g.
+  /// `flutter build apk`) so the backdoor never ships. Can still be toggled
+  /// from the profile page when that card is enabled.
+  bool get devAutofillEnabled => _box.read<bool>(_keyDevAutofill) ?? kDebugMode;
+  set devAutofillEnabled(bool v) => _box.write(_keyDevAutofill, v);
+
   bool isStale(String timestampKey, {Duration ttl = const Duration(minutes: 5)}) {
     final raw = _box.read<String>(timestampKey);
     if (raw == null) return true;
     final saved = DateTime.tryParse(raw);
     if (saved == null) return true;
     return DateTime.now().difference(saved) > ttl;
+  }
+
+  // ── Generic JSON-list cache (offline-first reads for new features) ──────────
+
+  /// Cache a list of JSON maps under [key] (e.g. 'cache_agents').
+  void saveJsonList(String key, List<Map<String, dynamic>> rows) {
+    _box.write(key, jsonEncode(rows));
+    _box.write('${key}_at', DateTime.now().toIso8601String());
+  }
+
+  /// Read a cached list of JSON maps for [key]; empty if absent/corrupt.
+  List<Map<String, dynamic>> getJsonList(String key) {
+    final raw = _box.read<String>(key);
+    if (raw == null) return [];
+    try {
+      final decoded = jsonDecode(raw) as List;
+      return decoded.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  // ── Dashboard stats (offline-first, per year) ───────────────────────────────
+
+  /// Persist the raw dashboard stats payload for [year] so the dashboard can
+  /// render from cache while offline.
+  void saveDashboardStats(int year, Map<String, dynamic> payload) {
+    _box.write('cache_dashboard_$year', jsonEncode(payload));
+    _box.write('cache_dashboard_${year}_at', DateTime.now().toIso8601String());
+  }
+
+  /// Read the cached dashboard stats payload for [year], or null if none.
+  Map<String, dynamic>? getDashboardStats(int year) {
+    final raw = _box.read<String>('cache_dashboard_$year');
+    if (raw == null) return null;
+    try {
+      return Map<String, dynamic>.from(jsonDecode(raw) as Map);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// When the cached dashboard stats for [year] were last saved (null if never).
+  DateTime? dashboardStatsSavedAt(int year) {
+    final raw = _box.read<String>('cache_dashboard_${year}_at');
+    return raw == null ? null : DateTime.tryParse(raw);
   }
 
   // ── Stoves ────────────────────────────────────────────────────────────────

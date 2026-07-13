@@ -53,6 +53,36 @@ class CreateSaleService {
     );
   }
 
+  /// Super admin: every organization (partner) to choose from.
+  Future<SupabaseApiResponse<dynamic>> getAllOrganizations() {
+    return _supabase.callEdgeFunction(
+      'manage-organizations',
+      body: {},
+      method: 'GET',
+    );
+  }
+
+  /// All ACTIVE payment models (decoupled from partners — every partner may use
+  /// any active model). See docs/backend/payment-model-decoupling.md.
+  Future<SupabaseApiResponse<dynamic>> getAllActivePaymentModels() {
+    return _supabase.callEdgeFunction(
+      'payment-models',
+      body: {},
+      method: 'GET',
+    );
+  }
+
+  /// Agents tied to [orgId] for the "sold on behalf of" picker.
+  /// Backed by the new get-organization-agents edge function.
+  Future<SupabaseApiResponse<dynamic>> getOrganizationAgents(String orgId) {
+    return _supabase.callEdgeFunction(
+      'get-organization-agents',
+      body: {},
+      method: 'GET',
+      queryParams: {'organization_id': orgId},
+    );
+  }
+
   Future<SupabaseApiResponse<dynamic>> uploadImage(File file, String type) {
     return _supabase.callEdgeFunction(
       'upload-image',

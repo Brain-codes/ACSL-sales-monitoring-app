@@ -3,9 +3,10 @@ import 'package:get/get.dart';
 import 'package:http/http.dart' as http;
 import 'package:logger/logger.dart';
 import 'package:stove_transaction/core/constants/app_config.dart';
+import 'package:stove_transaction/core/services/connectivity_service.dart';
 
 /// Current hard-coded app version — keep in sync with pubspec.yaml version field.
-const String kAppVersion = '1.0.6';
+const String kAppVersion = '1.0.7';
 
 class AppReleaseInfo {
   final String version;
@@ -48,9 +49,23 @@ class AppReleaseService extends GetxService {
   void onInit() {
     super.onInit();
     _fetchAndCheck();
+    // Retry once connectivity returns, so an offline launch still learns about
+    // updates without the startup timeout noise. Stops re-checking after an
+    // update is found.
+    try {
+      final connectivity = Get.find<ConnectivityService>();
+      ever<bool>(connectivity.isOnline, (online) {
+        if (online && !hasUpdate.value) _fetchAndCheck();
+      });
+    } catch (_) {}
   }
 
   Future<void> _fetchAndCheck() async {
+    // Skip entirely when offline: the request would just burn the 10s timeout
+    // and log a scary stack trace. It re-runs automatically on reconnect.
+    try {
+      if (!Get.find<ConnectivityService>().isOnline.value) return;
+    } catch (_) {}
     try {
       final uri = Uri.parse('${AppConfig.acslSupabaseURL}/functions/v1/manage-app-release');
       final response = await http.get(uri).timeout(const Duration(seconds: 10));

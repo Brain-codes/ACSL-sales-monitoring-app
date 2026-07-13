@@ -33,25 +33,39 @@ class PartnerModel {
     this.address,
   });
 
+  /// First present key parsed as int (handles num or numeric string); 0 if none.
+  static int _firstInt(Map<String, dynamic> json, List<String> keys) {
+    for (final k in keys) {
+      final v = json[k];
+      if (v != null) {
+        if (v is num) return v.toInt();
+        final parsed = int.tryParse(v.toString());
+        if (parsed != null) return parsed;
+      }
+    }
+    return 0;
+  }
+
   factory PartnerModel.fromJson(Map<String, dynamic> json) => PartnerModel(
         id: json["id"]?.toString() ?? "",
         partnerName: json["partner_name"] ?? json["name"] ?? "",
         branch: json["branch"] ?? "",
         state: json["state"] ?? "",
-        stovesAllocated: json["total_sales"] != null
-            ? (json["total_sales"] as num).toInt()
-            : json["stoves_allocated"] != null
-                ? (json["stoves_allocated"] as num).toInt()
-                : json["stovesAllocated"] != null
-                    ? (json["stovesAllocated"] as num).toInt()
-                    : 0,
-        stovesSold: json["approved_sales"] != null
-            ? (json["approved_sales"] as num).toInt()
-            : json["stoves_sold"] != null
-                ? (json["stoves_sold"] as num).toInt()
-                : json["stovesSold"] != null
-                    ? (json["stovesSold"] as num).toInt()
-                    : 0,
+        // Received/allocated: super admin (manage-organizations) -> total_stove_ids;
+        // ACSL agents (super-admin-agents/.../organizations) -> total_sales.
+        stovesAllocated: _firstInt(json, const [
+          'total_stove_ids',
+          'total_sales',
+          'stoves_allocated',
+          'stovesAllocated',
+        ]),
+        // Sold: super admin -> sold_stove_ids; ACSL agents -> approved_sales.
+        stovesSold: _firstInt(json, const [
+          'sold_stove_ids',
+          'approved_sales',
+          'stoves_sold',
+          'stovesSold',
+        ]),
         contactPerson: json["contact_person"],
         contactPhone: json["contact_phone"],
         email: json["email"],

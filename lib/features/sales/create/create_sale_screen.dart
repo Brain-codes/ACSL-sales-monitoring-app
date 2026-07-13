@@ -16,7 +16,10 @@ import 'package:stove_transaction/core/widgets/section_header.dart';
 import 'create_sale_controller.dart';
 
 class CreateSaleScreen extends StatelessWidget {
-  const CreateSaleScreen({super.key});
+  /// When set, the form is editing this queued (pending/failed) sale instead of
+  /// creating a new one.
+  final int? editQueueId;
+  const CreateSaleScreen({super.key, this.editQueueId});
 
   static const _stepTitles = [
     'Transaction Info',
@@ -33,10 +36,21 @@ class CreateSaleScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = Get.put(CreateSaleController());
+    if (editQueueId != null) {
+      // Hydrate the form from the queued sale after the first frame so its
+      // async load (images, partners) doesn't block the initial build.
+      WidgetsBinding.instance.addPostFrameCallback((_) => c.hydrateFromQueue(editQueueId!));
+    } else if (c.isEditingQueued) {
+      // The persistent controller was left in edit mode from a previous, aborted
+      // queued-sale edit — start this fresh create from a clean slate.
+      WidgetsBinding.instance.addPostFrameCallback((_) => c.resetForm());
+    }
     return Scaffold(
       appBar: AppBar(
         title: GestureDetector(
           onLongPress: () => c.singleViewMode.value = !c.singleViewMode.value,
+          // Triple-tap fills the form with test data (dev backdoor).
+          onTap: c.onTitleTap,
           child: Obx(() => Text(
             c.singleViewMode.value ? 'Create Sale' : _stepTitles[c.currentStep.value],
           )),
@@ -82,15 +96,15 @@ class CreateSaleScreen extends StatelessWidget {
   void _confirmExit(BuildContext context) {
     showDialog(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (dialogCtx) => AlertDialog(
         title: const Text('Discard Sale?'),
         content: const Text('All entered data will be lost.'),
         actions: [
-          TextButton(onPressed: () => Get.back(), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.of(dialogCtx).pop(), child: const Text('Cancel')),
           TextButton(
               onPressed: () {
-                Get.back();
-                Get.back();
+                Navigator.of(dialogCtx).pop(); // close dialog
+                Navigator.of(context).pop();   // leave create-sale screen
               },
               child: const Text('Discard',
                   style: TextStyle(color: AppColors.error))),
@@ -108,8 +122,8 @@ class _StepProgress extends StatelessWidget {
       final current = c.currentStep.value;
       // ACSL agents see all 9 steps (partner step is visible).
       // Other roles skip step 3 (partner hidden), so map index to display number.
-      final totalSteps = c.isAcslAgent ? 9 : 8;
-      final displayStep = c.isAcslAgent
+      final totalSteps = c.needsPartnerPicker ? 9 : 8;
+      final displayStep = c.needsPartnerPicker
           ? current + 1
           : (current <= 2 ? current + 1 : current);
       return Column(
@@ -185,8 +199,8 @@ class _SingleViewForm extends StatelessWidget {
         children: [
           KeyedSubtree(key: c.singleViewKeys[0], child: const _Step1Transaction(singleView: true)),
           KeyedSubtree(key: c.singleViewKeys[1], child: const _Step2Contact(singleView: true)),
-          KeyedSubtree(key: c.singleViewKeys[2], child: const _Step3Location(singleView: true)),
           KeyedSubtree(key: c.singleViewKeys[4], child: const _Step5SaleDetails(singleView: true)),
+          KeyedSubtree(key: c.singleViewKeys[2], child: const _Step3Location(singleView: true)),
           KeyedSubtree(key: c.singleViewKeys[5], child: const _Step6StoveSet(singleView: true)),
           KeyedSubtree(key: c.singleViewKeys[6], child: const _Step7CookingHabits(singleView: true)),
           KeyedSubtree(key: c.singleViewKeys[7], child: const _Step8Terms(singleView: true)),
@@ -256,11 +270,11 @@ class _Step1TransactionState extends State<_Step1Transaction> {
 
   List<Map<String, dynamic>> _filteredPartners(CreateSaleController c) {
     final q = c.partnerSearchQuery.value.toLowerCase();
-    if (q.isEmpty) return c.assignedPartners;
-    return c.assignedPartners.where((p) {
+    final list = c.distinctPartners;
+    if (q.isEmpty) return list;
+    return list.where((p) {
       final name = (p['partner_name'] ?? p['name'] ?? '').toString().toLowerCase();
-      final branch = (p['branch'] ?? '').toString().toLowerCase();
-      return name.contains(q) || branch.contains(q);
+      return name.contains(q);
     }).toList();
   }
 
@@ -283,61 +297,119 @@ class _Step1TransactionState extends State<_Step1Transaction> {
             readOnly: true)),
         const SizedBox(height: 16),
 
-        // ── Partner picker (ACSL agents only) ─────────────────────────────
-        if (c.isAcslAgent) ...[
+        // ── Partner picker (ACSL agents + super admin) ────────────────────
+        if (c.needsPartnerPicker) ...[
           const Text('Partner *',
               style: TextStyle(fontWeight: FontWeight.w500, fontSize: 13)),
           const SizedBox(height: 8),
           Obx(() {
-            final orgSelected = c.selectedOrgId.value.isNotEmpty;
-            if (orgSelected) {
-              return Row(
+            final hasPartner = c.selectedPartnerName.value.isNotEmpty;
+            if (hasPartner) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-                      decoration: BoxDecoration(
-                        color: AppColors.brandPrimary.withValues(alpha: 0.07),
-                        border: Border.all(color: AppColors.brandPrimary),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.check_circle,
-                              color: AppColors.brandPrimary, size: 18),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              c.partnerNameCtrl.text,
-                              style: const TextStyle(
-                                  color: AppColors.brandPrimary,
-                                  fontWeight: FontWeight.w600),
-                            ),
+                  // Selected partner chip + change.
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                          decoration: BoxDecoration(
+                            color: AppColors.brandPrimary.withValues(alpha: 0.07),
+                            border: Border.all(color: AppColors.brandPrimary),
+                            borderRadius: BorderRadius.circular(8),
                           ),
-                        ],
+                          child: Row(
+                            children: [
+                              const Icon(Icons.check_circle,
+                                  color: AppColors.brandPrimary, size: 18),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  c.selectedPartnerName.value,
+                                  style: const TextStyle(
+                                      color: AppColors.brandPrimary,
+                                      fontWeight: FontWeight.w600),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
-                    ),
+                      const SizedBox(width: 8),
+                      IconButton(
+                        icon: const Icon(Icons.close, color: AppColors.textMuted),
+                        tooltip: 'Change partner',
+                        onPressed: () {
+                          c.clearPartnerSelection();
+                          _partnerSearchCtrl.clear();
+                        },
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 8),
-                  IconButton(
-                    icon: const Icon(Icons.close, color: AppColors.textMuted),
-                    tooltip: 'Change partner',
-                    onPressed: () {
-                      c.selectedOrgId.value = '';
-                      c.partnerNameCtrl.clear();
-                      c.availableStoves.clear();
-                      c.paymentModels.clear();
-                      c.selectedStove.value = null;
-                      c.selectedModel.value = null;
-                      _partnerSearchCtrl.clear();
-                      c.partnerSearchQuery.value = '';
+                  const SizedBox(height: 12),
+                  // State (of the partner's branches).
+                  const Text('State *',
+                      style: TextStyle(fontWeight: FontWeight.w500, fontSize: 13)),
+                  const SizedBox(height: 6),
+                  DropdownButtonFormField<String>(
+                    key: ValueKey('branch-state-${c.selectedPartnerName.value}'),
+                    isExpanded: true,
+                    initialValue: c.selectedBranchState.value.isEmpty
+                        ? null
+                        : c.selectedBranchState.value,
+                    decoration: InputDecoration(
+                      hintText: 'Select state',
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                    ),
+                    items: c.statesForSelectedPartner
+                        .map((s) => DropdownMenuItem(value: s, child: Text(s)))
+                        .toList(),
+                    onChanged: (v) {
+                      if (v != null) c.onBranchStateSelected(v);
                     },
+                  ),
+                  const SizedBox(height: 12),
+                  // Branch (resolves the organization_id).
+                  const Text('Branch *',
+                      style: TextStyle(fontWeight: FontWeight.w500, fontSize: 13)),
+                  const SizedBox(height: 6),
+                  DropdownButtonFormField<String>(
+                    key: ValueKey(
+                        'branch-${c.selectedPartnerName.value}-${c.selectedBranchState.value}'),
+                    isExpanded: true,
+                    initialValue:
+                        c.selectedOrgId.value.isEmpty ? null : c.selectedOrgId.value,
+                    decoration: InputDecoration(
+                      hintText: c.selectedBranchState.value.isEmpty
+                          ? 'Select a state first'
+                          : 'Select branch',
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                    ),
+                    items: c.branchesForSelectedState.map((b) {
+                      final id = b['id']?.toString() ?? '';
+                      final branch = (b['branch'] ?? '—').toString();
+                      return DropdownMenuItem(
+                        value: id,
+                        child: Text(branch, overflow: TextOverflow.ellipsis),
+                      );
+                    }).toList(),
+                    onChanged: c.selectedBranchState.value.isEmpty
+                        ? null
+                        : (v) {
+                            if (v == null) return;
+                            final branch = c.branchesForSelectedState
+                                .firstWhereOrNull((b) => b['id']?.toString() == v);
+                            if (branch != null) c.onBranchSelected(branch);
+                          },
                   ),
                 ],
               );
             }
 
-            // Partner not yet selected — show search + list
+            // No partner yet — search + distinct partner list.
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -345,7 +417,7 @@ class _Step1TransactionState extends State<_Step1Transaction> {
                   controller: _partnerSearchCtrl,
                   onChanged: (v) => c.partnerSearchQuery.value = v,
                   decoration: InputDecoration(
-                    hintText: 'Search assigned partners…',
+                    hintText: 'Search partners…',
                     prefixIcon: const Icon(Icons.search),
                     suffixIcon: c.isLoadingPartners.value
                         ? const Padding(
@@ -356,19 +428,16 @@ class _Step1TransactionState extends State<_Step1Transaction> {
                                 child: CircularProgressIndicator(strokeWidth: 2)),
                           )
                         : null,
-                    border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10)),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
                     enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(10),
                       borderSide: const BorderSide(color: AppColors.borderColor),
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(10),
-                      borderSide:
-                          const BorderSide(color: AppColors.brandPrimary, width: 1.5),
+                      borderSide: const BorderSide(color: AppColors.brandPrimary, width: 1.5),
                     ),
-                    contentPadding:
-                        const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
                   ),
                 ),
                 const SizedBox(height: 6),
@@ -381,8 +450,7 @@ class _Step1TransactionState extends State<_Step1Transaction> {
                         c.assignedPartners.isEmpty
                             ? 'No partners assigned to your account.'
                             : 'No partners match your search.',
-                        style: const TextStyle(
-                            color: AppColors.textMuted, fontSize: 13),
+                        style: const TextStyle(color: AppColors.textMuted, fontSize: 13),
                       ),
                     );
                   }
@@ -396,28 +464,17 @@ class _Step1TransactionState extends State<_Step1Transaction> {
                     child: ListView.separated(
                       shrinkWrap: true,
                       itemCount: partners.length,
-                      separatorBuilder: (_, __) =>
-                          const Divider(height: 1, indent: 16),
+                      separatorBuilder: (_, __) => const Divider(height: 1, indent: 16),
                       itemBuilder: (_, i) {
-                        final p = partners[i];
                         final name =
-                            (p['partner_name'] ?? p['name'] ?? '').toString();
-                        final branch = (p['branch'] ?? '').toString();
+                            (partners[i]['partner_name'] ?? partners[i]['name'] ?? '').toString();
                         return ListTile(
                           dense: true,
                           title: Text(name,
-                              style: const TextStyle(
-                                  fontWeight: FontWeight.w500, fontSize: 14)),
-                          subtitle: branch.isNotEmpty
-                              ? Text(branch,
-                                  style: const TextStyle(
-                                      fontSize: 12,
-                                      color: AppColors.textMuted))
-                              : null,
-                          trailing: const Icon(Icons.chevron_right,
-                              color: AppColors.textMuted),
+                              style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 14)),
+                          trailing: const Icon(Icons.chevron_right, color: AppColors.textMuted),
                           onTap: () {
-                            c.onPartnerSelected(p);
+                            c.onPartnerNameSelected(name);
                             _partnerSearchCtrl.clear();
                           },
                         );
@@ -430,144 +487,6 @@ class _Step1TransactionState extends State<_Step1Transaction> {
           }),
           const SizedBox(height: 16),
         ],
-
-        // ── Stove serial ──────────────────────────────────────────────────
-        Obx(() {
-          final partnerRequired = c.isAcslAgent && c.selectedOrgId.value.isEmpty;
-          final isLoading = c.isLoadingStoves.value;
-
-          if (isLoading) {
-            return const Padding(
-              padding: EdgeInsets.symmetric(vertical: 8),
-              child: Row(
-                children: [
-                  SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2)),
-                  SizedBox(width: 10),
-                  Text('Loading stoves…',
-                      style: TextStyle(
-                          fontSize: 13, color: AppColors.textMuted)),
-                ],
-              ),
-            );
-          }
-
-          final selected = c.selectedStove.value;
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('Stove Serial No. *',
-                  style:
-                      TextStyle(fontWeight: FontWeight.w500, fontSize: 13)),
-              const SizedBox(height: 8),
-              if (partnerRequired)
-                // Locked placeholder — no partner yet
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 14, vertical: 16),
-                  decoration: BoxDecoration(
-                    color: AppColors.borderColor.withValues(alpha: 0.4),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: AppColors.borderColor),
-                  ),
-                  child: const Row(
-                    children: [
-                      Icon(Icons.lock_outline,
-                          size: 16, color: AppColors.textMuted),
-                      SizedBox(width: 8),
-                      Text('Select a partner first',
-                          style: TextStyle(
-                              color: AppColors.textMuted, fontSize: 14)),
-                    ],
-                  ),
-                )
-              else if (selected != null)
-                Row(
-                  children: [
-                    Expanded(
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 14),
-                        decoration: BoxDecoration(
-                          color: AppColors.brandPrimary
-                              .withValues(alpha: 0.07),
-                          border: Border.all(color: AppColors.brandPrimary),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(Icons.check_circle,
-                                color: AppColors.brandPrimary, size: 18),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(selected.displayId,
-                                  style: const TextStyle(
-                                      color: AppColors.brandPrimary,
-                                      fontWeight: FontWeight.w600)),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    IconButton(
-                      onPressed: () {
-                        c.selectedStove.value = null;
-                        c.stoveSearchQuery.value = '';
-                      },
-                      icon: const Icon(Icons.close,
-                          color: AppColors.textMuted),
-                      tooltip: 'Clear selection',
-                    ),
-                  ],
-                )
-              else ...[
-                TextFormField(
-                  decoration: const InputDecoration(
-                      hintText: 'Type to search stove serial…',
-                      prefixIcon: Icon(Icons.search)),
-                  textInputAction: TextInputAction.search,
-                  onChanged: (v) => c.stoveSearchQuery.value = v,
-                ),
-                const SizedBox(height: 4),
-                Obx(() {
-                  final query = c.stoveSearchQuery.value;
-                  if (query.isEmpty) return const SizedBox.shrink();
-                  final stoves = c.filteredStoves;
-                  if (stoves.isEmpty) {
-                    return const Padding(
-                      padding: EdgeInsets.all(8),
-                      child: Text('No matching stoves found',
-                          style:
-                              TextStyle(color: AppColors.textMuted)),
-                    );
-                  }
-                  return Container(
-                    constraints: const BoxConstraints(maxHeight: 200),
-                    decoration: BoxDecoration(
-                      color: AppColors.white,
-                      border: Border.all(color: AppColors.borderColor),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: ListView.builder(
-                      shrinkWrap: true,
-                      itemCount: stoves.length,
-                      itemBuilder: (_, i) => ListTile(
-                        title: Text(stoves[i].displayId),
-                        onTap: () {
-                          c.selectedStove.value = stoves[i];
-                          c.stoveSearchQuery.value = '';
-                        },
-                      ),
-                    ),
-                  );
-                }),
-              ],
-            ],
-          );
-        }),
 
         const SizedBox(height: 16),
         Obx(() => ListTile(
@@ -604,20 +523,9 @@ class _Step2Contact extends StatelessWidget {
     final c = Get.find<CreateSaleController>();
     final col = Column(
       children: [
-        const SectionHeader(title: 'Contact Details'),
+        const SectionHeader(title: 'Buyer & End User'),
         AppTextField(
-            label: 'End User Name',
-            controller: c.endUserNameCtrl,
-            required: true,
-            textInputAction: TextInputAction.next),
-        const SizedBox(height: 12),
-        AppTextField(
-            label: 'Nickname / AKA',
-            controller: c.akaCtrl,
-            textInputAction: TextInputAction.next),
-        const SizedBox(height: 12),
-        AppTextField(
-            label: 'Contact Person',
+            label: 'Contact Person / Buyer',
             controller: c.contactPersonCtrl,
             required: true,
             textInputAction: TextInputAction.next),
@@ -626,13 +534,31 @@ class _Step2Contact extends StatelessWidget {
             label: 'Contact Phone',
             controller: c.contactPhoneCtrl,
             keyboardType: TextInputType.phone,
+            required: true,
             textInputAction: TextInputAction.next),
         const SizedBox(height: 12),
         AppTextField(
-            label: 'Phone',
+            label: 'End User First Name',
+            controller: c.endUserNameCtrl,
+            required: true,
+            textInputAction: TextInputAction.next),
+        const SizedBox(height: 12),
+        AppTextField(
+            label: 'End User Surname',
+            controller: c.endUserSurnameCtrl,
+            required: true,
+            textInputAction: TextInputAction.next),
+        const SizedBox(height: 12),
+        AppTextField(
+            label: 'End User Phone',
             controller: c.phoneCtrl,
             keyboardType: TextInputType.phone,
             required: true,
+            textInputAction: TextInputAction.next),
+        const SizedBox(height: 12),
+        AppTextField(
+            label: 'AKA',
+            controller: c.akaCtrl,
             textInputAction: TextInputAction.next),
         const SizedBox(height: 12),
         AppTextField(
@@ -661,6 +587,7 @@ class _Step3LocationState extends State<_Step3Location> {
   List<Map<String, String>> _suggestions = [];
   bool _isSearching = false;
   bool _isCapturingLocation = false;
+  bool _skipNextResults = false;
 
   Future<void> _captureCurrentLocation(CreateSaleController c) async {
     if (mounted) setState(() => _isCapturingLocation = true);
@@ -717,14 +644,21 @@ class _Step3LocationState extends State<_Step3Location> {
     }
     if (mounted) setState(() => _isSearching = true);
     final results = await c.searchPlaces(value);
-    if (mounted) setState(() { _suggestions = results; _isSearching = false; });
+    if (!mounted) return;
+    if (_skipNextResults) {
+      _skipNextResults = false;
+      setState(() => _isSearching = false);
+      return;
+    }
+    setState(() { _suggestions = results; _isSearching = false; });
   }
 
   Future<void> _onSuggestionTap(Map<String, String> s, CreateSaleController c) async {
+    _skipNextResults = true;
     FocusScope.of(context).unfocus();
     setState(() => _suggestions = []);
     final details = await c.fetchPlaceDetails(s['place_id']!);
-    if (details != null) {
+    if (details != null && mounted) {
       c.fullAddressCtrl.text = details.address;
       c.latitude.value = details.lat;
       c.longitude.value = details.lng;
@@ -738,11 +672,13 @@ class _Step3LocationState extends State<_Step3Location> {
         const Text('Residential Address *',
             style: TextStyle(fontWeight: FontWeight.w500, fontSize: 13)),
         const SizedBox(height: 8),
+        // Offline: type the address manually + capture GPS. It is verified
+        // against Google automatically when the sale syncs online.
         TextField(
           controller: c.fullAddressCtrl,
           maxLines: 2,
           decoration: InputDecoration(
-            hintText: 'Type full address manually...',
+            hintText: 'Type full address (house no., street, area)…',
             hintStyle: const TextStyle(fontSize: 14, color: AppColors.textMuted),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(10),
@@ -1028,8 +964,8 @@ class _Step4Partner extends StatelessWidget {
       child: Column(
         children: [
           const SectionHeader(title: 'Partner / Retailer Info'),
-          // For ACSL agents partner was already selected on Step 1 — show read-only
-          if (c.isAcslAgent)
+          // When a partner was already selected on Step 1 — show read-only.
+          if (c.needsPartnerPicker)
             Obx(() => AppTextField(
                 label: 'Partner',
                 controller: TextEditingController(text: c.partnerNameCtrl.text),
@@ -1071,7 +1007,103 @@ class _Step5SaleDetails extends StatelessWidget {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SectionHeader(title: 'Sale Details'),
+          const SectionHeader(title: 'Sale & Payment'),
+
+          // ── Stove serial ──────────────────────────────────────────────
+          const Text('Stove Serial No. *',
+              style: TextStyle(fontWeight: FontWeight.w500, fontSize: 13)),
+          const SizedBox(height: 8),
+          Obx(() {
+            final partnerRequired = c.needsPartnerPicker && c.selectedOrgId.value.isEmpty;
+            final isLoading = c.isLoadingStoves.value;
+            if (isLoading) {
+              return const Row(
+                children: [
+                  SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+                  SizedBox(width: 10),
+                  Text('Loading stoves…', style: TextStyle(fontSize: 13, color: AppColors.textMuted)),
+                ],
+              );
+            }
+            final selected = c.selectedStove.value;
+            if (partnerRequired) {
+              return Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
+                decoration: BoxDecoration(
+                  color: AppColors.borderColor.withValues(alpha: 0.4),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: AppColors.borderColor),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.lock_outline, size: 16, color: AppColors.textMuted),
+                    SizedBox(width: 8),
+                    Text('Select a partner first', style: TextStyle(color: AppColors.textMuted, fontSize: 14)),
+                  ],
+                ),
+              );
+            }
+            if (selected != null) {
+              return Row(
+                children: [
+                  Expanded(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                      decoration: BoxDecoration(
+                        color: AppColors.brandPrimary.withValues(alpha: 0.07),
+                        border: Border.all(color: AppColors.brandPrimary),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.check_circle, color: AppColors.brandPrimary, size: 18),
+                          const SizedBox(width: 8),
+                          Expanded(child: Text(selected.displayId, style: const TextStyle(color: AppColors.brandPrimary, fontWeight: FontWeight.w600))),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton(
+                    onPressed: () { c.selectedStove.value = null; c.stoveSearchQuery.value = ''; },
+                    icon: const Icon(Icons.close, color: AppColors.textMuted),
+                    tooltip: 'Clear selection',
+                  ),
+                ],
+              );
+            }
+            return Column(
+              children: [
+                TextFormField(
+                  decoration: const InputDecoration(hintText: 'Type to search stove serial…', prefixIcon: Icon(Icons.search)),
+                  textInputAction: TextInputAction.search,
+                  onChanged: (v) => c.stoveSearchQuery.value = v,
+                ),
+                const SizedBox(height: 4),
+                Obx(() {
+                  final query = c.stoveSearchQuery.value;
+                  if (query.isEmpty) return const SizedBox.shrink();
+                  final stoves = c.filteredStoves;
+                  if (stoves.isEmpty) {
+                    return const Padding(padding: EdgeInsets.all(8), child: Text('No matching stoves found', style: TextStyle(color: AppColors.textMuted)));
+                  }
+                  return Container(
+                    constraints: const BoxConstraints(maxHeight: 200),
+                    decoration: BoxDecoration(color: AppColors.white, border: Border.all(color: AppColors.borderColor), borderRadius: BorderRadius.circular(8)),
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: stoves.length,
+                      itemBuilder: (_, i) => ListTile(
+                        title: Text(stoves[i].displayId),
+                        onTap: () { c.selectedStove.value = stoves[i]; c.stoveSearchQuery.value = ''; },
+                      ),
+                    ),
+                  );
+                }),
+              ],
+            );
+          }),
+          const SizedBox(height: 16),
 
           // Payment Type dropdown — Full Payment + any installment models
           const Text('Payment Type *',
@@ -1149,85 +1181,24 @@ class _Step5SaleDetails extends StatelessWidget {
             const SizedBox(height: 16),
           ],
 
-          // Amount — read-only when installment model sets it
+          // Sale amount — editable even for installment (model only pre-fills it)
           AppTextField(
             label: 'Sale Amount (₦)',
             controller: c.amountCtrl,
             keyboardType: TextInputType.number,
             inputFormatters: [ThousandsSeparatorInputFormatter()],
             required: true,
-            readOnly: isInstallment,
-            textInputAction: isInstallment ? TextInputAction.next : TextInputAction.done,
+            textInputAction: TextInputAction.next,
           ),
           const SizedBox(height: 16),
-
-          // Initial payment fields — only for installment
-          if (isInstallment) ...[
-            AppTextField(
-              label: 'Initial Payment Amount (₦)',
-              controller: c.initialPaymentCtrl,
-              keyboardType: TextInputType.number,
-              inputFormatters: [ThousandsSeparatorInputFormatter()],
-              hint: model != null && model.minDownPayment > 0
-                  ? 'Min: ₦${_formatCurrency(model.minDownPayment)}'
-                  : 'Enter initial payment (optional)',
-              textInputAction: TextInputAction.done,
-              onChanged: c.onInitialPaymentChanged,
-            ),
-            Obx(() {
-              final text = c.initialPaymentText.value;
-              if (text.isEmpty) return const SizedBox.shrink();
-              final raw = double.tryParse(text.replaceAll(',', '')) ?? 0;
-              final saleAmount = double.tryParse(
-                  c.amountCtrl.text.replaceAll(',', '')) ?? 0;
-              if (raw > 0 && saleAmount > 0 && raw > saleAmount) {
-                return Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Text(
-                    'Initial payment cannot exceed the sale amount (₦${_formatCurrency(saleAmount)})',
-                    style: const TextStyle(fontSize: 12, color: Colors.red),
-                  ),
-                );
-              }
-              if (model != null && model.minDownPayment > 0 && raw > 0 && raw < model.minDownPayment) {
-                return Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Text(
-                    'Minimum down payment is ₦${_formatCurrency(model.minDownPayment)}',
-                    style: const TextStyle(fontSize: 12, color: Colors.orange),
-                  ),
-                );
-              }
-              return const SizedBox.shrink();
-            }),
-            const SizedBox(height: 16),
-            const Text('Payment Method',
-                style: TextStyle(fontWeight: FontWeight.w500, fontSize: 13)),
-            const SizedBox(height: 8),
-            DropdownButtonFormField<String>(
-              value: c.selectedPaymentMethod.value.isEmpty
-                  ? null
-                  : c.selectedPaymentMethod.value,
-              hint: const Text('Select method'),
-              items: c.paymentMethods
-                  .map((m) => DropdownMenuItem(value: m, child: Text(m)))
-                  .toList(),
-              onChanged: (v) => c.selectedPaymentMethod.value = v ?? '',
-              decoration: const InputDecoration(),
-            ),
-            const SizedBox(height: 16),
-            _ImagePickerTile(
-              label: 'Proof of Initial Payment',
-              onCamera: () =>
-                  c.pickImage(ImageSource.camera, field: 'paymentProof'),
-              onGallery: () =>
-                  c.pickImage(ImageSource.gallery, field: 'paymentProof'),
-              setObs: c.paymentProofSet,
-              fileObs: c.paymentProofFile,
-              uploadProgressObs: c.paymentProofUploadProgress,
-              onClear: () => c.clearImage('paymentProof'),
-            ),
-          ],
+          AppTextField(
+            label: 'Amount Received (₦)',
+            controller: c.amountReceivedCtrl,
+            keyboardType: TextInputType.number,
+            inputFormatters: [ThousandsSeparatorInputFormatter()],
+            textInputAction: TextInputAction.done,
+          ),
+          const SizedBox(height: 16),
         ],
       );
     });
@@ -1264,7 +1235,7 @@ class _Step6StoveSet extends StatelessWidget {
     final ctrl = TextEditingController(text: '${c.potQuantity.value}');
     showDialog(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (dialogCtx) => AlertDialog(
         title: const Text('Number of Pots'),
         content: TextField(
           controller: ctrl,
@@ -1273,12 +1244,12 @@ class _Step6StoveSet extends StatelessWidget {
           decoration: const InputDecoration(hintText: 'Enter quantity'),
         ),
         actions: [
-          TextButton(onPressed: () => Get.back(), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.of(dialogCtx).pop(), child: const Text('Cancel')),
           TextButton(
             onPressed: () {
               final v = int.tryParse(ctrl.text);
               if (v != null && v >= 1) c.potQuantity.value = v;
-              Get.back();
+              Navigator.of(dialogCtx).pop();
             },
             child: const Text('OK'),
           ),
@@ -1372,7 +1343,7 @@ class _Step7CookingHabits extends StatelessWidget {
     final col = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const SectionHeader(title: 'Customer Cooking Habits'),
+        const SectionHeader(title: 'Customer Cooking Habits (optional)'),
         _MapDropdownField(
             label: 'Previous Stove Type',
             options: c.stoveTypes,
@@ -1555,7 +1526,7 @@ class _Step9Media extends StatelessWidget {
       children: [
           const SectionHeader(
               title: 'Photos & Signature',
-              subtitle: 'All three are required to submit'),
+              subtitle: 'Stove photo and signature are required'),
           _ImagePickerTile(
             label: 'Stove Photo *',
             onCamera: () => c.pickImage(ImageSource.camera, field: 'stove'),
@@ -1565,18 +1536,18 @@ class _Step9Media extends StatelessWidget {
             uploadProgressObs: c.stoveImageUploadProgress,
             onClear: () => c.clearImage('stove'),
           ),
-          // Agreement document no longer required — commented out
-          // const SizedBox(height: 12),
-          // _ImagePickerTile(
-          //   label: 'Agreement Document *',
-          //   onCamera: () => c.pickImage(ImageSource.camera, field: 'agreement'),
-          //   onGallery: () =>
-          //       c.pickImage(ImageSource.gallery, field: 'agreement'),
-          //   setObs: c.agreementImageSet,
-          //   fileObs: c.agreementImageFile,
-          //   uploadProgressObs: c.agreementImageUploadProgress,
-          //   onClear: () => c.clearImage('agreement'),
-          // ),
+          const SizedBox(height: 12),
+          // Agreement document — optional
+          _ImagePickerTile(
+            label: 'Agreement Document (optional)',
+            onCamera: () => c.pickImage(ImageSource.camera, field: 'agreement'),
+            onGallery: () =>
+                c.pickImage(ImageSource.gallery, field: 'agreement'),
+            setObs: c.agreementImageSet,
+            fileObs: c.agreementImageFile,
+            uploadProgressObs: c.agreementImageUploadProgress,
+            onClear: () => c.clearImage('agreement'),
+          ),
           const SizedBox(height: 16),
           const Text('Customer Signature *',
               style: TextStyle(fontWeight: FontWeight.w500, fontSize: 13)),
@@ -2080,7 +2051,6 @@ class _SalePreviewSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = Get.find<CreateSaleController>();
     final amt = double.tryParse(c.amountCtrl.text.replaceAll(',', ''));
-    final initAmt = double.tryParse(c.initialPaymentCtrl.text.replaceAll(',', ''));
     return Container(
       decoration: const BoxDecoration(
         color: Colors.white,
@@ -2113,13 +2083,14 @@ class _SalePreviewSheet extends StatelessWidget {
                     _PreviewRow('Stove', c.selectedStove.value?.displayId ?? '—'),
                     _PreviewRow('Sales Date', DateFormat('d MMM yyyy').format(c.salesDate.value)),
                   ]),
-                  _PreviewSection('Customer', [
-                    _PreviewRow('End User', c.endUserNameCtrl.text),
-                    if (c.akaCtrl.text.isNotEmpty) _PreviewRow('Also Known As', c.akaCtrl.text),
-                    _PreviewRow('Phone', c.phoneCtrl.text),
-                    if (c.otherPhoneCtrl.text.isNotEmpty) _PreviewRow('Other Phone', c.otherPhoneCtrl.text),
+                  _PreviewSection('Buyer & End User', [
                     _PreviewRow('Contact Person', c.contactPersonCtrl.text),
                     _PreviewRow('Contact Phone', c.contactPhoneCtrl.text),
+                    _PreviewRow('First Name', c.endUserNameCtrl.text),
+                    _PreviewRow('Surname', c.endUserSurnameCtrl.text),
+                    _PreviewRow('End User Phone', c.phoneCtrl.text),
+                    if (c.akaCtrl.text.isNotEmpty) _PreviewRow('AKA', c.akaCtrl.text),
+                    if (c.otherPhoneCtrl.text.isNotEmpty) _PreviewRow('Other Phone', c.otherPhoneCtrl.text),
                   ]),
                   _PreviewSection('Location', [
                     _PreviewRow('State', c.selectedState.value),
@@ -2128,15 +2099,13 @@ class _SalePreviewSheet extends StatelessWidget {
                     if (c.latitude.value != null)
                       _PreviewRow('GPS', '${c.latitude.value!.toStringAsFixed(5)}, ${c.longitude.value!.toStringAsFixed(5)}'),
                   ]),
-                  _PreviewSection('Sale', [
-                    _PreviewRow('Amount', formatNaira(amt)),
+                  _PreviewSection('Sale & Payment', [
+                    _PreviewRow('Stove', c.selectedStove.value?.displayId ?? '—'),
                     _PreviewRow('Payment Type', c.isInstallment ? (c.selectedModel.value?.name ?? 'Installment') : 'Full Payment'),
-                    if (c.isInstallment) ...[
-                      _PreviewRow('Initial Payment', formatNaira(initAmt)),
-                      _PreviewRow('Payment Method', c.selectedPaymentMethod.value),
-                    ],
+                    _PreviewRow('Amount', formatNaira(amt)),
+                    _PreviewRow('Amount Received', formatNaira(double.tryParse(c.amountReceivedCtrl.text.replaceAll(',', '')))),
                     _PreviewRow('Pots', '${c.potQuantity.value}'),
-                    _PreviewRow('Heat Retention Device', c.heatRetentionDevice.value ? 'Yes' : 'No'),
+                    _PreviewRow('Heat Retention', c.heatRetentionDevice.value ? 'Yes' : 'No'),
                   ]),
                   _PreviewSection('Cooking Habits', [
                     _PreviewRow('Previous Stove', c.stoveTypes[c.previousStoveType.value] ?? c.previousStoveType.value),
@@ -2148,8 +2117,7 @@ class _SalePreviewSheet extends StatelessWidget {
                   ]),
                   _PreviewSection('Documents', [
                     _PreviewRow('Stove Image', c.stoveImageSet.value ? '✓  Attached' : '—'),
-                    // Agreement image no longer required
-                    // _PreviewRow('Agreement Image', c.agreementImageSet.value ? '✓  Attached' : '—'),
+                    _PreviewRow('Agreement Image', c.agreementImageSet.value ? '✓  Attached' : '— (optional)'),
                     if (c.isInstallment) _PreviewRow('Payment Proof', c.paymentProofSet.value ? '✓  Attached' : '—'),
                     _PreviewRow('Signature', c.hasSignature ? '✓  Captured' : '—'),
                   ]),

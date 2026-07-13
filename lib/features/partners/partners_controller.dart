@@ -1,17 +1,17 @@
 import 'package:get/get.dart';
 import 'package:stove_transaction/core/services/connectivity_service.dart';
 import 'package:stove_transaction/core/services/local_cache_service.dart';
-import 'package:stove_transaction/core/services/supabase_service.dart';
 import 'package:stove_transaction/core/services/session_manager.dart';
 import 'package:stove_transaction/features/partners/models/partner_model.dart';
+import 'package:stove_transaction/features/partners/partner_access_service.dart';
 
 enum PartnerSort { name, stovesSold, stovesReceived }
 
 class PartnersController extends GetxController {
-  final _supabase = Get.find<SupabaseService>();
   final _session = Get.find<SessionManager>();
   final _cache = Get.find<LocalCacheService>();
   final _connectivity = Get.find<ConnectivityService>();
+  final _access = PartnerAccessService();
   final isLoading = false.obs;
   final RxList<PartnerModel> partners = <PartnerModel>[].obs;
   final error = ''.obs;
@@ -66,25 +66,21 @@ class PartnersController extends GetxController {
 
     isLoading.value = cached.isEmpty; // only show full spinner on first load
     error.value = '';
-    final resp = await _supabase.callEdgeFunction(
-      'super-admin-agents/$agentId/organizations',
-      body: {},
-      method: 'GET',
-    );
-    isLoading.value = false;
-
-    if (resp.success && resp.data != null) {
-      List raw = [];
-      if (resp.data is List) {
-        raw = resp.data as List;
-      } else if (resp.data is Map) {
-        raw = (resp.data as Map)['data'] as List? ?? [];
-      }
-      final freshPartners = raw.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    try {
+      // Direct-table assignment filtering (super admin = all; others = their
+      // assigned partners + assigned-state partners).
+      final freshPartners = await _access.partnersForUser(
+        userId: agentId,
+        role: _session.role,
+      );
       _cache.saveAssignedPartners(freshPartners);
-      partners.assignAll(freshPartners.map((e) => PartnerModel.fromJson(e)).toList());
-    } else if (cached.isEmpty) {
-      error.value = resp.message;
+      partners.assignAll(
+        freshPartners.map((e) => PartnerModel.fromJson(e)).toList(),
+      );
+    } catch (e) {
+      if (cached.isEmpty) error.value = 'Failed to load partners: $e';
+    } finally {
+      isLoading.value = false;
     }
   }
 }

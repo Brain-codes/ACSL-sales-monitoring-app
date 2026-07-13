@@ -1,16 +1,20 @@
 import 'dart:typed_data';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:stove_transaction/core/constants/app_colors.dart';
-import 'package:stove_transaction/core/routes/app_routes.dart';
 import 'package:stove_transaction/core/services/connectivity_service.dart';
+import 'package:stove_transaction/core/services/offline_queue_service.dart';
+import 'package:stove_transaction/core/services/supabase_service.dart';
 import 'package:stove_transaction/core/services/sync_service.dart';
 import 'package:stove_transaction/core/utils/formatters.dart';
 import 'package:stove_transaction/core/widgets/empty_state.dart';
 import 'package:stove_transaction/core/widgets/offline_banner.dart';
 import 'package:stove_transaction/features/sales/models/sale_model.dart';
+import 'package:stove_transaction/features/sales/resolve/location_resolution_banner.dart';
 import 'package:stove_transaction/features/sales/services/agreement_pdf_generator.dart';
 import 'package:printing/printing.dart';
 import 'sales_list_controller.dart';
@@ -18,6 +22,8 @@ import 'sales_list_controller.dart';
 final _dateFmt = DateFormat('d MMM yyyy');
 
 String _fmtAmount(double? v) => formatNaira(v);
+// "Amount paid" = amount_received if provided, else total_paid, else sale amount.
+String _fmtAmountPaid(SaleModel s) => formatNaira(s.amountReceived ?? s.totalPaid ?? s.amount);
 String _fmtDate(DateTime? d) => d != null ? _dateFmt.format(d) : '—';
 String _fmtRole(String s) => s.replaceAll('_', ' ').split(' ').map((w) => w.isEmpty ? '' : '${w[0].toUpperCase()}${w.substring(1)}').join(' ');
 
@@ -54,13 +60,14 @@ class SalesListScreen extends StatelessWidget {
         icon: const Icon(Icons.add),
         label: const Text('New Sale'),
         onPressed: () async {
-          await Get.toNamed(AppRoutes.salesCreate);
+          await context.push('/sales/create');
           c.fetchSales();
         },
       ),
       body: Column(
         children: [
           const OfflineBanner(),
+          const LocationResolutionBanner(),
           _FilterRow(),
           Expanded(
             child: Obx(() {
@@ -73,7 +80,7 @@ class SalesListScreen extends StatelessWidget {
                   message: 'No sales found for ${c.filterLabel.toLowerCase()}.',
                   icon: Icons.receipt_long_outlined,
                   actionLabel: 'Create Sale',
-                  onAction: () => Get.toNamed(AppRoutes.salesCreate),
+                  onAction: () => context.push('/sales/create'),
                 );
               }
               return RefreshIndicator(
@@ -99,103 +106,533 @@ class SalesListScreen extends StatelessWidget {
 
 // ── Pending (offline queue) sales section ────────────────────────────────────
 
-class _PendingSalesSection extends StatelessWidget {
+class _PendingSalesSection extends StatefulWidget {
   final List<SaleModel> sales;
   const _PendingSalesSection({required this.sales});
 
   @override
+  State<_PendingSalesSection> createState() => _PendingSalesSectionState();
+}
+
+class _PendingSalesSectionState extends State<_PendingSalesSection> {
+  final _connectivity = Get.find<ConnectivityService>();
+  final _syncSvc = Get.find<SyncService>();
+  final _listCtrl = Get.find<SalesListController>();
+
+  /// Queue ids currently selected in multi-select mode.
+  final Set<int> _selected = {};
+  bool _selectMode = false;
+
+  List<SaleModel> get _sales => widget.sales;
+
+  void _enterSelect(int queueId) {
+    setState(() {
+      _selectMode = true;
+      _selected.add(queueId);
+    });
+  }
+
+  void _toggle(int queueId) {
+    setState(() {
+      if (!_selected.remove(queueId)) _selected.add(queueId);
+      if (_selected.isEmpty) _selectMode = false;
+    });
+  }
+
+  void _exitSelect() => setState(() {
+        _selectMode = false;
+        _selected.clear();
+      });
+
+  Future<void> _sync(List<int> ids) async {
+    if (ids.isEmpty) return;
+    await _syncSvc.syncPendingSales(onlyIds: ids);
+    _exitSelect();
+    await _listCtrl.fetchSales();
+  }
+
+  Future<void> _deleteSelected() async {
+    final ids = _selected.toList();
+    if (ids.isEmpty) return;
+    final ok = await _confirmDeleteMany(context, ids.length);
+    if (ok != true) return;
+    await Get.find<OfflineQueueService>().deleteMany(ids);
+    _exitSelect();
+    await _listCtrl.fetchSales();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final connectivity = Get.find<ConnectivityService>();
-    final syncSvc = Get.find<SyncService>();
-    final listCtrl = Get.find<SalesListController>();
     return Container(
-      color: const Color(0xFFFFFBEB),
+      color: AppColors.offlineBanner,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              const Icon(Icons.cloud_upload_outlined, size: 15, color: Color(0xFFD97706)),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  '${sales.length} sale${sales.length > 1 ? 's' : ''} pending sync',
-                  style: const TextStyle(
-                    fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFFD97706),
-                  ),
-                ),
-              ),
-              Obx(() {
-                final online = connectivity.isOnline.value;
-                final syncing = syncSvc.isSyncing.value;
-                return TextButton.icon(
-                  icon: syncing
-                      ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFFD97706)))
-                      : const Icon(Icons.sync, size: 16, color: Color(0xFFD97706)),
-                  label: Text(
-                    syncing ? 'Syncing…' : 'Sync Now',
-                    style: const TextStyle(fontSize: 12, color: Color(0xFFD97706)),
-                  ),
-                  style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    minimumSize: Size.zero,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                  onPressed: (!online || syncing)
-                      ? null
-                      : () async {
-                          await syncSvc.syncPendingSales();
-                          await listCtrl.fetchSales();
-                        },
-                );
-              }),
-            ],
-          ),
+          _selectMode ? _selectionHeader() : _defaultHeader(),
+          if (!_selectMode)
+            const Padding(
+              padding: EdgeInsets.only(top: 2),
+              child: Text('Tap to review · long-press to select multiple',
+                  style: TextStyle(fontSize: 10.5, color: AppColors.textMuted)),
+            ),
           const SizedBox(height: 8),
-          ...sales.map((s) => Container(
-            margin: const EdgeInsets.only(bottom: 6),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: const Color(0xFFFCD34D)),
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        s.endUserName ?? s.transactionId,
-                        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-                      ),
-                      if (s.stoveSerialNo != null)
-                        Text(s.stoveSerialNo!, style: const TextStyle(fontSize: 12, color: AppColors.textMuted)),
-                      if (s.amount != null)
-                        Text(_fmtAmount(s.amount), style: const TextStyle(fontSize: 12, color: AppColors.textMuted)),
-                    ],
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFEF3C7),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Text(
-                    'Pending Sync',
-                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFFD97706)),
-                  ),
-                ),
-              ],
-            ),
-          )),
+          ..._sales.map(_pendingTile),
+          
         ],
       ),
     );
   }
+
+  // ── Headers ────────────────────────────────────────────────────────────────
+
+  Widget _defaultHeader() {
+    final n = _sales.length;
+    return Row(
+      children: [
+        const Icon(Icons.cloud_upload_outlined, size: 15, color: AppColors.warning),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            '$n sale${n > 1 ? 's' : ''} pending sync',
+            style: const TextStyle(
+                fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.warning),
+          ),
+        ),
+        Obx(() {
+          final online = _connectivity.isOnline.value;
+          final syncing = _syncSvc.isSyncing.value;
+          return TextButton.icon(
+            icon: syncing
+                ? const SizedBox(
+                    width: 14, height: 14,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.warning))
+                : const Icon(Icons.sync, size: 16, color: AppColors.warning),
+            label: Text(syncing ? 'Syncing…' : 'Sync All',
+                style: const TextStyle(fontSize: 12, color: AppColors.warning)),
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            onPressed: (!online || syncing)
+                ? null
+                : () => _sync(_sales.map((s) => s.queueId!).whereType<int>().toList()),
+          );
+        }),
+      ],
+    );
+  }
+
+  Widget _selectionHeader() {
+    return Row(
+      children: [
+        IconButton(
+          icon: const Icon(Icons.close, size: 20),
+          visualDensity: VisualDensity.compact,
+          onPressed: _exitSelect,
+        ),
+        Expanded(
+          child: Text('${_selected.length} selected',
+              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
+        ),
+        Obx(() {
+          final online = _connectivity.isOnline.value;
+          final syncing = _syncSvc.isSyncing.value;
+          return TextButton.icon(
+            icon: const Icon(Icons.sync, size: 16, color: AppColors.brandPrimary),
+            label: const Text('Sync', style: TextStyle(fontSize: 12, color: AppColors.brandPrimary)),
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            onPressed: (!online || syncing || _selected.isEmpty)
+                ? null
+                : () => _sync(_selected.toList()),
+          );
+        }),
+        TextButton.icon(
+          icon: const Icon(Icons.delete_outline, size: 16, color: AppColors.error),
+          label: const Text('Delete', style: TextStyle(fontSize: 12, color: AppColors.error)),
+          style: TextButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            minimumSize: Size.zero,
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+          onPressed: _selected.isEmpty ? null : _deleteSelected,
+        ),
+      ],
+    );
+  }
+
+  // ── Tiles ────────────────────────────────────────────────────────────────
+
+  Widget _pendingTile(SaleModel s) {
+    final queueId = s.queueId;
+    final failed = s.syncError != null;
+    final checked = queueId != null && _selected.contains(queueId);
+    return Container(
+      margin: const EdgeInsets.only(bottom: 6),
+      decoration: BoxDecoration(
+        color: checked ? AppColors.brandLight : AppColors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: checked
+              ? AppColors.brandPrimary
+              : (failed ? AppColors.error : AppColors.warning),
+        ),
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onLongPress: queueId == null ? null : () => _enterSelect(queueId),
+        onTap: queueId == null
+            ? null
+            : () {
+                if (_selectMode) {
+                  _toggle(queueId);
+                } else {
+                  _showPendingSaleDetail(context, s);
+                }
+              },
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: Row(
+            children: [
+              if (_selectMode) ...[
+                Icon(
+                  checked ? Icons.check_circle : Icons.radio_button_unchecked,
+                  size: 20,
+                  color: checked ? AppColors.brandPrimary : AppColors.textMuted,
+                ),
+                const SizedBox(width: 10),
+              ],
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            s.endUserName ?? s.transactionId,
+                            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: AppColors.offlineBanner,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            failed ? 'Sync Failed' : 'Pending Sync',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: failed ? AppColors.error : AppColors.warning,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (s.stoveSerialNo != null)
+                      Text(s.stoveSerialNo!, style: const TextStyle(fontSize: 12, color: AppColors.textMuted)),
+                    if (s.amount != null)
+                      Text(_fmtAmountPaid(s), style: const TextStyle(fontSize: 12, color: AppColors.textMuted)),
+                    if (failed) ...[
+                      const SizedBox(height: 6),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Icon(Icons.error_outline, size: 14, color: AppColors.error),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              s.syncError!,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontSize: 11.5, color: AppColors.error),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Full read-only detail sheet for a queued (offline) sale, so the operator can
+/// cross-check every captured field BEFORE syncing. Offers Synchronize (push
+/// this one sale), Edit (reopen the form to correct it), and Delete.
+void _showPendingSaleDetail(BuildContext context, SaleModel sale) {
+  showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (_) => _PendingSaleDetailSheet(sale: sale),
+  );
+}
+
+class _PendingSaleDetailSheet extends StatelessWidget {
+  final SaleModel sale;
+  const _PendingSaleDetailSheet({required this.sale});
+
+  @override
+  Widget build(BuildContext context) {
+    final queueId = sale.queueId;
+    final connectivity = Get.find<ConnectivityService>();
+    final syncSvc = Get.find<SyncService>();
+    final listCtrl = Get.find<SalesListController>();
+    final isInstallment = sale.isInstallment == true || sale.selectedModelId != null;
+    final failed = sale.syncError != null;
+
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.9),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _SheetHandle(),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
+            child: Row(
+              children: [
+                const Icon(Icons.cloud_upload_outlined, color: AppColors.warning, size: 22),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    sale.endUserName?.isNotEmpty == true ? sale.endUserName! : sale.transactionId,
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: AppColors.offlineBanner,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    failed ? 'Sync Failed' : 'Pending Sync',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: failed ? AppColors.error : AppColors.warning,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          Flexible(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (failed)
+                    Container(
+                      width: double.infinity,
+                      margin: const EdgeInsets.only(bottom: 12),
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: AppColors.offlineBanner,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(sale.syncError!,
+                          style: const TextStyle(fontSize: 12.5, color: AppColors.error)),
+                    ),
+                  _DetailSection('Transaction', [
+                    _DetailRow('Transaction ID', sale.transactionId),
+                    _DetailRow('Stove Serial No', sale.stoveSerialNo ?? '—'),
+                    _DetailRow('Sales Date', _fmtDate(sale.salesDate ?? sale.createdAt)),
+                  ]),
+                  _DetailSection('Customer', [
+                    _DetailRow('End User', sale.endUserName ?? '—'),
+                    if (sale.aka != null && sale.aka!.isNotEmpty) _DetailRow('Also Known As', sale.aka!),
+                    _DetailRow('Phone', sale.phone ?? '—'),
+                    if (sale.otherPhone != null && sale.otherPhone!.isNotEmpty) _DetailRow('Other Phone', sale.otherPhone!),
+                    if (sale.contactPerson != null && sale.contactPerson!.isNotEmpty) _DetailRow('Contact Person', sale.contactPerson!),
+                    if (sale.contactPhone != null && sale.contactPhone!.isNotEmpty) _DetailRow('Contact Phone', sale.contactPhone!),
+                  ]),
+                  _DetailSection('Location', [
+                    _DetailRow('State', sale.state ?? '—'),
+                    if (sale.lga != null && sale.lga!.isNotEmpty) _DetailRow('LGA', sale.lga!),
+                    if (sale.address != null && sale.address!.isNotEmpty) _DetailRow('Address', sale.address!),
+                    if (sale.latitude != null)
+                      _DetailRow('GPS', '${sale.latitude!.toStringAsFixed(5)}, ${sale.longitude?.toStringAsFixed(5) ?? '—'}'),
+                  ]),
+                  _DetailSection('Sale', [
+                    _DetailRow('Amount', _fmtAmount(sale.amount)),
+                    _DetailRow('Amount Paid', _fmtAmountPaid(sale)),
+                    _DetailRow('Payment Type', isInstallment ? 'Installment' : 'Full Payment'),
+                    if (isInstallment && sale.initialPaymentAmount != null)
+                      _DetailRow('Initial Payment', _fmtAmount(sale.initialPaymentAmount)),
+                    if (isInstallment && sale.initialPaymentMethod != null && sale.initialPaymentMethod!.isNotEmpty)
+                      _DetailRow('Payment Method', sale.initialPaymentMethod!),
+                    if (sale.potQuantity != null) _DetailRow('Pots', '${sale.potQuantity}'),
+                    if (sale.heatRetentionDevice != null)
+                      _DetailRow('Heat Retention Device', sale.heatRetentionDevice! ? 'Yes' : 'No'),
+                  ]),
+                  if (sale.partnerName != null && sale.partnerName!.isNotEmpty)
+                    _DetailSection('Partner', [
+                      _DetailRow('Partner Name', sale.partnerName!),
+                      if (sale.retailerBranch != null && sale.retailerBranch!.isNotEmpty)
+                        _DetailRow('Retailer Branch', sale.retailerBranch!),
+                    ]),
+                  if (sale.previousStoveType != null ||
+                      sale.mealsPerDay != null ||
+                      sale.cookingFuelSource != null ||
+                      sale.cookingLocation != null)
+                    _DetailSection('Cooking Habits', [
+                      if (sale.previousStoveType != null) _DetailRow('Previous Stove', sale.previousStoveType!),
+                      if (sale.mealsPerDay != null) _DetailRow('Meals Per Day', sale.mealsPerDay!),
+                      if (sale.cookingFuelSource != null) _DetailRow('Fuel Source', sale.cookingFuelSource!),
+                      if (sale.cookingLocation != null) _DetailRow('Cooking Location', sale.cookingLocation!),
+                    ]),
+                  _DetailSection('Documents', [
+                    _DetailRow('Stove Image', sale.stoveImageId != null ? '✓  Attached' : '—'),
+                    _DetailRow('Agreement Image', sale.agreementImageId != null ? '✓  Attached' : '— (optional)'),
+                    _DetailRow('Signature', sale.signatureId != null ? '✓  Captured' : '—'),
+                  ]),
+                ],
+              ),
+            ),
+          ),
+          const Divider(height: 1),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+            child: Column(
+              children: [
+                Obx(() {
+                  final online = connectivity.isOnline.value;
+                  final syncing = syncSvc.isSyncing.value;
+                  return SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      style: FilledButton.styleFrom(backgroundColor: AppColors.brandPrimary),
+                      icon: syncing
+                          ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                          : const Icon(Icons.sync),
+                      label: Text(online ? 'Synchronize this sale' : 'Offline — connect to sync'),
+                      onPressed: (!online || syncing || queueId == null)
+                          ? null
+                          : () async {
+                              Navigator.of(context).pop();
+                              await syncSvc.syncPendingSales(onlyIds: [queueId]);
+                              await listCtrl.fetchSales();
+                            },
+                    ),
+                  );
+                }),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        icon: const Icon(Icons.edit_outlined, size: 18),
+                        label: const Text('Edit'),
+                        onPressed: queueId == null
+                            ? null
+                            : () {
+                                Navigator.of(context).pop();
+                                context.push('/sales/create', extra: queueId)
+                                    .then((_) => listCtrl.fetchSales());
+                              },
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(foregroundColor: AppColors.error),
+                        icon: const Icon(Icons.delete_outline, size: 18),
+                        label: const Text('Delete'),
+                        onPressed: queueId == null
+                            ? null
+                            : () async {
+                                Navigator.of(context).pop();
+                                await _confirmDeletePending(context, queueId, listCtrl);
+                              },
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Confirm deleting several queued sales at once (multi-select batch delete).
+Future<bool?> _confirmDeleteMany(BuildContext context, int count) {
+  return showDialog<bool>(
+    context: context,
+    builder: (dialogCtx) => AlertDialog(
+      title: Text('Delete $count pending sale${count > 1 ? 's' : ''}?'),
+      content: Text(
+        'This permanently deletes $count queued sale${count > 1 ? 's' : ''}. '
+        'Everything captured for ${count > 1 ? 'them' : 'it'} — buyer details, '
+        'stove, address, payment, images and signature — will be lost and cannot '
+        'be recovered.\n\nDelete anyway?',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(dialogCtx).pop(false),
+          child: const Text('Cancel'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.of(dialogCtx).pop(true),
+          style: TextButton.styleFrom(foregroundColor: AppColors.error),
+          child: const Text('Delete'),
+        ),
+      ],
+    ),
+  );
+}
+
+Future<void> _confirmDeletePending(
+    BuildContext context, int queueId, SalesListController listCtrl) async {
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (dialogCtx) => AlertDialog(
+      title: const Text('Delete pending sale?'),
+      content: const Text(
+        'This permanently deletes the queued sale. Everything you filled in — '
+        'buyer details, stove, address, payment, images and signature — will be '
+        'lost and cannot be recovered. You would have to create the sale again '
+        'from scratch.\n\nDelete this record?',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(dialogCtx).pop(false),
+          child: const Text('Cancel'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.of(dialogCtx).pop(true),
+          style: TextButton.styleFrom(foregroundColor: AppColors.error),
+          child: const Text('Delete'),
+        ),
+      ],
+    ),
+  );
+  if (confirmed != true) return;
+  await Get.find<OfflineQueueService>().deleteById(queueId);
+  await listCtrl.fetchSales();
 }
 
 // ── Table view ────────────────────────────────────────────────────────────────
@@ -238,7 +675,7 @@ class _SalesTableView extends StatelessWidget {
               DataCell(Text(s.endUserName ?? 'N/A', style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 13))),
               DataCell(Text(s.phone ?? 'N/A', style: const TextStyle(fontSize: 13))),
               DataCell(Text(s.partnerName ?? 'N/A', style: const TextStyle(fontSize: 13))),
-              DataCell(Text(_fmtAmount(s.amount), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.brandPrimary))),
+              DataCell(Text(_fmtAmountPaid(s), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.brandPrimary))),
               DataCell(Text(s.stoveSerialNo ?? 'N/A', style: const TextStyle(fontSize: 12))),
               DataCell(Text(s.state ?? 'N/A', style: const TextStyle(fontSize: 13))),
               DataCell(Text(s.lga ?? 'N/A', style: const TextStyle(fontSize: 13))),
@@ -597,7 +1034,7 @@ class _SaleCard extends StatelessWidget {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  Text(_fmtAmount(sale.amount), style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: AppColors.brandPrimary)),
+                  Text(_fmtAmountPaid(sale), style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: AppColors.brandPrimary)),
                   const SizedBox(height: 4),
                   _StatusBadge(
                     status: (sale.isInstallment == true && sale.paymentStatus != null)
@@ -628,9 +1065,10 @@ class _StatusBadge extends StatelessWidget {
       case 'completed':
         color = AppColors.success; label = 'Completed'; break;
       case 'paid':
-        color = AppColors.success; label = 'Paid'; break;
+      case 'fully_paid':
+        color = AppColors.success; label = 'Fully Paid'; break;
       case 'partially_paid':
-        color = const Color(0xFFD97706); label = 'Partial'; break;
+        color = const Color(0xFFD97706); label = 'Partially Paid'; break;
       case 'unpaid':
         color = AppColors.error; label = 'Unpaid'; break;
       case 'pending':
@@ -638,7 +1076,7 @@ class _StatusBadge extends StatelessWidget {
       case 'cancelled':
         color = AppColors.error; label = 'Cancelled'; break;
       default:
-        color = AppColors.textMuted; label = status;
+        color = AppColors.textMuted; label = _fmtRole(status);
     }
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
@@ -754,6 +1192,7 @@ class _SaleDetailSheet extends StatelessWidget {
                     ]),
                   _DetailSection('Documents', [
                     _DetailRow('Stove Image', sale.stoveImageId != null ? '✓  Attached' : '—'),
+                    _DetailRow('Agreement Image', sale.agreementImageId != null ? '✓  Attached' : '— (optional)'),
                     _DetailRow('Signature', sale.signatureId != null ? '✓  Captured' : '—'),
                   ]),
                   const SizedBox(height: 4),
@@ -798,7 +1237,23 @@ class _AgreementActions extends StatefulWidget {
 class _AgreementActionsState extends State<_AgreementActions> {
   bool _busy = false;
 
-  Future<List<int>> _build() => AgreementPDFGenerator.generate(widget.sale);
+  Future<SaleModel> _fetchFullSale() async {
+    final supabase = Get.find<SupabaseService>();
+    final resp = await supabase.callEdgeFunction(
+      'get-sale',
+      body: {'saleId': widget.sale.id},
+    );
+    if (resp.success && resp.data is Map) {
+      final data = (resp.data as Map)['sale'] ?? (resp.data as Map)['data'] ?? resp.data;
+      if (data is Map) return SaleModel.fromJson(Map<String, dynamic>.from(data));
+    }
+    return widget.sale; // fallback to list data if fetch fails
+  }
+
+  Future<List<int>> _build() async {
+    final full = await _fetchFullSale();
+    return AgreementPDFGenerator.generate(full);
+  }
 
   Future<void> _view() async {
     setState(() => _busy = true);
@@ -840,32 +1295,95 @@ class _AgreementActionsState extends State<_AgreementActions> {
     );
   }
 
+  void _viewImage() {
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => _AgreementImageViewer(sale: widget.sale),
+    ));
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Row(
+    final hasImage = widget.sale.agreementImageUrl != null &&
+        widget.sale.agreementImageUrl!.isNotEmpty;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Expanded(
-          child: OutlinedButton.icon(
-            onPressed: _busy ? null : _view,
-            icon: _busy
-                ? const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.picture_as_pdf_outlined, size: 18),
-            label: const Text('View Agreement'),
-          ),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _busy ? null : _view,
+                icon: _busy
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.picture_as_pdf_outlined, size: 18),
+                label: const Text('View Agreement Document'),
+              ),
+            ),
+            const SizedBox(width: 8),
+            SizedBox(
+              width: 48,
+              child: OutlinedButton(
+                onPressed: _busy ? null : _download,
+                style: OutlinedButton.styleFrom(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                ),
+                child: const Icon(Icons.download_rounded, size: 18),
+              ),
+            ),
+          ],
         ),
-        const SizedBox(width: 8),
-        OutlinedButton(
-          onPressed: _busy ? null : _download,
-          style: OutlinedButton.styleFrom(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        if (hasImage) ...[
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: _viewImage,
+            icon: const Icon(Icons.image_outlined, size: 18),
+            label: const Text('View Agreement Image'),
           ),
-          child: const Icon(Icons.download_rounded, size: 18),
-        ),
+        ],
       ],
+    );
+  }
+}
+
+class _AgreementImageViewer extends StatelessWidget {
+  final SaleModel sale;
+  const _AgreementImageViewer({required this.sale});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        foregroundColor: Colors.white,
+        title: const Text('Agreement Image'),
+      ),
+      body: Center(
+        child: InteractiveViewer(
+          minScale: 0.5,
+          maxScale: 4,
+          child: CachedNetworkImage(
+            imageUrl: sale.agreementImageUrl!,
+            fit: BoxFit.contain,
+            placeholder: (_, __) => const CircularProgressIndicator(),
+            errorWidget: (_, __, ___) => const Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.broken_image_outlined,
+                    color: Colors.white54, size: 48),
+                SizedBox(height: 8),
+                Text('Could not load image',
+                    style: TextStyle(color: Colors.white54)),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
