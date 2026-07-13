@@ -2,7 +2,9 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:get/get.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:logger/logger.dart';
@@ -10,13 +12,16 @@ import 'package:signature/signature.dart';
 import 'package:toastification/toastification.dart';
 import 'package:stove_transaction/core/constants/nigeria_data.dart';
 import 'package:stove_transaction/core/model/upload_response_model.dart';
+import 'package:stove_transaction/core/router/app_navigator.dart';
 import 'package:stove_transaction/core/services/connectivity_service.dart';
 import 'package:stove_transaction/core/services/local_cache_service.dart';
 import 'package:stove_transaction/core/services/offline_queue_service.dart';
 import 'package:stove_transaction/core/services/session_manager.dart';
+import 'package:stove_transaction/features/partners/partner_access_service.dart';
 import 'package:stove_transaction/features/sales/models/payment_model.dart';
 import 'package:stove_transaction/features/sales/models/stove_model.dart';
 import 'create_sale_service.dart';
+import 'create_sale_test_data.dart';
 
 class ValidationError {
   final int step;
@@ -34,6 +39,7 @@ class ValidationError {
 class CreateSaleController extends GetxController {
   final _service = CreateSaleService();
   final _session = Get.find<SessionManager>();
+  final _partnerAccess = PartnerAccessService();
   final _connectivity = Get.find<ConnectivityService>();
   final _queue = Get.find<OfflineQueueService>();
   final _logger = Logger();
@@ -47,6 +53,19 @@ class CreateSaleController extends GetxController {
   final isLoadingStoves = false.obs;
   final singleViewMode = true.obs;
 
+  /// When set, this form is editing an existing queued (offline/failed) sale
+  /// rather than creating a new one — submitting updates that queue row.
+  int? _editingQueueId;
+  bool _hydrated = false;
+
+  /// Signature carried over from a queued sale being edited. Strokes can't be
+  /// restored into the pad, so we keep the original PNG and reuse it unless the
+  /// user draws a new one.
+  String? _existingSignatureB64;
+
+  /// True while the form is editing a queued sale (vs. a fresh create).
+  bool get isEditingQueued => _editingQueueId != null;
+
   // Step 1 — Transaction
   final transactionId = ''.obs;
   final selectedStove = Rxn<StoveModel>();
@@ -58,6 +77,7 @@ class CreateSaleController extends GetxController {
   final contactPersonCtrl = TextEditingController();
   final contactPhoneCtrl = TextEditingController();
   final endUserNameCtrl = TextEditingController();
+  final endUserSurnameCtrl = TextEditingController();
   final akaCtrl = TextEditingController();
   final phoneCtrl = TextEditingController();
   final otherPhoneCtrl = TextEditingController();
@@ -76,13 +96,52 @@ class CreateSaleController extends GetxController {
 
   // ACSL agent: partner picker state
   bool get isAcslAgent => _session.isAcslAgent || _session.isAcslAgentManager;
-  final selectedOrgId = ''.obs;
+  bool get isSuperAdmin => _session.role == 'super_admin';
+
+  /// Roles that must pick a partner before selecting a stove.
+  bool get needsPartnerPicker => isAcslAgent || isSuperAdmin;
+
+  final selectedOrgId = ''.obs; // resolves to the selected BRANCH's org id
   final partnerSearchQuery = ''.obs;
   final RxList<Map<String, dynamic>> assignedPartners = <Map<String, dynamic>>[].obs;
   final isLoadingPartners = false.obs;
 
-  // Step 5 — Sale Details
+  // Partner -> State -> Branch cascade. `assignedPartners` holds one row per
+  // branch (org), grouped by partner_name.
+  final selectedPartnerName = ''.obs;
+  final selectedBranchState = ''.obs;
+
+  /// Distinct partners (one entry per partner_name).
+  List<Map<String, dynamic>> get distinctPartners {
+    final seen = <String, Map<String, dynamic>>{};
+    for (final p in assignedPartners) {
+      final name = (p['partner_name'] ?? p['name'] ?? '').toString();
+      if (name.isNotEmpty) seen.putIfAbsent(name, () => p);
+    }
+    return seen.values.toList();
+  }
+
+  List<Map<String, dynamic>> get _branchesForPartner => assignedPartners
+      .where((p) =>
+          (p['partner_name'] ?? p['name'] ?? '').toString() == selectedPartnerName.value)
+      .toList();
+
+  /// States where the selected partner has a branch.
+  List<String> get statesForSelectedPartner => (_branchesForPartner
+          .map((b) => (b['state'] ?? '').toString())
+          .where((s) => s.isNotEmpty)
+          .toSet()
+          .toList()
+        ..sort());
+
+  /// Branches of the selected partner within the selected state.
+  List<Map<String, dynamic>> get branchesForSelectedState => _branchesForPartner
+      .where((b) => (b['state'] ?? '').toString() == selectedBranchState.value)
+      .toList();
+
+  // Step 5 — Sale & Payment
   final amountCtrl = TextEditingController();
+  final amountReceivedCtrl = TextEditingController();
   final RxList<PaymentModel> paymentModels = <PaymentModel>[].obs;
   // null = full payment; non-null = installment with this model
   final selectedModel = Rxn<PaymentModel>();
@@ -138,7 +197,7 @@ class CreateSaleController extends GetxController {
   final agreementImageSet = false.obs;
   final agreementImageFile = Rxn<File>();
   final agreementImageUploadProgress = Rxn<double>();
-  bool get hasSignature => signatureController.isNotEmpty;
+  bool get hasSignature => signatureController.isNotEmpty || _existingSignatureB64 != null;
 
   // Option lists
   final paymentMethods = ['Cash', 'Bank Transfer', 'POS', 'Mobile Money'];
@@ -171,50 +230,90 @@ class CreateSaleController extends GetxController {
     retailerBranchCtrl.text = _session.organizationBranch ?? '';
     isOfflineMode.value = !_connectivity.isOnline.value;
     ever(_connectivity.isOnline, (online) => isOfflineMode.value = !online);
-    if (isAcslAgent) {
-      // ACSL agents pick a partner first; stoves/models load after partner selection
-      _fetchAssignedPartners();
+    // Recompute the Places autocomplete bias whenever state/LGA change, so
+    // address search is streamlined to the selected area (mirrors the web).
+    ever(selectedState, (_) => _updatePlacesBias());
+    ever(selectedLga, (_) => _updatePlacesBias());
+    // Payment models are decoupled from partners — load all active models for
+    // every role (see docs/backend/payment-model-decoupling.md).
+    _loadPaymentModels();
+    if (needsPartnerPicker) {
+      // Super admin & ACSL agents pick a partner first; stoves load after.
+      _fetchPartnersForRole();
     } else {
       _loadStoves();
-      _loadPaymentModels();
     }
     _fetchGoogleKeys();
   }
 
-  Future<void> _fetchAssignedPartners() async {
-    final agentId = _session.userId;
-    if (agentId == null || agentId.isEmpty) return;
+  /// Partner picker source: super admin = all orgs; ACSL agents/managers = their
+  /// assigned partners + assigned-state partners. Direct-table filtered.
+  Future<void> _fetchPartnersForRole() async {
+    final userId = _session.userId;
+    if (userId == null || userId.isEmpty) return;
     final cache = Get.find<LocalCacheService>();
 
-    // Populate from cache immediately so offline users see something
     final cached = cache.getAssignedPartners();
     if (cached.isNotEmpty) assignedPartners.assignAll(cached);
-
     if (!_connectivity.isOnline.value) return;
 
     isLoadingPartners.value = true;
-    final resp = await _service.getAssignedPartners(agentId);
-    isLoadingPartners.value = false;
-    if (resp.success && resp.data != null) {
-      final raw = resp.data is List
-          ? resp.data as List
-          : ((resp.data as Map?))?['data'] as List? ?? [];
-      final partners = raw.map((e) => Map<String, dynamic>.from(e as Map)).toList();
-      assignedPartners.assignAll(partners);
-      cache.saveAssignedPartners(partners);
+    try {
+      final rows = await _partnerAccess.partnersForUser(
+        userId: userId,
+        role: _session.role,
+      );
+      assignedPartners.assignAll(rows);
+      cache.saveAssignedPartners(rows);
+    } catch (_) {
+      // keep cached list on failure
+    } finally {
+      isLoadingPartners.value = false;
     }
   }
 
-  void onPartnerSelected(Map<String, dynamic> partner) {
-    final orgId = partner['id']?.toString() ?? '';
-    final name = partner['partner_name']?.toString() ?? partner['name']?.toString() ?? '';
-    selectedOrgId.value = orgId;
+  /// Step 1 of the cascade — pick a partner by name. Resets the state/branch
+  /// selection below it. Auto-advances when there is only one state.
+  void onPartnerNameSelected(String name) {
+    selectedPartnerName.value = name;
     partnerNameCtrl.text = name;
     partnerSearchQuery.value = '';
-    if (orgId.isNotEmpty) {
-      _loadStovesForOrg(orgId);
-      _loadPaymentModelsForOrg(orgId);
-    }
+    selectedBranchState.value = '';
+    _clearBranchSelection();
+    final states = statesForSelectedPartner;
+    if (states.length == 1) onBranchStateSelected(states.first);
+  }
+
+  /// Step 2 — pick the partner's state. Auto-advances when only one branch.
+  void onBranchStateSelected(String state) {
+    selectedBranchState.value = state;
+    _clearBranchSelection();
+    final branches = branchesForSelectedState;
+    if (branches.length == 1) onBranchSelected(branches.first);
+  }
+
+  /// Step 3 — pick the branch; this resolves the organization_id and loads stoves.
+  void onBranchSelected(Map<String, dynamic> branch) {
+    final orgId = branch['id']?.toString() ?? '';
+    selectedOrgId.value = orgId;
+    retailerBranchCtrl.text = (branch['branch'] ?? '').toString();
+    if (orgId.isNotEmpty) _loadStovesForOrg(orgId);
+  }
+
+  void _clearBranchSelection() {
+    selectedOrgId.value = '';
+    retailerBranchCtrl.text = '';
+    availableStoves.clear();
+    selectedStove.value = null;
+  }
+
+  /// Reset the whole partner cascade (the "change partner" action).
+  void clearPartnerSelection() {
+    selectedPartnerName.value = '';
+    partnerNameCtrl.clear();
+    selectedBranchState.value = '';
+    _clearBranchSelection();
+    partnerSearchQuery.value = '';
   }
 
   Future<void> _loadStovesForOrg(String orgId) async {
@@ -249,31 +348,6 @@ class CreateSaleController extends GetxController {
     isLoadingStoves.value = false;
   }
 
-  Future<void> _loadPaymentModelsForOrg(String orgId) async {
-    final cache = Get.find<LocalCacheService>();
-
-    if (_connectivity.isOnline.value) {
-      final resp = await _service.getPaymentModelsForOrg(orgId);
-      if (resp.success && resp.data != null) {
-        final raw = resp.data is List
-            ? resp.data as List
-            : ((resp.data as Map?))?['data'] as List? ?? [];
-        final list = raw.map((e) {
-          final map = Map<String, dynamic>.from(e as Map);
-          return map.containsKey('payment_model') && map['payment_model'] is Map
-              ? Map<String, dynamic>.from(map['payment_model'] as Map)
-              : map;
-        }).where((m) => m['id'] != null).toList();
-        final models = list.map((e) => PaymentModel.fromJson(e)).toList();
-        paymentModels.assignAll(models);
-        cache.savePaymentModelsForOrg(orgId, models);
-      } else {
-        paymentModels.assignAll(cache.getPaymentModelsForOrg(orgId));
-      }
-    } else {
-      paymentModels.assignAll(cache.getPaymentModelsForOrg(orgId));
-    }
-  }
 
   Future<void> _fetchGoogleKeys() async {
     final cache = Get.find<LocalCacheService>();
@@ -296,6 +370,372 @@ class CreateSaleController extends GetxController {
     final now = DateTime.now().microsecondsSinceEpoch;
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
     return List.generate(6, (i) => chars[(now ~/ (i + 1)) % chars.length]).join();
+  }
+
+  /// Wipes every field back to a pristine state and issues a fresh transaction
+  /// ID, so the next sale starts clean. Called after a successful submit — the
+  /// controller instance is reused, so without this the old values linger.
+  void resetForm() {
+    // A brand-new transaction for the next sale.
+    transactionId.value = _generateTransactionId();
+
+    // Step 1 — Transaction / stove
+    selectedStove.value = null;
+    stoveSearchQuery.value = '';
+    salesDate.value = DateTime.now();
+
+    // Step 2 — Contact
+    contactPersonCtrl.clear();
+    contactPhoneCtrl.clear();
+    endUserNameCtrl.clear();
+    endUserSurnameCtrl.clear();
+    akaCtrl.clear();
+    phoneCtrl.clear();
+    otherPhoneCtrl.clear();
+
+    // Step 3 — Location
+    selectedState.value = '';
+    selectedLga.value = '';
+    fullAddressCtrl.clear();
+    latitude.value = null;
+    longitude.value = null;
+
+    // Step 4 — Partner cascade. Super admin / ACSL pick every time; other roles
+    // keep their own org defaults.
+    if (needsPartnerPicker) {
+      clearPartnerSelection();
+    } else {
+      partnerNameCtrl.text = _session.organizationName ?? '';
+      retailerBranchCtrl.text = _session.organizationBranch ?? '';
+    }
+
+    // Step 5 — Sale & Payment
+    amountCtrl.clear();
+    amountReceivedCtrl.clear();
+    selectedModel.value = null;
+    initialPaymentCtrl.clear();
+    initialPaymentText.value = '';
+    selectedPaymentMethod.value = '';
+    clearImage('paymentProof');
+
+    // Step 6 — Stove set
+    potQuantity.value = 1;
+    heatRetentionDevice.value = false;
+
+    // Step 7 — Cooking habits
+    previousStoveType.value = '';
+    previousStoveOtherCtrl.clear();
+    mealsPerDayCtrl.clear();
+    cookingFuelSourceCtrl.clear();
+    cookingLocationCtrl.clear();
+
+    // Step 8 — Terms
+    tcPoaGoverned.value = false;
+    tcMonitoring.value = false;
+    tcNoResell.value = false;
+    tcEmissions.value = false;
+    tcNoExport.value = false;
+    tcDemonstration.value = false;
+
+    // Step 9 — Media + signature
+    clearImage('stove');
+    clearImage('agreement');
+    signatureController.clear();
+    _existingSignatureB64 = null;
+
+    // Reset navigation to the first step.
+    currentStep.value = 0;
+    if (pageController.hasClients) {
+      pageController.jumpToPage(0);
+    }
+    _editingQueueId = null;
+  }
+
+  /// Loads a queued (pending/failed) sale back into the form for editing.
+  /// Submitting afterwards updates that same queue row (see [_editingQueueId]).
+  Future<void> hydrateFromQueue(int queueId) async {
+    if (_hydrated && _editingQueueId == queueId) return;
+    final row = await _queue.getById(queueId);
+    if (row == null) return;
+    _hydrated = true;
+    _editingQueueId = queueId;
+
+    final payload = jsonDecode(row['payload'] as String) as Map<String, dynamic>;
+
+    transactionId.value = payload['transactionId']?.toString() ?? transactionId.value;
+
+    // Contact / end user
+    contactPersonCtrl.text = payload['contactPerson']?.toString() ?? '';
+    contactPhoneCtrl.text = payload['contactPhone']?.toString() ?? '';
+    endUserNameCtrl.text = payload['endUserName']?.toString() ?? '';
+    endUserSurnameCtrl.text = payload['endUserSurname']?.toString() ?? '';
+    akaCtrl.text = payload['aka']?.toString() ?? '';
+    phoneCtrl.text = payload['phone']?.toString() ?? '';
+    otherPhoneCtrl.text = payload['otherPhone']?.toString() ?? '';
+
+    // Location
+    selectedState.value = payload['stateBackup']?.toString() ?? '';
+    selectedLga.value = payload['lgaBackup']?.toString() ?? '';
+    final addr = payload['addressData'] is Map
+        ? Map<String, dynamic>.from(payload['addressData'] as Map)
+        : <String, dynamic>{};
+    fullAddressCtrl.text = addr['fullAddress']?.toString() ?? '';
+    latitude.value = (addr['latitude'] as num?)?.toDouble();
+    longitude.value = (addr['longitude'] as num?)?.toDouble();
+
+    // Partner / branch
+    partnerNameCtrl.text = payload['partnerName']?.toString() ?? '';
+    retailerBranchCtrl.text = payload['retailerBranch']?.toString() ?? '';
+    if (payload['partnerName'] != null) {
+      selectedPartnerName.value = payload['partnerName'].toString();
+    }
+    if (payload['organizationId'] != null) {
+      selectedOrgId.value = payload['organizationId'].toString();
+    }
+
+    // Stove — reconstruct enough for display/submit.
+    if (payload['stoveId'] != null) {
+      selectedStove.value = StoveModel(
+        stoveId: payload['stoveId'].toString(),
+        serialNo: payload['stoveSerialNo']?.toString(),
+        organizationId: payload['organizationId']?.toString(),
+      );
+    }
+
+    // Sale & payment
+    amountCtrl.text = _fmtAmountInput(payload['amount']);
+    amountReceivedCtrl.text = _fmtAmountInput(payload['amountReceived']);
+    if (payload['isInstallment'] == true && payload['paymentModelId'] != null) {
+      selectedModel.value =
+          paymentModels.firstWhereOrNull((m) => m.id == payload['paymentModelId'].toString());
+    }
+    if (payload['initialPaymentAmount'] != null) {
+      initialPaymentCtrl.text = _fmtAmountInput(payload['initialPaymentAmount']);
+      initialPaymentText.value = initialPaymentCtrl.text;
+    }
+    selectedPaymentMethod.value = payload['initialPaymentMethod']?.toString() ?? '';
+
+    // Stove set
+    potQuantity.value = (payload['potQuantity'] as num?)?.toInt() ?? 1;
+    heatRetentionDevice.value = payload['heatRetentionDevice'] == true;
+
+    // Cooking habits
+    previousStoveType.value = payload['previousStoveType']?.toString() ?? '';
+    previousStoveOtherCtrl.text = payload['previousStoveOther']?.toString() ?? '';
+    mealsPerDayCtrl.text = payload['mealsPerDay']?.toString() ?? '';
+    cookingFuelSourceCtrl.text = payload['cookingFuelSource']?.toString() ?? '';
+    cookingLocationCtrl.text = payload['cookingLocation']?.toString() ?? '';
+
+    // Terms
+    final terms = payload['termsAccepted'] is Map
+        ? Map<String, dynamic>.from(payload['termsAccepted'] as Map)
+        : <String, dynamic>{};
+    tcPoaGoverned.value = terms['poaGoverned'] == true;
+    tcMonitoring.value = terms['monitoring'] == true;
+    tcNoResell.value = terms['noResell'] == true;
+    tcEmissions.value = terms['emissionReductions'] == true;
+    tcNoExport.value = terms['noExport'] == true;
+    tcDemonstration.value = terms['demonstration'] == true;
+
+    // Images / signature (stored as base64 in the queue row).
+    final imagesRaw = row['images'] as String?;
+    if (imagesRaw != null) {
+      try {
+        final imgs = Map<String, dynamic>.from(jsonDecode(imagesRaw) as Map);
+        final stoveFile = await _b64ToTempFile(imgs['stove_image'] as String?, 'stove');
+        if (stoveFile != null) {
+          stoveImage = stoveFile;
+          stoveImageFile.value = stoveFile;
+          stoveImageSet.value = true;
+        }
+        final agrFile = await _b64ToTempFile(imgs['agreement_image'] as String?, 'agreement');
+        if (agrFile != null) {
+          agreementImage = agrFile;
+          agreementImageFile.value = agrFile;
+          agreementImageSet.value = true;
+        }
+        final proofFile = await _b64ToTempFile(imgs['payment_proof'] as String?, 'proof');
+        if (proofFile != null) {
+          paymentProofImage = proofFile;
+          paymentProofFile.value = proofFile;
+          paymentProofSet.value = true;
+        }
+        _existingSignatureB64 = imgs['signature'] as String?;
+      } catch (e) {
+        _logger.w('Failed to decode queued images: $e');
+      }
+    }
+  }
+
+  String _fmtAmountInput(dynamic v) {
+    final n = (v as num?)?.toDouble();
+    if (n == null || n == 0) return '';
+    return n.toStringAsFixed(0).replaceAllMapped(
+          RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
+          (m) => '${m[1]},',
+        );
+  }
+
+  Future<File?> _b64ToTempFile(String? b64, String tag) async {
+    if (b64 == null || b64.isEmpty) return null;
+    try {
+      final bytes = base64Decode(b64);
+      final dir = await getTemporaryDirectory();
+      final file = File('${dir.path}/edit_${tag}_${DateTime.now().millisecondsSinceEpoch}.png');
+      await file.writeAsBytes(bytes);
+      return file;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // ── Developer test-autofill backdoor ──────────────────────────────────────
+  // Triple-tapping the "Create Sale" title fills the whole form from a rotating
+  // set of sample Nigerian sales so a submit can be tested without retyping.
+  // Gated by LocalCacheService.devAutofillEnabled (toggle in Profile).
+
+  int _testDataIndex = 0;
+  int _titleTapCount = 0;
+  DateTime? _lastTitleTap;
+
+  bool get devAutofillEnabled =>
+      Get.find<LocalCacheService>().devAutofillEnabled;
+
+  /// Counts rapid taps on the app-bar title; three within 1.2s triggers the
+  /// test-autofill backdoor (when enabled).
+  void onTitleTap() {
+    if (!devAutofillEnabled) return;
+    final now = DateTime.now();
+    if (_lastTitleTap == null ||
+        now.difference(_lastTitleTap!) > const Duration(milliseconds: 1200)) {
+      _titleTapCount = 0;
+    }
+    _lastTitleTap = now;
+    _titleTapCount++;
+    if (_titleTapCount >= 3) {
+      _titleTapCount = 0;
+      applyTestData();
+    }
+  }
+
+  /// Fills every field from the next sample sale. Images are populated from a
+  /// bundled asset; the signature must still be drawn by hand.
+  Future<void> applyTestData() async {
+    if (!devAutofillEnabled) return;
+    final sample = kSampleSales[_testDataIndex % kSampleSales.length];
+    _testDataIndex++;
+
+    // Contact / end user
+    contactPersonCtrl.text = sample['contactPerson'] ?? '';
+    contactPhoneCtrl.text = sample['contactPhone'] ?? '';
+    endUserNameCtrl.text = sample['endUserName'] ?? '';
+    endUserSurnameCtrl.text = sample['endUserSurname'] ?? '';
+    akaCtrl.text = sample['aka'] ?? '';
+    phoneCtrl.text = sample['phone'] ?? '';
+    otherPhoneCtrl.text = sample['otherPhone'] ?? '';
+
+    // Location — set state/LGA (must exist in NigeriaData) + a coordinate so
+    // GPS validation passes. Real vs vague addresses exercise map matching.
+    selectedState.value = sample['state'] ?? '';
+    if (NigeriaData.getLgas(selectedState.value).contains(sample['lga'])) {
+      selectedLga.value = sample['lga'];
+    }
+    fullAddressCtrl.text = sample['fullAddress'] ?? '';
+    final coord = _sampleCoordinate(selectedState.value);
+    latitude.value = coord.$1;
+    longitude.value = coord.$2;
+
+    // Partner cascade / stove. Super admin & ACSL agents must pick from the
+    // loaded partner list; other roles pick from their org's stoves.
+    if (needsPartnerPicker) {
+      final partners = distinctPartners;
+      if (partners.isNotEmpty) {
+        onPartnerNameSelected(
+            (partners.first['partner_name'] ?? partners.first['name'] ?? '').toString());
+        final states = statesForSelectedPartner;
+        if (states.isNotEmpty && selectedBranchState.value.isEmpty) {
+          onBranchStateSelected(states.first);
+        }
+        final branches = branchesForSelectedState;
+        if (branches.isNotEmpty && selectedOrgId.value.isEmpty) {
+          onBranchSelected(branches.first);
+        }
+        // Stoves load asynchronously after the branch is chosen.
+        await Future.delayed(const Duration(milliseconds: 400));
+      }
+    }
+    if (availableStoves.isNotEmpty) {
+      selectedStove.value = availableStoves.first;
+    }
+
+    // Sale & payment — full payment, amount + received.
+    selectedModel.value = null;
+    amountCtrl.text = (sample['amount'] ?? 0).toString();
+    amountReceivedCtrl.text = (sample['amountReceived'] ?? sample['amount'] ?? 0).toString();
+    selectedPaymentMethod.value = 'Cash';
+
+    // Stove set
+    potQuantity.value = (sample['potQuantity'] as int?) ?? 1;
+    heatRetentionDevice.value = (sample['heatRetentionDevice'] as bool?) ?? false;
+
+    // Cooking habits (optional)
+    previousStoveType.value = sample['previousStoveType'] ?? '';
+    previousStoveOtherCtrl.text = sample['previousStoveOther'] ?? '';
+    mealsPerDayCtrl.text = sample['mealsPerDay'] ?? '';
+    cookingFuelSourceCtrl.text = sample['cookingFuelSource'] ?? '';
+    cookingLocationCtrl.text = sample['cookingLocation'] ?? '';
+
+    // Accept all terms
+    tcPoaGoverned.value = true;
+    tcMonitoring.value = true;
+    tcNoResell.value = true;
+    tcEmissions.value = true;
+    tcNoExport.value = true;
+    tcDemonstration.value = true;
+
+    // Images from a bundled asset (stove + agreement). Signature drawn by hand.
+    final assetFile = await _assetToTempFile('assets/images/save80_logo.png');
+    if (assetFile != null) {
+      stoveImage = assetFile;
+      stoveImageId = null;
+      stoveImageFile.value = assetFile;
+      stoveImageSet.value = true;
+      agreementImage = assetFile;
+      agreementImageId = null;
+      agreementImageFile.value = assetFile;
+      agreementImageSet.value = true;
+    }
+
+    _showSuccess('Test data filled — draw a signature, then submit.');
+  }
+
+  /// Approximate center coordinate per state so autofilled sales land in a
+  /// plausible spot. Falls back to Lagos.
+  (double, double) _sampleCoordinate(String state) {
+    const centers = <String, (double, double)>{
+      'Lagos': (6.5244, 3.3792),
+      'Kano': (12.0022, 8.5919),
+      'Oyo': (7.3775, 3.9470),
+      'Rivers': (4.8156, 7.0498),
+      'FCT': (9.0765, 7.3986),
+      'Enugu': (6.5244, 7.5106),
+    };
+    return centers[state] ?? (6.5244, 3.3792);
+  }
+
+  /// Copies a bundled asset to a temp file so it can be used where the form
+  /// expects a picked [File].
+  Future<File?> _assetToTempFile(String assetPath) async {
+    try {
+      final bytes = await rootBundle.load(assetPath);
+      final dir = await getTemporaryDirectory();
+      final file = File('${dir.path}/test_${DateTime.now().millisecondsSinceEpoch}.png');
+      await file.writeAsBytes(bytes.buffer.asUint8List());
+      return file;
+    } catch (e) {
+      _logger.w('Test asset load failed: $e');
+      return null;
+    }
   }
 
   Future<void> _loadStoves() async {
@@ -329,10 +769,10 @@ class CreateSaleController extends GetxController {
   Future<void> _loadPaymentModels() async {
     final cache = Get.find<LocalCacheService>();
     if (_connectivity.isOnline.value) {
-      final resp = await _service.getPaymentModels();
+      final resp = await _service.getAllActivePaymentModels();
       if (resp.success && resp.data != null) {
         final raw = resp.data is List ? resp.data as List : ((resp.data as Map?))?['data'] as List? ?? [];
-        // organization-payment-models returns assignment objects with a nested payment_model
+        // 'payment-models' returns plain models; tolerate a nested shape too.
         final list = raw.map((e) {
           final map = Map<String, dynamic>.from(e as Map);
           return map.containsKey('payment_model') && map['payment_model'] is Map
@@ -380,7 +820,63 @@ class CreateSaleController extends GetxController {
 
   // ── Address / map helpers ─────────────────────────────────────────────────
 
-  /// Search Places autocomplete (Nigeria-restricted).
+  // Autocomplete bias derived from the selected state/LGA. Center is geocoded
+  // from "LGA, State, Nigeria"; radius is tighter for an LGA, wider for state.
+  double? _biasLat;
+  double? _biasLng;
+  int _biasRadius = 0;
+
+  /// Geocode the selected state/LGA to a center point used to bias address
+  /// search. Mirrors the web GooglePlacesInput locationBias behaviour.
+  Future<void> _updatePlacesBias() async {
+    final state = selectedState.value.trim();
+    final lga = selectedLga.value.trim();
+    if (state.isEmpty) {
+      _biasLat = null;
+      _biasLng = null;
+      _biasRadius = 0;
+      return;
+    }
+    final key = _googleMapsApiKey ?? _googlePlacesApiKey;
+    if (key == null || key.isEmpty) return;
+    final address = [lga, state, 'Nigeria'].where((s) => s.isNotEmpty).join(', ');
+    try {
+      final uri = Uri.https('maps.googleapis.com', '/maps/api/geocode/json', {
+        'address': address,
+        'region': 'ng',
+        'key': key,
+      });
+      final res = await http.get(uri);
+      if (res.statusCode == 200) {
+        final body = jsonDecode(res.body) as Map<String, dynamic>;
+        final results = body['results'] as List? ?? [];
+        // Ignore a stale response if the selection changed while awaiting.
+        if (state != selectedState.value.trim() || lga != selectedLga.value.trim()) {
+          return;
+        }
+        if (results.isNotEmpty) {
+          final loc = ((results[0] as Map)['geometry'] as Map?)?['location'] as Map?;
+          if (loc != null) {
+            _biasLat = (loc['lat'] as num).toDouble();
+            _biasLng = (loc['lng'] as num).toDouble();
+            // Tighter radius when an LGA is chosen, wider for state-only.
+            _biasRadius = lga.isNotEmpty ? 20000 : 60000;
+            return;
+          }
+        }
+      }
+      _biasLat = null;
+      _biasLng = null;
+      _biasRadius = 0;
+    } catch (e) {
+      _logger.e('Places bias geocode error: $e');
+      _biasLat = null;
+      _biasLng = null;
+      _biasRadius = 0;
+    }
+  }
+
+  /// Search Places autocomplete (Nigeria-restricted, biased to selected area).
   Future<List<Map<String, String>>> searchPlaces(String query) async {
     if (query.length < 3) return [];
     final key = _googlePlacesApiKey;
@@ -389,6 +885,8 @@ class CreateSaleController extends GetxController {
       final uri = Uri.https('maps.googleapis.com', '/maps/api/place/autocomplete/json', {
         'input': query,
         'components': 'country:ng',
+        if (_biasLat != null && _biasLng != null) 'location': '$_biasLat,$_biasLng',
+        if (_biasLat != null && _biasLng != null) 'radius': '$_biasRadius',
         'key': key,
       });
       final res = await http.get(uri);
@@ -493,7 +991,7 @@ class CreateSaleController extends GetxController {
       case 0: return selectedStove.value != null;
       case 1: return endUserNameCtrl.text.isNotEmpty && phoneCtrl.text.isNotEmpty;
       case 2: return selectedState.value.isNotEmpty && fullAddressCtrl.text.isNotEmpty;
-      case 3: return isAcslAgent ? selectedOrgId.value.isNotEmpty : partnerNameCtrl.text.isNotEmpty;
+      case 3: return needsPartnerPicker ? selectedOrgId.value.isNotEmpty : partnerNameCtrl.text.isNotEmpty;
       case 4: return amountCtrl.text.isNotEmpty;
       case 5: return true;
       case 6: return true;
@@ -506,23 +1004,31 @@ class CreateSaleController extends GetxController {
   List<ValidationError> validateAll() {
     final errors = <ValidationError>[];
 
-    // Step 0 — Transaction
-    if (selectedStove.value == null) {
-      errors.add(const ValidationError(step: 0, stepTitle: 'Transaction Info', field: 'Stove', message: 'Please select a stove'));
+    // Partner -> State -> Branch (super admin & ACSL agents must pick a branch).
+    if (needsPartnerPicker && selectedOrgId.value.isEmpty) {
+      errors.add(const ValidationError(step: 0, stepTitle: 'Transaction Info', field: 'Partner', message: 'Select a partner, state and branch'));
     }
 
-    // Step 1 — Contact
-    if (endUserNameCtrl.text.trim().isEmpty) {
-      errors.add(const ValidationError(step: 1, stepTitle: 'Contact Details', field: 'End User Name', message: 'End user name is required'));
-    }
-    if (phoneCtrl.text.trim().isEmpty) {
-      errors.add(const ValidationError(step: 1, stepTitle: 'Contact Details', field: 'Phone Number', message: 'Phone number is required'));
-    }
+    // Step 1 — Buyer & End User
     if (contactPersonCtrl.text.trim().isEmpty) {
-      errors.add(const ValidationError(step: 1, stepTitle: 'Contact Details', field: 'Contact Person', message: 'Contact person is required'));
+      errors.add(const ValidationError(step: 1, stepTitle: 'Buyer & End User', field: 'Contact Person', message: 'Contact person / buyer is required'));
     }
     if (contactPhoneCtrl.text.trim().isEmpty) {
-      errors.add(const ValidationError(step: 1, stepTitle: 'Contact Details', field: 'Contact Phone', message: 'Contact phone number is required'));
+      errors.add(const ValidationError(step: 1, stepTitle: 'Buyer & End User', field: 'Contact Phone', message: 'Contact phone number is required'));
+    }
+    if (endUserNameCtrl.text.trim().isEmpty) {
+      errors.add(const ValidationError(step: 1, stepTitle: 'Buyer & End User', field: 'End User First Name', message: 'End user first name is required'));
+    }
+    if (endUserSurnameCtrl.text.trim().isEmpty) {
+      errors.add(const ValidationError(step: 1, stepTitle: 'Buyer & End User', field: 'End User Surname', message: 'End user surname is required'));
+    }
+    if (phoneCtrl.text.trim().isEmpty) {
+      errors.add(const ValidationError(step: 1, stepTitle: 'Buyer & End User', field: 'End User Phone', message: 'End user phone number is required'));
+    }
+
+    // Step 4 — Sale & Payment
+    if (selectedStove.value == null) {
+      errors.add(const ValidationError(step: 4, stepTitle: 'Sale & Payment', field: 'Stove', message: 'Please select a stove'));
     }
 
     // Step 2 — Location
@@ -541,32 +1047,15 @@ class CreateSaleController extends GetxController {
     if (amt == null || amt <= 0) {
       errors.add(const ValidationError(step: 4, stepTitle: 'Sale Details', field: 'Amount', message: 'A valid sale amount is required'));
     }
-    if (isInstallment) {
-      final ip = double.tryParse(initialPaymentCtrl.text.replaceAll(',', ''));
-      if (ip == null || ip <= 0) {
-        errors.add(const ValidationError(step: 4, stepTitle: 'Sale Details', field: 'Initial Payment', message: 'Initial payment amount is required for installment'));
-      }
-      if (selectedPaymentMethod.value.isEmpty) {
-        errors.add(const ValidationError(step: 4, stepTitle: 'Sale Details', field: 'Payment Method', message: 'Select a payment method for the initial payment'));
-      }
-      if (!paymentProofSet.value) {
-        errors.add(const ValidationError(step: 4, stepTitle: 'Sale Details', field: 'Payment Proof', message: 'Payment proof image is required for installment'));
+    // Amount received cannot exceed the sale amount
+    final receivedText = amountReceivedCtrl.text.replaceAll(',', '').trim();
+    if (receivedText.isNotEmpty) {
+      final received = double.tryParse(receivedText);
+      if (received != null && amt != null && received > amt) {
+        errors.add(const ValidationError(step: 4, stepTitle: 'Sale Details', field: 'Amount Received', message: 'Amount received cannot be greater than the sale amount'));
       }
     }
-
-    // Step 6 — Cooking Habits
-    if (previousStoveType.value.isEmpty) {
-      errors.add(const ValidationError(step: 6, stepTitle: 'Cooking Habits', field: 'Previous Stove Type', message: 'Previous stove type is required'));
-    }
-    if (mealsPerDayCtrl.text.trim().isEmpty) {
-      errors.add(const ValidationError(step: 6, stepTitle: 'Cooking Habits', field: 'Meals Per Day', message: 'Meals per day is required'));
-    }
-    if (cookingFuelSourceCtrl.text.trim().isEmpty) {
-      errors.add(const ValidationError(step: 6, stepTitle: 'Cooking Habits', field: 'Cooking Fuel Source', message: 'Cooking fuel source is required'));
-    }
-    if (cookingLocationCtrl.text.trim().isEmpty) {
-      errors.add(const ValidationError(step: 6, stepTitle: 'Cooking Habits', field: 'Cooking Location', message: 'Cooking location is required'));
-    }
+    // Step 6 — Cooking Habits (all optional — no validation)
 
     // Step 7 — Terms & Conditions
     if (!allTcAccepted) {
@@ -703,9 +1192,14 @@ class CreateSaleController extends GetxController {
         paymentProofUploadProgress.value = resp != null ? 1.0 : null;
       }
 
-      // Signature goes as raw base64 in the payload (matches frontend format)
+      // Signature goes as raw base64 in the payload (matches frontend format).
+      // Fall back to the signature carried over from an edited queued sale.
       final sigBytes = await signatureController.toPngBytes();
-      if (sigBytes != null) payload['signature'] = base64Encode(sigBytes);
+      if (sigBytes != null) {
+        payload['signature'] = base64Encode(sigBytes);
+      } else if (_existingSignatureB64 != null) {
+        payload['signature'] = _existingSignatureB64;
+      }
 
       if (stoveImageId != null) payload['stoveImageId'] = stoveImageId;
       if (agreementImageId != null) payload['agreementImageId'] = agreementImageId;
@@ -715,8 +1209,13 @@ class CreateSaleController extends GetxController {
 
       final resp = await _service.createSale(payload);
       if (resp.success) {
+        // If this was an edit of a queued sale, remove that row now it synced.
+        if (_editingQueueId != null) {
+          await _queue.deleteById(_editingQueueId!);
+        }
         _showSuccess('Sale created successfully!');
-        Get.back(result: true);
+        resetForm();
+        rootNavigatorKey.currentState?.pop(true);
       } else {
         _showError(resp.message);
       }
@@ -734,16 +1233,27 @@ class CreateSaleController extends GetxController {
     if (agreementImage != null) images['agreement_image'] = base64Encode(await agreementImage!.readAsBytes());
     if (paymentProofImage != null) images['payment_proof'] = base64Encode(await paymentProofImage!.readAsBytes());
     final sigBytes = await signatureController.toPngBytes();
-    if (sigBytes != null) images['signature'] = base64Encode(sigBytes);
+    if (sigBytes != null) {
+      images['signature'] = base64Encode(sigBytes);
+    } else if (_existingSignatureB64 != null) {
+      images['signature'] = _existingSignatureB64!;
+    }
 
-    await _queue.enqueue(payload: payload, imageBase64Map: images);
+    if (_editingQueueId != null) {
+      // Editing a previously-queued sale — update that row in place instead of
+      // creating a duplicate, and clear any prior sync error.
+      await _queue.updateQueued(_editingQueueId!, payload: payload, imageBase64Map: images);
+    } else {
+      await _queue.enqueue(payload: payload, imageBase64Map: images);
+    }
     toastification.show(
       title: const Text('Sale saved offline'),
       description: const Text('It will sync automatically when you are back online.'),
       type: ToastificationType.info,
       autoCloseDuration: const Duration(seconds: 5),
     );
-    Get.back(result: true);
+    resetForm();
+    rootNavigatorKey.currentState?.pop(true);
   }
 
   Future<UploadResponse?> _uploadFile(File? file, String type) async {
@@ -770,6 +1280,7 @@ class CreateSaleController extends GetxController {
       'contactPerson': contactPersonCtrl.text,
       'contactPhone': contactPhoneCtrl.text,
       'endUserName': endUserNameCtrl.text,
+      'endUserSurname': endUserSurnameCtrl.text,
       'aka': akaCtrl.text,
       'phone': phoneCtrl.text,
       'otherPhone': otherPhoneCtrl.text,
@@ -787,6 +1298,7 @@ class CreateSaleController extends GetxController {
       'partnerName': partnerNameCtrl.text,
       'retailerBranch': retailerBranchCtrl.text,
       'amount': double.tryParse(amountCtrl.text.replaceAll(',', '')) ?? 0,
+      'amountReceived': double.tryParse(amountReceivedCtrl.text.replaceAll(',', '')) ?? 0,
       'potQuantity': potQuantity.value,
       'heatRetentionDevice': heatRetentionDevice.value,
       'previousStoveType': previousStoveType.value,
@@ -803,6 +1315,7 @@ class CreateSaleController extends GetxController {
         'demonstration': tcDemonstration.value,
       },
       'agentId': _session.userId,
+      'platform': 'mobile',
       if (selectedOrgId.value.isNotEmpty) 'organizationId': selectedOrgId.value,
       // installment fields
       if (selectedModel.value != null) 'paymentModelId': selectedModel.value!.id,
@@ -833,6 +1346,7 @@ class CreateSaleController extends GetxController {
     contactPersonCtrl.dispose();
     contactPhoneCtrl.dispose();
     endUserNameCtrl.dispose();
+    endUserSurnameCtrl.dispose();
     akaCtrl.dispose();
     phoneCtrl.dispose();
     otherPhoneCtrl.dispose();
@@ -840,6 +1354,7 @@ class CreateSaleController extends GetxController {
     partnerNameCtrl.dispose();
     retailerBranchCtrl.dispose();
     amountCtrl.dispose();
+    amountReceivedCtrl.dispose();
     initialPaymentCtrl.dispose();
     _initialPaymentDebounce?.cancel();
     previousStoveOtherCtrl.dispose();

@@ -31,10 +31,10 @@ class DashboardStats {
 
   factory DashboardStats.fromJson(Map<String, dynamic> json) => DashboardStats(
         stovesReceived: _int(
-          json["stovesReceived"] ?? json["totalStovesReceived"] ?? json["stoves_received"],
+          json["stovesReceived"] ?? json["stovesReceivedByPartners"] ?? json["totalStovesReceived"] ?? json["stoves_received"],
         ),
         stovesSold: _int(
-          json["stovesSold"] ?? json["totalStovesSold"] ?? json["stoves_sold"],
+          json["stovesSold"] ?? json["stovesSoldToEndUsers"] ?? json["totalStovesSold"] ?? json["stoves_sold"],
         ),
         availableStoves: _int(
           json["availableStoves"] ?? json["totalStovesAvailable"] ?? json["available_stoves"],

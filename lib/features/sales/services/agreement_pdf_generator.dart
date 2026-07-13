@@ -1,3 +1,7 @@
+import 'dart:convert';
+import 'dart:ui' as ui;
+
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 
@@ -36,10 +40,66 @@ class AgreementPDFGenerator {
     return [parts[0], parts.sublist(1).join(' ')];
   }
 
+  /// Decodes image [bytes] into a [PdfImage], downscaling to at most
+  /// [maxWidth] px first.
+  ///
+  /// The images are embedded as raw RGBA (4 bytes/px), so a full-resolution
+  /// source (e.g. a 1292×624 logo ≈ 3 MB) bloats the PDF to megabytes. We only
+  /// ever render these a few centimetres wide, so decoding at a print-sane
+  /// width (~200 DPI) preserves visual quality while cutting the embedded pixel
+  /// data by the SQUARE of the scale factor — taking the whole document from
+  /// ~6 MB down to a few hundred KB. `targetWidth` also scales the height,
+  /// keeping the aspect ratio intact.
+  static Future<PdfImage?> _decodeScaled(
+    PdfDocument doc,
+    Uint8List bytes, {
+    required int maxWidth,
+  }) async {
+    try {
+      final codec = await ui.instantiateImageCodec(bytes, targetWidth: maxWidth);
+      final frame = await codec.getNextFrame();
+      final bd = await frame.image.toByteData(format: ui.ImageByteFormat.rawRgba);
+      if (bd == null) return null;
+      return PdfImage(
+        doc,
+        image: bd.buffer.asUint8List(),
+        width: frame.image.width,
+        height: frame.image.height,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Decodes a raw base64 PNG string (no data-URL prefix) into a [PdfImage].
+  /// Signatures are rendered ~50 mm wide, so 400 px is ample at print quality.
+  static Future<PdfImage?> _loadBase64Image(PdfDocument doc, String base64Str) async {
+    try {
+      return _decodeScaled(doc, base64Decode(base64Str), maxWidth: 400);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Loads a Flutter asset PNG and converts it to a [PdfImage]. Logos render at
+  /// most ~45 mm wide, so 380 px keeps them crisp at ~200 DPI.
+  static Future<PdfImage?> _loadLogo(PdfDocument doc, String asset) async {
+    try {
+      final data = await rootBundle.load(asset);
+      return _decodeScaled(doc, data.buffer.asUint8List(), maxWidth: 380);
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Builds the agreement PDF bytes for [sale].
   static Future<List<int>> generate(SaleModel sale) async {
     final doc = PdfDocument();
     final c = _Canvas(doc);
+
+    // Pre-load logos (mirrors web /logo.png and /save80.png).
+    final atmosLogo = await _loadLogo(doc, 'assets/images/atmosfair_logo.png');
+    final save80Logo = await _loadLogo(doc, 'assets/images/save80_logo.png');
 
     // ── Layout constants ──────────────────────────────────────────────────────
     const L = 8.0; // left margin
@@ -60,28 +120,36 @@ class AgreementPDFGenerator {
     final buyerIsUser = sale.contactPerson == null ||
         sale.contactPerson!.trim().isEmpty ||
         sale.contactPerson!.trim() == (sale.endUserName ?? '').trim();
-    // Mobile SaleModel does not carry per-term acceptance flags, so all unticked.
-    const terms = <String, bool>{};
+    final terms = sale.termsAccepted ?? <String, bool>{};
     final isCredit = sale.isInstallment == true || sale.selectedModelId != null;
     final potQty = sale.potQuantity ?? -1;
-    final creatorName = sale.creatorRole == 'agent'
-        ? (sale.creatorName ?? '')
-        : (sale.creatorName != null ? 'Admin' : '');
+    final creatorName = sale.creatorName ?? sale.agentName ?? '';
 
     double y = 8;
 
     // ── Header: logos + title ─────────────────────────────────────────────────
     const headerH = 20.0;
-    // atmosfair wordmark (the web /logo.png asset isn't bundled on mobile).
-    c.setFont(bold: true);
-    c.setFontSize(20);
-    c.setText(_darkGreen);
-    c.text('atmosfair', L, y + 12);
-    c.setDraw(_green);
-    c.setLineWidth(1);
-    c.line(L, y + 14, L + 40, y + 14);
-    c.setDraw(_border);
-    c.setLineWidth(0.3);
+    // atmosfair logo (left) — 45×15 mm, matching web
+    if (atmosLogo != null) {
+      c.drawImage(atmosLogo, L, y + 2, 45, 15);
+    } else {
+      c.setFont(bold: true);
+      c.setFontSize(20);
+      c.setText(_darkGreen);
+      c.text('atmosfair', L, y + 12);
+      c.setDraw(_green);
+      c.setLineWidth(1);
+      c.line(L, y + 14, L + 40, y + 14);
+      c.setDraw(_border);
+      c.setLineWidth(0.3);
+    }
+    // save80 logo (right) — height 15 mm, width proportional (aspect ~2.07:1)
+    if (save80Logo != null) {
+      const sh = 15.0;
+      final aspect = save80Logo.width / save80Logo.height;
+      final sw = sh * aspect;
+      c.drawImage(save80Logo, R - sw, y + 2, sw, sh);
+    }
 
     // Title (center)
     c.setFont(bold: true);
@@ -298,7 +366,7 @@ class AgreementPDFGenerator {
       c.setFontSize(9);
       c.text(_formatDate(sale.salesDate), a1 + 2, y + 8);
       c.text(sale.stoveSerialNo ?? '', a2 + 2, y + 8);
-      c.text(_formatAmount(sale.amount), a3 + 2, y + 8);
+      c.text(_formatAmount(sale.amountReceived ?? sale.totalPaid ?? sale.amount), a3 + 2, y + 8);
       y += v;
     }
 
@@ -381,6 +449,11 @@ class AgreementPDFGenerator {
     c.setFont(bold: false);
     c.setFontSize(7);
     c.text('(please specify)', L + 2 * pCol + 7, colTop + 8);
+    if (prevType == 'other' && (sale.previousStoveOther ?? '').isNotEmpty) {
+      c.setFontSize(7.5);
+      final otherLines = c.splitText(sale.previousStoveOther!, pCol - 8);
+      c.textLines(otherLines, L + 2 * pCol + 2, colTop + 11.5);
+    }
     // outer border around predominant section
     c.box(L, prevBoxTop, W, colTop + colH - prevBoxTop);
     y = colTop + colH;
@@ -417,7 +490,11 @@ class AgreementPDFGenerator {
       c.text("BUYER'S SIGNATURE:", L + 2, y + 4);
       c.text("SALES AGENT'S NAME:", L + half + 2, y + 4);
       c.setText(_black);
-      // Signature image isn't available on the mobile SaleModel; left blank.
+      // Render signature base64 image if present (mirrors web doc.addImage logic).
+      if (sale.signature != null && sale.signature!.isNotEmpty) {
+        final sigImg = await _loadBase64Image(doc, sale.signature!);
+        if (sigImg != null) c.drawImage(sigImg, L + 4, y + 5, 50, 11);
+      }
       c.setFont(bold: false);
       c.setFontSize(9);
       if (creatorName.isNotEmpty) c.text(creatorName, L + half + 4, y + 12);
@@ -519,6 +596,10 @@ class _Canvas {
     }
     if (cur.isNotEmpty) lines.add(cur);
     return lines.isEmpty ? [''] : lines;
+  }
+
+  void drawImage(PdfImage img, double x, double y, double w, double h) {
+    _g.drawImage(img, x * _mm, _y(y + h), w * _mm, h * _mm);
   }
 
   void checkbox(double x, double y, bool checked, {double size = 3.4}) {

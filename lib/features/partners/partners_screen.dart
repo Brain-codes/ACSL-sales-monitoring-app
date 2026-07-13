@@ -65,7 +65,12 @@ class PartnersScreen extends StatelessWidget {
                 return EmptyState(message: c.error.value, icon: Icons.error_outline, actionLabel: 'Retry', onAction: c.fetchPartners);
               }
               if (c.partners.isEmpty) {
-                return const EmptyState(message: 'No partners assigned yet.', icon: Icons.people_outline);
+                return EmptyState(
+                  message: 'No partners assigned yet.',
+                  icon: Icons.people_outline,
+                  actionLabel: 'Refresh',
+                  onAction: c.fetchPartners,
+                );
               }
               final displayed = c.displayedPartners;
               if (displayed.isEmpty) {

@@ -1,41 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:get/get.dart';
 import 'package:stove_transaction/core/constants/app_colors.dart';
-import 'package:stove_transaction/core/routes/app_routes.dart';
-import 'package:stove_transaction/core/services/session_manager.dart';
-import 'package:stove_transaction/core/widgets/update_prompt_sheet.dart';
 
-class SplashScreen extends StatefulWidget {
+/// Transient loading screen. Routing decisions (authed -> home, else -> login)
+/// are handled by the router `redirect` in app_router.dart, so this screen just
+/// shows branding while the redirect resolves.
+class SplashScreen extends StatelessWidget {
   const SplashScreen({super.key});
-
-  @override
-  State<SplashScreen> createState() => _SplashScreenState();
-}
-
-class _SplashScreenState extends State<SplashScreen> {
-  @override
-  void initState() {
-    super.initState();
-    _navigate();
-  }
-
-  Future<void> _navigate() async {
-    await Future.delayed(const Duration(seconds: 2));
-    checkAndShowUpdatePrompt();
-    final session = Get.find<SessionManager>();
-    if (session.isAuthenticated) {
-      final role = session.role ?? '';
-      if (role == 'acsl_agent' || role == 'admin' || role == 'acsl_agent_manager') {
-        Get.offAllNamed(AppRoutes.acslHome);
-      } else if (role == 'partner_agent') {
-        Get.offAllNamed(AppRoutes.partnerHome);
-      } else {
-        Get.offAllNamed(AppRoutes.login);
-      }
-    } else {
-      Get.offAllNamed(AppRoutes.login);
-    }
-  }
 
   @override
   Widget build(BuildContext context) {

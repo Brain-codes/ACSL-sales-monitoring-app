@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:get_storage/get_storage.dart';
+import 'package:toastification/toastification.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:stove_transaction/core/router/app_navigator.dart';
 import 'package:stove_transaction/core/services/app_release_service.dart';
+import 'package:stove_transaction/core/services/connectivity_service.dart';
 
 const _kSnoozeKey = 'update_snoozed_until';
 const _kSnoozeDuration = Duration(hours: 12);
@@ -31,9 +34,10 @@ void showUpdatePromptIfNeeded({bool forceShow = false}) {
     if (info == null) return;
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (Get.context == null) return;
+      final ctx = rootNavigatorKey.currentContext;
+      if (ctx == null) return;
       showModalBottomSheet(
-        context: Get.context!,
+        context: ctx,
         isScrollControlled: true,
         backgroundColor: Colors.transparent,
         isDismissible: !service.isForceUpdate.value,
@@ -67,6 +71,23 @@ class UpdatePromptSheet extends StatelessWidget {
   const UpdatePromptSheet({super.key, required this.info, required this.isForce});
 
   Future<void> _openUpdatePage() async {
+    // Downloading a new APK needs connectivity. Without this guard, launching
+    // the URL offline drops the user onto the browser's own "You're offline"
+    // page (dark screen + the app's web icon) — which looks like an app bug.
+    // Tell them plainly instead of opening a dead browser tab.
+    bool online = true;
+    try {
+      online = Get.find<ConnectivityService>().isOnline.value;
+    } catch (_) {}
+    if (!online) {
+      toastification.show(
+        title: const Text('No internet connection'),
+        description: const Text('Connect to the internet to download the update.'),
+        type: ToastificationType.warning,
+        autoCloseDuration: const Duration(seconds: 4),
+      );
+      return;
+    }
     final uri = Uri.parse(info.downloadUrl);
     try {
       final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
@@ -219,7 +240,7 @@ class UpdatePromptSheet extends StatelessWidget {
                         child: TextButton(
                           onPressed: () {
                             _snooze();
-                            Get.back();
+                            Navigator.of(context).pop();
                           },
                           style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 12)),
                           child: Text(
@@ -230,7 +251,7 @@ class UpdatePromptSheet extends StatelessWidget {
                       ),
                       Expanded(
                         child: TextButton(
-                          onPressed: () => Get.back(),
+                          onPressed: () => Navigator.of(context).pop(),
                           style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 12)),
                           child: Text(
                             'Skip',

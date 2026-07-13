@@ -6,6 +6,7 @@ import 'package:get/get.dart';
 import 'package:logger/logger.dart';
 import 'package:stove_transaction/core/constants/app_config.dart';
 import 'package:stove_transaction/core/model/supabase_api_response.dart';
+import 'package:stove_transaction/core/router/app_navigator.dart';
 import 'package:stove_transaction/core/services/session_manager.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:http/http.dart' as http;
@@ -388,11 +389,8 @@ class SupabaseService {
         'Handling refresh failure - clearing session and redirecting to login');
     _sessionManager.logout();
 
-    // Use Get.offAllNamed to ensure proper navigation stack clearing
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (Get.currentRoute != '/login') {
-        Get.offAllNamed('/login');
-      }
-    });
+    // Redirect to login on the next frame. The router redirect also guards
+    // unauthenticated access, so this is belt-and-suspenders.
+    WidgetsBinding.instance.addPostFrameCallback((_) => goLogin());
   }
 }

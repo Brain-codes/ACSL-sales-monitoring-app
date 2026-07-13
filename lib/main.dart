@@ -1,14 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:get/get.dart';
 import 'package:get_storage/get_storage.dart';
 import 'package:stove_transaction/core/config/env_config.dart';
-import 'package:stove_transaction/core/routes/app_pages.dart';
-import 'package:stove_transaction/core/routes/app_routes.dart';
+import 'package:stove_transaction/core/router/app_router.dart';
 import 'package:stove_transaction/core/services/auth_service.dart';
 import 'package:stove_transaction/core/services/connectivity_service.dart';
 import 'package:stove_transaction/core/services/data_refresh_service.dart';
 import 'package:stove_transaction/core/services/local_cache_service.dart';
+import 'package:stove_transaction/core/services/location_resolution_service.dart';
 import 'package:stove_transaction/core/services/offline_queue_service.dart';
 import 'package:stove_transaction/core/services/session_manager.dart';
 import 'package:stove_transaction/core/services/supabase_service.dart';
@@ -18,8 +19,22 @@ import 'package:stove_transaction/core/theme/app_theme.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:toastification/toastification.dart';
 import 'package:logger/logger.dart';
+import 'dart:async';
 
 Future<void> main() async {
+  runZonedGuarded(_bootstrap, (error, stack) {
+    // Swallow background auth-refresh failures (e.g. invalid/expired refresh
+    // token) that Supabase throws off the main call stack, so they can't crash
+    // or hang startup. Session cleanup is handled in _restoreSession.
+    if (error is AuthException) {
+      Logger().w('Uncaught auth error: $error');
+      return;
+    }
+    Logger().e('Uncaught error: $error', error: error, stackTrace: stack);
+  });
+}
+
+Future<void> _bootstrap() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   await EnvConfig.initialize();
@@ -38,6 +53,7 @@ Future<void> main() async {
   Get.put(SupabaseService());
   Get.put(LocalCacheService());
   Get.put(SyncService());
+  Get.put(LocationResolutionService());
   await Get.putAsync(() => OfflineQueueService().init());
   await Get.putAsync(() => ConnectivityService().init());
   Get.put(DataRefreshService());
@@ -55,7 +71,7 @@ Future<void> main() async {
     systemNavigationBarIconBrightness: Brightness.dark,
   ));
 
-  runApp(const AcslSalesApp());
+  runApp(const ProviderScope(child: AcslSalesApp()));
 }
 
 Future<void> _restoreSession() async {
@@ -68,36 +84,36 @@ Future<void> _restoreSession() async {
       session.saveSupabaseSession(result.session);
       session.setToken(result.session!.accessToken);
     }
-  } catch (e) {
-    Logger().w('Session restore failed: $e');
+  } on AuthApiException catch (e) {
+    // OFFLINE-FIRST: only a genuine server rejection of the refresh token
+    // (revoked / truly expired) means we must re-authenticate. In that case
+    // purge Supabase's own persisted session too, otherwise its background
+    // auto-refresh keeps retrying the dead token on every launch.
+    Logger().w('Session restore rejected by server: $e');
+    try {
+      await Supabase.instance.client.auth.signOut();
+    } catch (_) {}
     session.logout();
+  } catch (e) {
+    // Network/offline/transient failure — DO NOT log out. Keep the stored
+    // session so the user stays signed in and can work fully offline; the
+    // token is refreshed automatically once connectivity returns.
+    Logger().w('Session restore deferred (offline/transient): $e');
   }
 }
 
-class AcslSalesApp extends StatelessWidget {
+class AcslSalesApp extends ConsumerWidget {
   const AcslSalesApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    final session = Get.find<SessionManager>();
-    final String initial;
-    if (!session.isAuthenticated) {
-      initial = AppRoutes.splash;
-    } else if (session.isAcslAgent || session.isAdmin || session.isAcslAgentManager) {
-      initial = AppRoutes.acslHome;
-    } else if (session.isPartnerAgent) {
-      initial = AppRoutes.partnerHome;
-    } else {
-      initial = AppRoutes.splash;
-    }
-
+  Widget build(BuildContext context, WidgetRef ref) {
+    final router = ref.watch(routerProvider);
     return ToastificationWrapper(
-      child: GetMaterialApp(
+      child: MaterialApp.router(
         title: 'ACSL Sales',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.light,
-        initialRoute: initial,
-        getPages: AppPages.routes,
+        routerConfig: router,
       ),
     );
   }
