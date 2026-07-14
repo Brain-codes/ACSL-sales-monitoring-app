@@ -35,12 +35,14 @@ class SyncStatusIndicator extends StatelessWidget {
           final downloading = refresh.isRefreshing.value;
           final syncing = sync.isSyncing.value;
           final pending = queue.pendingCount.value;
+          final stage = refresh.syncStage.value;
 
           final pill = _resolvePill(
             online: online,
             downloading: downloading,
             syncing: syncing,
             pending: pending,
+            stage: stage,
           );
           if (pill == null) return const SizedBox.shrink();
 
@@ -58,10 +60,14 @@ class SyncStatusIndicator extends StatelessWidget {
     required bool downloading,
     required bool syncing,
     required int pending,
+    String stage = '',
   }) {
     if (downloading) {
-      return const _PillData(
-        label: 'Syncing data…',
+      // Show the live stage + percentage when available so the user sees the
+      // sync genuinely moving ("Getting stoves… 40%") instead of a static label.
+      final label = stage.isNotEmpty ? stage : 'Syncing data…';
+      return _PillData(
+        label: label,
         bg: AppColors.brandPrimary,
         fg: AppColors.white,
         spinning: true,

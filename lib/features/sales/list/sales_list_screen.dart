@@ -22,8 +22,33 @@ import 'sales_list_controller.dart';
 final _dateFmt = DateFormat('d MMM yyyy');
 
 String _fmtAmount(double? v) => formatNaira(v);
-// "Amount paid" = amount_received if provided, else total_paid, else sale amount.
-String _fmtAmountPaid(SaleModel s) => formatNaira(s.amountReceived ?? s.totalPaid ?? s.amount);
+
+/// Amount actually PAID so far (never the outstanding balance).
+///  • Installment  → total_paid (what's been collected), else amount_received.
+///  • Full payment → the full sale amount (a completed full-payment sale is
+///    fully paid). We deliberately ignore a zero/absent amount_received here so
+///    completed sales stop showing ₦0.
+double _amountPaid(SaleModel s) {
+  if (s.isInstallment == true) {
+    final paid = s.totalPaid ?? s.amountReceived ?? 0;
+    return paid > 0 ? paid : (s.amount ?? 0);
+  }
+  final received = s.amountReceived ?? 0;
+  return received > 0 ? received : (s.amount ?? 0);
+}
+
+String _fmtAmountPaid(SaleModel s) => formatNaira(_amountPaid(s));
+
+/// A sale is only ever shown as **Completed** or **Partially Paid** — never
+/// "incomplete"/"pending"/raw statuses. Only an installment sale that is not
+/// fully paid is "partially paid"; everything else reads as completed.
+String _derivedStatus(SaleModel s) {
+  if (s.isInstallment == true && (s.paymentStatus ?? '').toLowerCase() == 'partially_paid') {
+    return 'partially_paid';
+  }
+  return 'completed';
+}
+
 String _fmtDate(DateTime? d) => d != null ? _dateFmt.format(d) : '—';
 String _fmtRole(String s) => s.replaceAll('_', ' ').split(' ').map((w) => w.isEmpty ? '' : '${w[0].toUpperCase()}${w.substring(1)}').join(' ');
 
@@ -679,11 +704,7 @@ class _SalesTableView extends StatelessWidget {
               DataCell(Text(s.stoveSerialNo ?? 'N/A', style: const TextStyle(fontSize: 12))),
               DataCell(Text(s.state ?? 'N/A', style: const TextStyle(fontSize: 13))),
               DataCell(Text(s.lga ?? 'N/A', style: const TextStyle(fontSize: 13))),
-              DataCell(_StatusBadge(
-                status: (s.isInstallment == true && s.paymentStatus != null)
-                    ? s.paymentStatus!
-                    : (s.status ?? 'pending'),
-              )),
+              DataCell(_StatusBadge(status: _derivedStatus(s))),
               DataCell(Text(_fmtDate(s.salesDate ?? s.createdAt), style: const TextStyle(fontSize: 12, color: AppColors.textMuted))),
             ],
             onSelectChanged: (_) => _showSaleDetail(context, s),
@@ -992,6 +1013,12 @@ void _showSaleDetail(BuildContext context, SaleModel sale) {
   );
 }
 
+/// Public, read-only sale detail sheet (buyer/stove/payment/agreement) — reused
+/// by the dashboard's "Stoves Sold" drill-down so tapping a sale shows the exact
+/// same details view as the Sales page, with no edit affordances.
+void showReadonlySaleDetail(BuildContext context, SaleModel sale) =>
+    _showSaleDetail(context, sale);
+
 // ── Sale card ─────────────────────────────────────────────────────────────────
 
 class _SaleCard extends StatelessWidget {
@@ -1036,11 +1063,7 @@ class _SaleCard extends StatelessWidget {
                 children: [
                   Text(_fmtAmountPaid(sale), style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: AppColors.brandPrimary)),
                   const SizedBox(height: 4),
-                  _StatusBadge(
-                    status: (sale.isInstallment == true && sale.paymentStatus != null)
-                        ? sale.paymentStatus!
-                        : (sale.status ?? 'pending'),
-                  ),
+                  _StatusBadge(status: _derivedStatus(sale)),
                 ],
               ),
             ],
@@ -1118,11 +1141,7 @@ class _SaleDetailSheet extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                _StatusBadge(
-                  status: (isInstallment && sale.paymentStatus != null)
-                      ? sale.paymentStatus!
-                      : (sale.status ?? 'pending'),
-                ),
+                _StatusBadge(status: _derivedStatus(sale)),
               ],
             ),
           ),

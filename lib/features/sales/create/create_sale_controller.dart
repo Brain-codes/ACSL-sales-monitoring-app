@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
+import 'package:geolocator/geolocator.dart';
 import 'package:get/get.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:http/http.dart' as http;
@@ -229,7 +230,15 @@ class CreateSaleController extends GetxController {
     partnerNameCtrl.text = _session.organizationName ?? '';
     retailerBranchCtrl.text = _session.organizationBranch ?? '';
     isOfflineMode.value = !_connectivity.isOnline.value;
-    ever(_connectivity.isOnline, (online) => isOfflineMode.value = !online);
+    ever(_connectivity.isOnline, (online) {
+      isOfflineMode.value = !online;
+      // Went offline mid-form with no coordinate yet → grab the device position
+      // in the background so the sale can be submitted without GPS friction.
+      if (!online) ensureDeviceLocation();
+    });
+    // Offline from the start: pre-capture the current position by default so the
+    // agent never has to tap "use current location" before proceeding.
+    if (isOfflineMode.value) ensureDeviceLocation();
     // Recompute the Places autocomplete bias whenever state/LGA change, so
     // address search is streamlined to the selected area (mirrors the web).
     ever(selectedState, (_) => _updatePlacesBias());
@@ -974,6 +983,41 @@ class CreateSaleController extends GetxController {
     }
   }
 
+  /// True once we've captured the device's position for this offline sale, so
+  /// the location UI can show "GPS auto-filled from your current position".
+  final autoGpsCaptured = false.obs;
+
+  /// Silently captures the device's current GPS position and fills lat/lng —
+  /// NO dialogs, snackbars or errors. Used offline so a field agent who forgets
+  /// to tap "use current location" still submits a valid coordinate instead of
+  /// being blocked by the "GPS required" validation. If a coordinate is already
+  /// set (map pick / manual capture) or permission/GPS is unavailable, it's a
+  /// no-op. [force] re-captures even if a coordinate exists.
+  Future<void> ensureDeviceLocation({bool force = false}) async {
+    if (!force && latitude.value != null && longitude.value != null) return;
+    try {
+      if (!await Geolocator.isLocationServiceEnabled()) return;
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        return;
+      }
+      final pos = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
+      ).timeout(const Duration(seconds: 12));
+      latitude.value = pos.latitude;
+      longitude.value = pos.longitude;
+      autoGpsCaptured.value = true;
+    } catch (e) {
+      // Best-effort only: never surface an error here. If it fails, the typed
+      // address still carries the sale; the 0,0 fallback covers the rest.
+      _logger.w('Silent GPS capture failed: $e');
+    }
+  }
+
   void confirmMapLocation({required double lat, required double lng, required String address}) {
     latitude.value = lat;
     longitude.value = lng;
@@ -1126,39 +1170,29 @@ class CreateSaleController extends GetxController {
     if (xFile == null) return;
     final file = File(xFile.path);
 
+    // Attach only — do NOT upload here. Pick-time uploads were the source of the
+    // never-ending "Uploading…" spinner: on a weak/dropped connection the upload
+    // request hangs with no timeout and the progress bar rolls forever. The file
+    // now simply shows as "attached" instantly; the actual upload happens at
+    // submit (online) or during offline-queue sync. Same UX online and offline.
     if (field == 'stove') {
       stoveImage = file;
       stoveImageId = null;
       stoveImageFile.value = file;
+      stoveImageUploadProgress.value = null;
       stoveImageSet.value = true;
-      if (_connectivity.isOnline.value) {
-        stoveImageUploadProgress.value = -1;
-        final resp = await _uploadFile(file, 'stove_image');
-        stoveImageId = resp?.id;
-        stoveImageUploadProgress.value = resp != null ? 1.0 : null;
-      }
     } else if (field == 'agreement') {
       agreementImage = file;
       agreementImageId = null;
       agreementImageFile.value = file;
+      agreementImageUploadProgress.value = null;
       agreementImageSet.value = true;
-      if (_connectivity.isOnline.value) {
-        agreementImageUploadProgress.value = -1;
-        final resp = await _uploadFile(file, 'agreement_image');
-        agreementImageId = resp?.id;
-        agreementImageUploadProgress.value = resp != null ? 1.0 : null;
-      }
     } else if (field == 'paymentProof') {
       paymentProofImage = file;
       paymentProofImageId = null;
       paymentProofFile.value = file;
+      paymentProofUploadProgress.value = null;
       paymentProofSet.value = true;
-      if (_connectivity.isOnline.value) {
-        paymentProofUploadProgress.value = -1;
-        final resp = await _uploadFile(file, 'payment_proof');
-        paymentProofImageId = resp?.id;
-        paymentProofUploadProgress.value = resp != null ? 1.0 : null;
-      }
     }
   }
 
@@ -1221,7 +1255,15 @@ class CreateSaleController extends GetxController {
       }
     } catch (e) {
       _logger.e('Submit error: $e');
-      _showError('Failed to submit sale. Please try again.');
+      // Online submit failed (upload timeout, dropped connection, server error).
+      // Don't lose the sale — queue it offline so it syncs later, exactly like a
+      // sale created while offline. The agent keeps moving; nothing re-typed.
+      try {
+        await _saveOffline(_buildPayload());
+      } catch (e2) {
+        _logger.e('Offline fallback save failed: $e2');
+        _showError('Failed to submit sale. Please try again.');
+      }
     } finally {
       isSubmitting.value = false;
     }
@@ -1258,7 +1300,11 @@ class CreateSaleController extends GetxController {
 
   Future<UploadResponse?> _uploadFile(File? file, String type) async {
     if (file == null) return null;
-    final resp = await _service.uploadImage(file, type);
+    final resp = await _service
+        .uploadImage(file, type)
+        // Never let a stalled upload hang submit indefinitely; on timeout we
+        // treat it as a failed upload (caller decides how to proceed).
+        .timeout(const Duration(seconds: 45), onTimeout: () => throw TimeoutException('upload'));
     if (resp.success && resp.data != null) {
       final raw = Map<String, dynamic>.from(resp.data as Map);
       // Response may be { upload: { id, url } } or { id, url } directly
