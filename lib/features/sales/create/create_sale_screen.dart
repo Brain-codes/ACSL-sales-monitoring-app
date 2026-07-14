@@ -230,7 +230,14 @@ class _SingleViewSubmitButton extends StatelessWidget {
 }
 
 // Orchestrates validate → show validation sheet OR preview sheet
-void _handleSubmitRequest(BuildContext context, CreateSaleController c) {
+Future<void> _handleSubmitRequest(BuildContext context, CreateSaleController c) async {
+  // Offline safety net: if the agent never tapped "use current location", grab
+  // the device position now (silently) so the GPS-required check doesn't block
+  // an otherwise-complete offline sale.
+  if (c.isOfflineMode.value && (c.latitude.value == null || c.longitude.value == null)) {
+    await c.ensureDeviceLocation();
+  }
+  if (!context.mounted) return;
   final errors = c.validateAll();
   if (errors.isNotEmpty) {
     showModalBottomSheet(
