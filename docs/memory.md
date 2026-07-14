@@ -349,3 +349,25 @@ manual build→rename→copy→Supabase-edit flow:
 Setup guide: docs/ci-release.md. Repos: mobile=Brain-codes/ACSL-sales-monitoring-app,
 web=Brain-codes/frontend-transactions (Vercel). Flutter 3.41.9, Java 17.
 Note: get-stove-ids format2 edge fn still deployed separately (not in pipeline).
+
+## "You're offline" root cause CONFIRMED + field-user trap closed (Jul 2026)
+
+Researched (subagent + web): the "You're offline" screen is the phone browser /
+Samsung Internet **Custom Tab offline error page**, shown when the app hands a
+URL to the system while offline. The green-airplane tile is the app's own web
+favicon that the browser shows for the page it's trying to load. NOT an Android
+bug and NOT in our Flutter code. Sole trigger: the APK-download `launchUrl`
+(update flow). Samsung Galaxy A24 / recent One UI just renders that page.
+
+Fixes (layered):
+1. (prior) `_openUpdatePage` in update_prompt_sheet + profile _UpdateBanner
+   guard connectivity → toast instead of launching browser offline.
+2. (prior) AppReleaseService._fetchAndCheck skips when offline → hasUpdate stays
+   false on cold offline launch → no sheet.
+3. NEW: `showUpdatePromptIfNeeded` now returns early when offline. Critical
+   because a FORCE-update sheet is non-dismissible — showing it offline trapped
+   the field user on a blocking screen (couldn't make offline sales). Prompt
+   reappears when back online.
+
+NOTE: the tester's device runs an OLD build without these fixes — needs the new
+build (CI pipeline) to take effect.

@@ -21,6 +21,15 @@ void showUpdatePromptIfNeeded({bool forceShow = false}) {
   void tryShow() {
     if (!service.hasUpdate.value) return;
 
+    // OFFLINE-FIRST: never show the update prompt while offline. An update can't
+    // be downloaded without a connection, and a FORCE-update sheet is
+    // non-dismissible — showing it offline would trap a field user on a blocking
+    // screen and stop them making offline sales. The prompt reappears once
+    // they're back online.
+    try {
+      if (!Get.find<ConnectivityService>().isOnline.value) return;
+    } catch (_) {}
+
     if (!forceShow) {
       final box = GetStorage();
       final raw = box.read<String?>(_kSnoozeKey);

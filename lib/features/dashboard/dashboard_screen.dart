@@ -12,6 +12,7 @@ import 'package:stove_transaction/core/widgets/kpi_card.dart';
 import 'package:stove_transaction/core/widgets/offline_banner.dart';
 import 'package:stove_transaction/core/widgets/update_prompt_sheet.dart';
 import 'package:stove_transaction/features/sales/resolve/location_resolution_banner.dart';
+import 'package:stove_transaction/features/sales/list/sales_list_screen.dart' show showReadonlySaleDetail;
 import 'package:stove_transaction/features/sales/models/sale_model.dart';
 import 'package:stove_transaction/features/sales/models/stove_model.dart';
 import 'dashboard_controller.dart';
@@ -112,8 +113,12 @@ class DashboardScreen extends StatelessWidget {
                             value: '${stats.stovesSold}',
                             icon: Icons.sell_outlined,
                             gradient: AppColors.gradientTeal,
-                            onTap: () => _showStovesSheet(context,
-                                statusFilter: 'sold', title: 'Stoves Sold'),
+                            // "Stoves Sold" = the actual SALES (each sale sold one
+                            // stove), not a raw stove-id dump. Showing sales makes
+                            // the drill-down match the headline count and scopes to
+                            // the viewer (an agent sees only their own sales).
+                            onTap: () => _showSalesSheet(context,
+                                mode: _SalesMode.soldStoves),
                           ),
                           KpiCard(
                             title: 'Available Stoves',
@@ -319,11 +324,18 @@ class _DashboardStovesSheetState extends State<_DashboardStovesSheet> {
       final body = <String, dynamic>{'limit': 500, 'offset': 0};
       if (widget.statusFilter != null) body['status'] = widget.statusFilter;
 
-      // ACSL agents and managers span multiple orgs — use the agent-scoped
-      // endpoint that resolves org IDs from the JWT instead of requiring organization_id.
+      // Pick an endpoint that resolves the org scope correctly per role:
+      //  • ACSL agent/manager → agent-scoped endpoint (org IDs from the JWT).
+      //  • super admin        → get-stove-ids format2 (bulk, ALL orgs). A super
+      //    admin has no organization_id, so the default format1 400s with
+      //    "Missing organization_id" — format2 omits it and spans every org.
+      //  • partner/org user   → get-stove-ids format1 scoped to their org.
       final String endpoint;
       if (_session.isAcslAgent || _session.isAcslAgentManager) {
         endpoint = 'get-agent-stove-ids';
+      } else if (_session.role == 'super_admin') {
+        endpoint = 'get-stove-ids';
+        body['format'] = 'format2';
       } else {
         endpoint = 'get-stove-ids';
         final orgId = _session.organizationId;
@@ -364,8 +376,8 @@ class _DashboardStovesSheetState extends State<_DashboardStovesSheet> {
 
   void _loadFromCache() {
     List<StoveModel> all;
-    if (_session.isAcslAgent) {
-      // Aggregate from all assigned partner org caches
+    if (_session.isAcslAgent || _session.isAcslAgentManager || _session.role == 'super_admin') {
+      // Aggregate from every cached org (super admin = all orgs, ACSL = assigned)
       final partners = _cache.getAssignedPartners();
       all = partners
           .map((p) => p['id']?.toString() ?? '')
@@ -534,7 +546,7 @@ class _DashboardStovesSheetState extends State<_DashboardStovesSheet> {
 
 // ── Sales bottom sheet ─────────────────────────────────────────────────────────
 
-enum _SalesMode { expectedReceivable, amountReceived, outstandingBalance }
+enum _SalesMode { expectedReceivable, amountReceived, outstandingBalance, soldStoves }
 
 class _DashboardSalesSheet extends StatefulWidget {
   final _SalesMode mode;
@@ -631,6 +643,8 @@ class _DashboardSalesSheetState extends State<_DashboardSalesSheet> {
 
   List<SaleModel> _applyFilter(List<SaleModel> all) {
     switch (widget.mode) {
+      case _SalesMode.soldStoves:
+        return all; // every sale = one sold stove
       case _SalesMode.expectedReceivable:
         return all;
       case _SalesMode.amountReceived:
@@ -646,6 +660,8 @@ class _DashboardSalesSheetState extends State<_DashboardSalesSheet> {
 
   String get _sheetTitle {
     switch (widget.mode) {
+      case _SalesMode.soldStoves:
+        return 'Stoves Sold';
       case _SalesMode.expectedReceivable:
         return 'Expected Receivable';
       case _SalesMode.amountReceived:
@@ -657,6 +673,8 @@ class _DashboardSalesSheetState extends State<_DashboardSalesSheet> {
 
   Color get _accentColor {
     switch (widget.mode) {
+      case _SalesMode.soldStoves:
+        return AppColors.brandPrimary;
       case _SalesMode.expectedReceivable:
         return const Color(0xFFB45309);
       case _SalesMode.amountReceived:
@@ -668,6 +686,11 @@ class _DashboardSalesSheetState extends State<_DashboardSalesSheet> {
 
   double _keyAmount(SaleModel s) {
     switch (widget.mode) {
+      case _SalesMode.soldStoves:
+        // Show what was actually paid on each sold stove.
+        return (s.totalPaid ?? s.amountReceived ?? 0) > 0
+            ? (s.totalPaid ?? s.amountReceived ?? 0)
+            : (s.amount ?? 0);
       case _SalesMode.expectedReceivable:
         return s.amount ?? 0;
       case _SalesMode.amountReceived:
@@ -772,6 +795,11 @@ class _DashboardSalesSheetState extends State<_DashboardSalesSheet> {
                             amount: _keyAmount(_sales[i]),
                             accentColor: accent,
                             fmt: fmt,
+                            // In the sold-stoves drill-down, tapping a sale opens
+                            // the same read-only detail sheet as the Sales page.
+                            onTap: widget.mode == _SalesMode.soldStoves
+                                ? () => showReadonlySaleDetail(context, _sales[i])
+                                : null,
                           ),
                         ),
         ),
@@ -785,12 +813,14 @@ class _SaleRow extends StatelessWidget {
   final double amount;
   final Color accentColor;
   final String Function(double?) fmt;
+  final VoidCallback? onTap;
 
   const _SaleRow({
     required this.sale,
     required this.amount,
     required this.accentColor,
     required this.fmt,
+    this.onTap,
   });
 
   @override
@@ -798,7 +828,7 @@ class _SaleRow extends StatelessWidget {
     final name = sale.endUserName ?? sale.contactPerson ?? 'Unknown';
     final stoveId = sale.stoveId ?? sale.stoveSerialNo ?? '—';
 
-    return Container(
+    final row = Container(
       decoration: BoxDecoration(
         color: Colors.grey[50],
         borderRadius: BorderRadius.circular(10),
@@ -859,6 +889,13 @@ class _SaleRow extends StatelessWidget {
           ),
         ],
       ),
+    );
+
+    if (onTap == null) return row;
+    return InkWell(
+      borderRadius: BorderRadius.circular(10),
+      onTap: onTap,
+      child: row,
     );
   }
 }

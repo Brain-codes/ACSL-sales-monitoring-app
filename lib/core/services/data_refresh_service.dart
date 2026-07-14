@@ -15,6 +15,18 @@ class DataRefreshService extends GetxService {
   final RxBool isRefreshing = false.obs;
   final Rxn<DateTime> lastRefreshedAt = Rxn();
 
+  /// Live progress for the floating sync indicator. [syncStage] is a short
+  /// human label ("Getting stoves…") and [syncProgress] is 0‥1. They let the
+  /// pill show real, moving progress instead of a static spinner so the user
+  /// can see the sync is genuinely working.
+  final RxString syncStage = ''.obs;
+  final RxDouble syncProgress = 0.0.obs;
+
+  void _stage(String label, double progress) {
+    syncStage.value = label;
+    syncProgress.value = progress.clamp(0.0, 1.0);
+  }
+
   Timer? _timer;
 
   @override
@@ -44,26 +56,30 @@ class DataRefreshService extends GetxService {
     if (!connectivity.isOnline.value) return;
 
     isRefreshing.value = true;
+    _stage('Preparing sync…', 0.02);
     try {
       final session = Get.find<SessionManager>();
       // Offline-first: download stove IDs + payment models for EVERY partner org
       // the user can access (super admin = all orgs, ACSL agent = assigned),
       // regardless of role, so any partner picked while offline has its stoves.
       //
+      // Run STAGED (not one big Future.wait) so the floating indicator can
+      // report a real, moving label + percentage. The stove step dominates the
+      // time, so it owns the widest progress band (10 → 70%).
+      //
       // Hard overall timeout: some steps hit Supabase tables directly (no
       // per-call timeout), so a connection that drops mid-fetch could otherwise
       // hang this future forever — leaving isRefreshing stuck true and the
-      // "Syncing data…" indicator spinning endlessly. Cap the whole run.
+      // indicator spinning endlessly. Cap the whole run.
       await () async {
-        await Future.wait([
-          _refreshAllPartnersData(session),
-          _refreshSales(),
-          _refreshGoogleKeys(),
-          // Payment models are GLOBAL now (not tied to a partner) — fetch the
-          // whole active list ONCE here instead of once per org. That removes
-          // ~900 redundant calls from the sync, the biggest single speed-up.
-          _refreshGlobalPaymentModels(),
-        ]);
+        await _refreshAllPartnersData(session);
+        _stage('Getting payment models…', 0.72);
+        await _refreshGlobalPaymentModels();
+        _stage('Getting sales…', 0.82);
+        await _refreshSales();
+        _stage('Getting location keys…', 0.94);
+        await _refreshGoogleKeys();
+        _stage('Finishing up…', 1.0);
       }()
           // Generous cap: a full sync of 900+ orgs is legitimately long, so this
           // only trips on a true hang — never truncates a valid large refresh.
@@ -73,6 +89,8 @@ class DataRefreshService extends GetxService {
       _logger.e('DataRefreshService.refreshAll error: $e');
     } finally {
       isRefreshing.value = false;
+      syncStage.value = '';
+      syncProgress.value = 0.0;
     }
   }
 
@@ -84,6 +102,8 @@ class DataRefreshService extends GetxService {
 
     final cache = Get.find<LocalCacheService>();
     final supabase = Get.find<SupabaseService>();
+
+    _stage('Getting partners…', 0.05);
 
     // 1. Fetch every partner the user can access (super admin = all orgs,
     //    ACSL agent = assigned partners), via the same source the sale picker uses.
@@ -99,6 +119,7 @@ class DataRefreshService extends GetxService {
     }
     cache.saveAssignedPartners(partners);
     _logger.d('Cached ${partners.length} accessible partners');
+    _stage('Getting stoves…', 0.10);
 
     // 2. For each partner org, download its stove IDs so they're available
     //    offline when that partner is picked in create-sale. (Payment models are
@@ -173,6 +194,11 @@ class DataRefreshService extends GetxService {
           ? int.tryParse('${(data['pagination'] as Map?)?['total']}')
           : null;
       offset += pageSize;
+      // Map paging progress into the stove band (10 → 70%).
+      if (total != null && total > 0) {
+        final frac = (offset / total).clamp(0.0, 1.0);
+        _stage('Getting stoves… ${(frac * 100).round()}%', 0.10 + 0.60 * frac);
+      }
       if (list.length < pageSize) break;
       if (total != null && offset >= total) break;
     }
