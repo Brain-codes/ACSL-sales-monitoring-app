@@ -68,6 +68,7 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
+          cache: gradle # restores ~/.gradle between runs (deps, wrapper)
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
@@ -75,6 +76,17 @@ jobs:
           flutter-version: "3.41.9"
           channel: stable
           cache: true
+
+      # Cache the Android NDK + CMake. Installing these fresh each run (see the
+      # "Installing NDK … / CMake …" log lines) added minutes to every build;
+      # restoring them from cache skips the download + license dance entirely.
+      - name: Cache Android NDK & CMake
+        uses: actions/cache@v4
+        with:
+          path: |
+            /usr/local/lib/android/sdk/ndk
+            /usr/local/lib/android/sdk/cmake
+          key: android-ndk-cmake-ndk27-cmake3221-v1
 
       # ── 4. Recreate build-time secrets ────────────────────────────────────
       - name: Write .env
@@ -102,7 +114,10 @@ jobs:
         run: flutter pub get
 
       - name: Build release APK
-        run: flutter build apk --release
+        # Build only the ABIs real phones use (32- and 64-bit ARM). Dropping the
+        # emulator-only x86_64 slice cuts native-lib build + merge time and
+        # shrinks the download. Field devices (e.g. Samsung A24) are all ARM.
+        run: flutter build apk --release --target-platform android-arm,android-arm64
 
       - name: Stage the renamed APK
         id: apk
