@@ -161,8 +161,23 @@ jobs:
           git config user.name "release-bot"
           git config user.email "release-bot@users.noreply.github.com"
           git add pubspec.yaml lib/core/services/app_release_service.dart
-          git commit -m "chore(release): v${{ steps.ver.outputs.version }}" || echo "nothing to commit"
-          git push
+          if git diff --cached --quiet; then
+            echo "No version-bump changes to commit."
+            exit 0
+          fi
+          git commit -m "chore(release): v${{ steps.ver.outputs.version }}"
+          # main can advance while the build runs (a concurrent push), which
+          # rejects a plain push. Rebase onto the latest remote and retry a few
+          # times so the release doesn't fail on this last step.
+          for i in 1 2 3 4 5; do
+            if git push origin HEAD:main; then
+              echo "Pushed version bump."; exit 0
+            fi
+            echo "Push rejected (attempt $i) — rebasing on latest main…"
+            git pull --rebase --autostash origin main
+          done
+          echo "::error::Could not push version bump after retries."
+          exit 1
 
       - name: Upload APK as workflow artifact
         uses: actions/upload-artifact@v4
