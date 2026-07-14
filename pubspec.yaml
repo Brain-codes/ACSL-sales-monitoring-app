@@ -3,7 +3,7 @@ description: ACSL Sales Monitoring App for ACSL agents and partner agents.
 
 publish_to: "none"
 
-version: 1.0.10+10010
+version: 1.0.11+10011
 
 environment:
   sdk: ">=3.2.0 <4.0.0"

@@ -275,6 +275,19 @@ class _SyncCard extends StatelessWidget {
                       ),
                     ),
                   ),
+                  const SizedBox(height: 8),
+                  // Always-available (not dev-gated): let anyone open the cache
+                  // view to confirm every partner + stove ID actually synced.
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      icon: const Icon(Icons.fact_check_outlined, size: 18),
+                      label: const Text('View synced data'),
+                      onPressed: () => Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const OfflineCacheDebugScreen()),
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),

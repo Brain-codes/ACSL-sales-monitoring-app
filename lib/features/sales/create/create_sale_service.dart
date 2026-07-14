@@ -18,10 +18,23 @@ class CreateSaleService {
     );
   }
 
-  Future<SupabaseApiResponse<dynamic>> getAvailableStovesForOrg(String orgId) {
+  /// One page of an org's available stoves. `limit` is capped at 500 by the
+  /// edge function, so callers must page through with [offset] to get them ALL —
+  /// a partner can hold thousands of stoves and a single call silently returns
+  /// only the first page.
+  Future<SupabaseApiResponse<dynamic>> getAvailableStovesForOrg(
+    String orgId, {
+    int limit = 500,
+    int offset = 0,
+  }) {
     return _supabase.callEdgeFunction(
       'get-stove-ids',
-      body: {'status': 'available', 'organization_id': orgId},
+      body: {
+        'status': 'available',
+        'organization_id': orgId,
+        'limit': limit,
+        'offset': offset,
+      },
     );
   }
 

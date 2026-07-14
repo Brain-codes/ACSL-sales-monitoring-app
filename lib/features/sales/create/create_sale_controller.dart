@@ -331,15 +331,34 @@ class CreateSaleController extends GetxController {
 
     List<StoveModel> stoves;
     if (_connectivity.isOnline.value) {
-      final resp = await _service.getAvailableStovesForOrg(orgId);
-      if (resp.success && resp.data != null) {
-        final list = resp.data is List
-            ? resp.data as List
-            : ((resp.data as Map?))?['data'] as List? ?? [];
-        stoves = list
+      // Page through EVERY available stove for this org. A partner can hold
+      // thousands; a single call returns only the first page (max 500), which
+      // is exactly why a specific stove id visible on the web was missing here.
+      const pageSize = 500;
+      final all = <StoveModel>[];
+      var offset = 0;
+      var ok = false;
+      while (true) {
+        final resp = await _service.getAvailableStovesForOrg(orgId, limit: pageSize, offset: offset);
+        if (!resp.success || resp.data == null) break;
+        ok = true;
+        final data = resp.data;
+        final list = data is List
+            ? data
+            : ((data as Map?))?['data'] as List? ?? [];
+        all.addAll(list
             .map((e) => StoveModel.fromJson(Map<String, dynamic>.from(e as Map)))
-            .where((s) => s.stoveId.isNotEmpty)
-            .toList();
+            .where((s) => s.stoveId.isNotEmpty));
+
+        final total = data is Map
+            ? int.tryParse('${(data['pagination'] as Map?)?['total']}')
+            : null;
+        offset += pageSize;
+        if (list.length < pageSize) break;
+        if (total != null && offset >= total) break;
+      }
+      if (ok) {
+        stoves = all;
         cache.saveStovesForOrg(orgId, stoves);
       } else {
         stoves = cache.getStovesForOrg(orgId);

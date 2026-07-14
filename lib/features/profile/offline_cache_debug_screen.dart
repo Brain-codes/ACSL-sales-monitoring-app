@@ -78,7 +78,7 @@ class _OfflineCacheDebugScreenState extends State<OfflineCacheDebugScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Offline Cache Debug')),
+      appBar: AppBar(title: const Text('Offline Cache Logs')),
       body: Column(
         children: [
           _summary(),

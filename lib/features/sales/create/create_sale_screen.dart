@@ -256,6 +256,38 @@ Future<void> _handleSubmitRequest(BuildContext context, CreateSaleController c) 
   );
 }
 
+/// Small pill showing a count (partners / stove IDs) beside a picker label —
+/// a lightweight verification aid so the operator can immediately see how much
+/// data the picker actually holds.
+class _CountChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  const _CountChip({required this.icon, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: AppColors.brandLight,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 13, color: AppColors.brandPrimary),
+          const SizedBox(width: 4),
+          Text(label,
+              style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.brandPrimary)),
+        ],
+      ),
+    );
+  }
+}
+
 // ──────────────────────────── STEP 1: Transaction ────────────────────────────
 
 class _Step1Transaction extends StatefulWidget {
@@ -306,8 +338,18 @@ class _Step1TransactionState extends State<_Step1Transaction> {
 
         // ── Partner picker (ACSL agents + super admin) ────────────────────
         if (c.needsPartnerPicker) ...[
-          const Text('Partner *',
-              style: TextStyle(fontWeight: FontWeight.w500, fontSize: 13)),
+          Row(
+            children: [
+              const Text('Partner *',
+                  style: TextStyle(fontWeight: FontWeight.w500, fontSize: 13)),
+              const Spacer(),
+              // Debug/verification: how many partners are loaded to pick from.
+              Obx(() => _CountChip(
+                    icon: Icons.groups_outlined,
+                    label: '${c.distinctPartners.length} partners',
+                  )),
+            ],
+          ),
           const SizedBox(height: 8),
           Obx(() {
             final hasPartner = c.selectedPartnerName.value.isNotEmpty;
@@ -1017,8 +1059,24 @@ class _Step5SaleDetails extends StatelessWidget {
           const SectionHeader(title: 'Sale & Payment'),
 
           // ── Stove serial ──────────────────────────────────────────────
-          const Text('Stove Serial No. *',
-              style: TextStyle(fontWeight: FontWeight.w500, fontSize: 13)),
+          Row(
+            children: [
+              const Text('Stove Serial No. *',
+                  style: TextStyle(fontWeight: FontWeight.w500, fontSize: 13)),
+              const Spacer(),
+              // Debug/verification: how many available stoves this partner loaded.
+              // If a stove seen on the web is missing here, this number tells you
+              // whether the picker even downloaded the full set for the partner.
+              Obx(() {
+                final blocked = c.needsPartnerPicker && c.selectedOrgId.value.isEmpty;
+                if (blocked || c.isLoadingStoves.value) return const SizedBox.shrink();
+                return _CountChip(
+                  icon: Icons.local_fire_department_outlined,
+                  label: '${c.availableStoves.length} stove IDs',
+                );
+              }),
+            ],
+          ),
           const SizedBox(height: 8),
           Obx(() {
             final partnerRequired = c.needsPartnerPicker && c.selectedOrgId.value.isEmpty;
