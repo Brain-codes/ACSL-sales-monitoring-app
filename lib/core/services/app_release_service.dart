@@ -6,7 +6,7 @@ import 'package:stove_transaction/core/constants/app_config.dart';
 import 'package:stove_transaction/core/services/connectivity_service.dart';
 
 /// Current hard-coded app version — keep in sync with pubspec.yaml version field.
-const String kAppVersion = '1.0.7';
+const String kAppVersion = '1.0.9';
 
 class AppReleaseInfo {
   final String version;
