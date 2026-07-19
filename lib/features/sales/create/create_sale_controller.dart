@@ -37,7 +37,7 @@ class ValidationError {
   });
 }
 
-class CreateSaleController extends GetxController {
+class CreateSaleController extends GetxController with WidgetsBindingObserver {
   final _service = CreateSaleService();
   final _session = Get.find<SessionManager>();
   final _partnerAccess = PartnerAccessService();
@@ -226,6 +226,12 @@ class CreateSaleController extends GetxController {
   @override
   void onInit() {
     super.onInit();
+    // Observe app lifecycle so we can pull back a camera capture that Android
+    // discarded when it killed the process mid-shot (see recoverLostImage).
+    WidgetsBinding.instance.addObserver(this);
+    // Also attempt recovery immediately in case this controller is being
+    // recreated right after such a kill.
+    recoverLostImage();
     transactionId.value = _generateTransactionId();
     partnerNameCtrl.text = _session.organizationName ?? '';
     retailerBranchCtrl.text = _session.organizationBranch ?? '';
@@ -1059,7 +1065,7 @@ class CreateSaleController extends GetxController {
       case 5: return true;
       case 6: return true;
       case 7: return allTcAccepted;
-      case 8: return stoveImageSet.value && hasSignature; // && agreementImageSet.value (agreement image no longer required)
+      case 8: return hasSignature; // stove & agreement images now optional
       default: return true;
     }
   }
@@ -1126,9 +1132,8 @@ class CreateSaleController extends GetxController {
     }
 
     // Step 8 — Media
-    if (!stoveImageSet.value) {
-      errors.add(const ValidationError(step: 8, stepTitle: 'Documents & Signature', field: 'Stove Image', message: 'Stove image is required'));
-    }
+    // Stove image is now OPTIONAL (agreement image already was). A sale can be
+    // submitted without any photo; the backend records it as incomplete/pending.
     // Agreement image no longer required
     // if (!agreementImageSet.value) {
     //   errors.add(const ValidationError(step: 8, stepTitle: 'Documents & Signature', field: 'Agreement Image', message: 'Agreement image is required'));
@@ -1184,11 +1189,64 @@ class CreateSaleController extends GetxController {
     }
   }
 
-  Future<void> pickImage(ImageSource source, {required String field}) async {
-    final xFile = await _picker.pickImage(source: source, imageQuality: 70);
-    if (xFile == null) return;
-    final file = File(xFile.path);
+  /// Which image field a camera capture is currently in flight for. Needed so
+  /// [recoverLostImage] can route an OS-recovered photo back to the right slot
+  /// after the process was killed mid-capture (see below).
+  String? _pendingImageField;
 
+  Future<void> pickImage(ImageSource source, {required String field}) async {
+    _pendingImageField = field;
+    XFile? xFile;
+    try {
+      xFile = await _picker.pickImage(
+        source: source,
+        // Downscale + compress at capture time. Full-resolution camera frames
+        // on modern phones are 12-50MP; decoding them into memory on a
+        // low-RAM/older device is what makes Android kill the app right after
+        // "accept" (issue: APK crashes after taking the stove photo). Capping
+        // the long edge and requesting no EXIF metadata keeps the bitmap small
+        // and avoids the photo-library metadata permission path that also
+        // crashes on some OEM ROMs.
+        imageQuality: 70,
+        maxWidth: 1600,
+        maxHeight: 1600,
+        requestFullMetadata: false,
+      );
+    } catch (e, st) {
+      // A thrown PlatformException here (camera unavailable, permission race)
+      // must NOT bubble up and tear down the create-sale flow. Swallow, log,
+      // and let the user retry.
+      _logger.w('pickImage failed for $field: $e', error: e, stackTrace: st);
+      _pendingImageField = null;
+      return;
+    }
+    _pendingImageField = null;
+    if (xFile == null) return;
+    _attachPickedImage(File(xFile.path), field);
+  }
+
+  /// Recover a photo that was captured just before Android killed the app to
+  /// reclaim memory. When the process is destroyed while the camera activity is
+  /// in the foreground, [ImagePicker.pickImage]'s Future never completes — the
+  /// result is instead cached by the plugin and must be pulled back with
+  /// [retrieveLostData] once the app is recreated. Without this, the user's
+  /// "APK restarted after accepting the stove photo" and lost the capture.
+  Future<void> recoverLostImage() async {
+    try {
+      final response = await _picker.retrieveLostData();
+      if (response.isEmpty) return;
+      final file = response.file;
+      if (file == null) return;
+      // Fall back to 'stove' — the only camera field that ever caused the crash
+      // and by far the most common capture — if we lost track of the target.
+      _attachPickedImage(File(file.path), _pendingImageField ?? 'stove');
+      _pendingImageField = null;
+    } catch (e) {
+      _logger.w('retrieveLostData failed: $e');
+    }
+  }
+
+  void _attachPickedImage(File file, String field) {
     // Attach only — do NOT upload here. Pick-time uploads were the source of the
     // never-ending "Uploading…" spinner: on a weak/dropped connection the upload
     // request hangs with no timeout and the progress bar rolls forever. The file
@@ -1405,7 +1463,15 @@ class CreateSaleController extends GetxController {
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Returning to the foreground after a camera capture is exactly when the
+    // OS may have killed & recreated us — try to recover the lost photo.
+    if (state == AppLifecycleState.resumed) recoverLostImage();
+  }
+
+  @override
   void onClose() {
+    WidgetsBinding.instance.removeObserver(this);
     pageController.dispose();
     signatureController.dispose();
     contactPersonCtrl.dispose();

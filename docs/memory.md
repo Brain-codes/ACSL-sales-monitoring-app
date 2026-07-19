@@ -371,3 +371,36 @@ Fixes (layered):
 
 NOTE: the tester's device runs an OLD build without these fixes — needs the new
 build (CI pipeline) to take effect.
+
+---
+
+## 2026-07-19 — Camera crash, optional stove image, poor-network detection
+
+Three field-reported issues fixed together:
+
+1. **Camera crash after accepting stove photo** (older/newer devices). Cause:
+   Android kills the low-RAM app while the camera activity is foregrounded;
+   `pickImage`'s Future never completes and the capture is lost. Fixes in
+   `create_sale_controller.dart`:
+   - `pickImage` now downsizes at capture (`maxWidth/Height: 1600`,
+     `requestFullMetadata: false`) to cut the memory spike, wrapped in try/catch
+     so a PlatformException can't tear down the flow.
+   - New `recoverLostImage()` calls `ImagePicker.retrieveLostData()`; controller
+     is now a `WidgetsBindingObserver`, recovering on `onInit` and on
+     `resumed`. `_pendingImageField` routes the recovered photo back to its slot.
+
+2. **Stove image now OPTIONAL** (was required). `case 8` step-complete = just
+   `hasSignature`; validation error removed; screen label "Stove Photo" (no *),
+   subtitle updated. Backend: web repo `create-sale/index.ts` — removed the hard
+   "Stove image is required" 400; added `safeStoveImageId` (empty→null) used in
+   insert + status eval. Sale without stove image saves as pending/incomplete.
+   **Needs redeploy of the create-sale edge function.**
+
+3. **Poor-network not triggering offline mode** (Android). `connectivity_plus`
+   only reports interface presence, not usable internet — dead-slow 2G stayed
+   "online". `ConnectivityService` rewritten with an ACTIVE timed probe to
+   `${supabaseUrl}/auth/v1/health`: NetworkQuality {online, poor, offline}.
+   `poor` (slow >3s / timeout 6s / socket fail) and `offline` both set
+   `isOnline=false`. Re-probes on connectivity change AND a 20s poll (catches
+   silent slowdowns). New `isPoorConnection` drives OfflineBanner "Very poor
+   internet — working offline" message vs plain offline.

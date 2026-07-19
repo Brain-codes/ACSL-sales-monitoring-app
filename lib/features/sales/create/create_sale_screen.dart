@@ -1591,9 +1591,9 @@ class _Step9Media extends StatelessWidget {
       children: [
           const SectionHeader(
               title: 'Photos & Signature',
-              subtitle: 'Stove photo and signature are required'),
+              subtitle: 'Signature is required; stove photo is optional'),
           _ImagePickerTile(
-            label: 'Stove Photo *',
+            label: 'Stove Photo',
             onCamera: () => c.pickImage(ImageSource.camera, field: 'stove'),
             onGallery: () => c.pickImage(ImageSource.gallery, field: 'stove'),
             setObs: c.stoveImageSet,
