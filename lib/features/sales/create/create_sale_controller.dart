@@ -1207,9 +1207,9 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
         // the long edge and requesting no EXIF metadata keeps the bitmap small
         // and avoids the photo-library metadata permission path that also
         // crashes on some OEM ROMs.
-        imageQuality: 70,
-        maxWidth: 1600,
-        maxHeight: 1600,
+        imageQuality: 60,
+        maxWidth: 1280,
+        maxHeight: 1280,
         requestFullMetadata: false,
       );
     } catch (e, st) {

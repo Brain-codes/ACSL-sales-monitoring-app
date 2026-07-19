@@ -1593,7 +1593,7 @@ class _Step9Media extends StatelessWidget {
               title: 'Photos & Signature',
               subtitle: 'Signature is required; stove photo is optional'),
           _ImagePickerTile(
-            label: 'Stove Photo',
+            label: 'Stove Photo (optional)',
             onCamera: () => c.pickImage(ImageSource.camera, field: 'stove'),
             onGallery: () => c.pickImage(ImageSource.gallery, field: 'stove'),
             setObs: c.stoveImageSet,
