@@ -58,14 +58,24 @@ class AgreementPDFGenerator {
     try {
       final codec = await ui.instantiateImageCodec(bytes, targetWidth: maxWidth);
       final frame = await codec.getNextFrame();
-      final bd = await frame.image.toByteData(format: ui.ImageByteFormat.rawRgba);
-      if (bd == null) return null;
-      return PdfImage(
-        doc,
-        image: bd.buffer.asUint8List(),
-        width: frame.image.width,
-        height: frame.image.height,
-      );
+      final image = frame.image;
+      try {
+        final bd = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
+        if (bd == null) return null;
+        return PdfImage(
+          doc,
+          image: bd.buffer.asUint8List(),
+          width: image.width,
+          height: image.height,
+        );
+      } finally {
+        // ui.Image holds NATIVE memory that Dart's GC won't reclaim promptly.
+        // Generating a PDF decodes several images in a row, so failing to
+        // dispose here stacks up off-heap bitmaps and can push a low-RAM device
+        // into an OOM kill mid-generation.
+        image.dispose();
+        codec.dispose();
+      }
     } catch (_) {
       return null;
     }
@@ -366,7 +376,7 @@ class AgreementPDFGenerator {
       c.setFontSize(9);
       c.text(_formatDate(sale.salesDate), a1 + 2, y + 8);
       c.text(sale.stoveSerialNo ?? '', a2 + 2, y + 8);
-      c.text(_formatAmount(sale.amountReceived ?? sale.totalPaid ?? sale.amount), a3 + 2, y + 8);
+      c.text(_formatAmount(sale.paidAmount), a3 + 2, y + 8);
       y += v;
     }
 

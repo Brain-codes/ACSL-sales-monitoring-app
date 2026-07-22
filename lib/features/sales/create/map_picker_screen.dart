@@ -92,6 +92,9 @@ class _MapPickerScreenState extends State<MapPickerScreen>
         locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
       );
       final latlng = LatLng(pos.latitude, pos.longitude);
+      // A GPS fix can take 10s+; the user may have backed out of the picker by
+      // now, and setState() after dispose() throws.
+      if (!mounted) return;
       setState(() => _pin = latlng);
       _mapCtrl?.animateCamera(CameraUpdate.newLatLngZoom(latlng, 16));
       await _reverseGeocode(latlng);
@@ -103,6 +106,7 @@ class _MapPickerScreenState extends State<MapPickerScreen>
   }
 
   Future<void> _reverseGeocode(LatLng pos) async {
+    if (!mounted) return;
     setState(() => _isLoadingAddress = true);
     final result = await widget.controller.reverseGeocode(pos.latitude, pos.longitude);
     if (mounted) {

@@ -128,6 +128,14 @@ class SaleModel {
     this.agentName,
   });
 
+  /// What the customer has actually paid so far.
+  ///
+  /// `total_paid` is the collected figure for BOTH installment and outright
+  /// sales (create-sale persists `amountReceived` there). Never fall back to
+  /// `amount` — an outright sale can be underpaid, and substituting the sale
+  /// price would report it as settled.
+  double get paidAmount => totalPaid ?? amountReceived ?? 0;
+
   factory SaleModel.fromJson(Map<String, dynamic> json) {
     final paymentModel = json["payment_model"] as Map<String, dynamic>?;
     final org = json["organizations"] as Map<String, dynamic>?;

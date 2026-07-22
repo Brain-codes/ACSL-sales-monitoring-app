@@ -648,13 +648,9 @@ class _DashboardSalesSheetState extends State<_DashboardSalesSheet> {
       case _SalesMode.expectedReceivable:
         return all;
       case _SalesMode.amountReceived:
-        return all.where((s) => (s.totalPaid ?? 0) > 0).toList();
+        return all.where((s) => s.paidAmount > 0).toList();
       case _SalesMode.outstandingBalance:
-        return all.where((s) {
-          final amt = s.amount ?? 0;
-          final paid = s.totalPaid ?? 0;
-          return amt > paid;
-        }).toList();
+        return all.where((s) => (s.amount ?? 0) > s.paidAmount).toList();
     }
   }
 
@@ -688,15 +684,13 @@ class _DashboardSalesSheetState extends State<_DashboardSalesSheet> {
     switch (widget.mode) {
       case _SalesMode.soldStoves:
         // Show what was actually paid on each sold stove.
-        return (s.totalPaid ?? s.amountReceived ?? 0) > 0
-            ? (s.totalPaid ?? s.amountReceived ?? 0)
-            : (s.amount ?? 0);
+        return s.paidAmount;
       case _SalesMode.expectedReceivable:
         return s.amount ?? 0;
       case _SalesMode.amountReceived:
-        return s.totalPaid ?? 0;
+        return s.paidAmount;
       case _SalesMode.outstandingBalance:
-        return (s.amount ?? 0) - (s.totalPaid ?? 0);
+        return (s.amount ?? 0) - s.paidAmount;
     }
   }
 

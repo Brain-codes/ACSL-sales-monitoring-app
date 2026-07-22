@@ -11,10 +11,10 @@ import 'package:image_picker/image_picker.dart';
 import 'package:logger/logger.dart';
 import 'package:signature/signature.dart';
 import 'package:toastification/toastification.dart';
-import 'package:stove_transaction/core/constants/nigeria_data.dart';
 import 'package:stove_transaction/core/model/upload_response_model.dart';
 import 'package:stove_transaction/core/router/app_navigator.dart';
 import 'package:stove_transaction/core/services/connectivity_service.dart';
+import 'package:stove_transaction/core/services/geo_data_service.dart';
 import 'package:stove_transaction/core/services/local_cache_service.dart';
 import 'package:stove_transaction/core/services/offline_queue_service.dart';
 import 'package:stove_transaction/core/services/session_manager.dart';
@@ -89,7 +89,11 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
   final fullAddressCtrl = TextEditingController();
   final latitude = Rxn<double>();
   final longitude = Rxn<double>();
-  List<String> get lgas => NigeriaData.getLgas(selectedState.value);
+  List<String> get lgas =>
+      Get.find<GeoDataService>().getLgas(selectedState.value);
+
+  /// Centralized states list (geo-data cache → bundled fallback).
+  List<String> get states => Get.find<GeoDataService>().states;
 
   // Step 4 — Partner/Retailer
   final partnerNameCtrl = TextEditingController();
@@ -143,7 +147,31 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
   // Step 5 — Sale & Payment
   final amountCtrl = TextEditingController();
   final amountReceivedCtrl = TextEditingController();
+  /// Every active sales model, cached globally. Never fetched per partner — a
+  /// partner only carries the IDs, which we resolve against this list.
   final RxList<PaymentModel> paymentModels = <PaymentModel>[].obs;
+
+  /// Sales model IDs the selected partner is entitled to, as delivered on the
+  /// partner row by `manage-organizations`. `null` when no partner is picked
+  /// yet or the backend could not tell us.
+  final Rxn<List<String>> orgPaymentModelIds = Rxn<List<String>>();
+
+  /// The models offered at point of sale: the global catalogue narrowed to the
+  /// selected partner's entitlements. Pure lookup against already-cached data,
+  /// so it works identically online and offline.
+  ///
+  /// A partner with NO assignments gets EVERY active model — the sync only
+  /// covers partners the external app has sent, so restricting an unassigned
+  /// partner to nothing would block sales rather than protect them. Only an
+  /// explicit list restricts. `create-sale` applies the identical rule; if
+  /// these diverge, the picker offers models the server then rejects.
+  List<PaymentModel> get visiblePaymentModels {
+    final ids = orgPaymentModelIds.value;
+    if (ids == null || ids.isEmpty) return paymentModels;
+    final allowed = ids.toSet();
+    return paymentModels.where((m) => allowed.contains(m.id)).toList();
+  }
+
   // null = full payment; non-null = installment with this model
   final selectedModel = Rxn<PaymentModel>();
   bool get isInstallment => selectedModel.value != null;
@@ -187,6 +215,15 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
       tcPoaGoverned.value && tcMonitoring.value && tcNoResell.value &&
       tcEmissions.value && tcNoExport.value && tcDemonstration.value;
 
+  void setAllTc(bool v) {
+    tcPoaGoverned.value = v;
+    tcMonitoring.value = v;
+    tcNoResell.value = v;
+    tcEmissions.value = v;
+    tcNoExport.value = v;
+    tcDemonstration.value = v;
+  }
+
   // Step 9 — Media
   File? stoveImage;
   String? stoveImageId;
@@ -216,6 +253,25 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
   // Tracks whether we're in offline mode to switch the location UI
   final isOfflineMode = false.obs;
 
+  /// Once the connection drops — or proves itself unstable — mid-sale we LATCH
+  /// into offline mode and STAY there for the rest of this sale, even if the
+  /// network returns.
+  ///
+  /// Reacting to every transition is actively harmful on the flapping 2G/edge
+  /// links this app runs on: the address section swaps under the agent's
+  /// fingers, and `doSubmit` can commit to a live upload on a link that dies a
+  /// second later, stranding them on a timeout. Latching keeps the form
+  /// predictable and makes submit instant (queue + background sync).
+  ///
+  /// The agent leaves offline mode only by explicitly tapping the action on the
+  /// "connection is stable" prompt — never automatically.
+  bool _offlineLatched = false;
+  bool get offlineLatched => _offlineLatched;
+
+  /// Set when a latched-offline sale regains a genuinely STABLE connection, so
+  /// the UI can offer a switch back. Cleared once acted on or re-latched.
+  final showBackOnlinePrompt = false.obs;
+
   // Keys for single-view scroll-to-section on validation error
   final singleViewKeys = <int, GlobalKey>{
     0: GlobalKey(), 1: GlobalKey(), 2: GlobalKey(),
@@ -236,11 +292,30 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
     partnerNameCtrl.text = _session.organizationName ?? '';
     retailerBranchCtrl.text = _session.organizationBranch ?? '';
     isOfflineMode.value = !_connectivity.isOnline.value;
+    if (isOfflineMode.value) _offlineLatched = true;
+
     ever(_connectivity.isOnline, (online) {
-      isOfflineMode.value = !online;
-      // Went offline mid-form with no coordinate yet → grab the device position
-      // in the background so the sale can be submitted without GPS friction.
-      if (!online) ensureDeviceLocation();
+      // Dropping latches us offline for the rest of this sale. We deliberately
+      // do NOT flip back when `online` returns true — see [_offlineLatched].
+      if (!online) _latchOffline();
+      // Online-ness is decided by an active probe that may resolve AFTER init,
+      // so the first catalogue load can have run against a false "offline".
+      // Retry the moment we know we're online and still have nothing.
+      if (online && paymentModels.isEmpty) _loadPaymentModels();
+    });
+
+    // A link that keeps bouncing is unusable even while it reads "online" —
+    // latch before it can thrash the form or strand a submit.
+    ever(_connectivity.isFlapping, (flapping) {
+      if (flapping) _latchOffline();
+    });
+
+    // Only OFFER the switch back once the connection is genuinely settled
+    // (consecutive healthy probes + no recent drops), never on a bare reconnect.
+    ever(_connectivity.isStable, (stable) {
+      if (stable && _offlineLatched && !isSubmitting.value) {
+        showBackOnlinePrompt.value = true;
+      }
     });
     // Offline from the start: pre-capture the current position by default so the
     // agent never has to tap "use current location" before proceeding.
@@ -249,16 +324,49 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
     // address search is streamlined to the selected area (mirrors the web).
     ever(selectedState, (_) => _updatePlacesBias());
     ever(selectedLga, (_) => _updatePlacesBias());
-    // Payment models are decoupled from partners — load all active models for
-    // every role (see docs/backend/payment-model-decoupling.md).
+    // The full catalogue is loaded and cached once; the picker is then narrowed
+    // to the selected partner's entitlements in memory. Sales models are tied to
+    // a partner again, sourced from the external sync — never fetched per
+    // partner (see docs/backend/payment-model-decoupling.md).
     _loadPaymentModels();
     if (needsPartnerPicker) {
       // Super admin & ACSL agents pick a partner first; stoves load after.
       _fetchPartnersForRole();
     } else {
+      // Org-scoped roles sell for their own partner — resolve its entitlements
+      // from the cached partner rows.
+      _applyOwnOrganizationPaymentModels();
       _loadStoves();
     }
     _fetchGoogleKeys();
+  }
+
+  /// Resolves the signed-in user's own partner entitlements for roles that do
+  /// not use the partner picker. Cache-only — no network call, so it behaves
+  /// the same offline. If the org isn't in the cached rows the list stays
+  /// `null` (unknown) and every model remains selectable.
+  void _applyOwnOrganizationPaymentModels() =>
+      _applyPaymentModelsForOrgId(_session.organizationId);
+
+  /// Re-resolves entitlements for the org already selected, against the current
+  /// `assignedPartners`. Used after a partner refresh replaces stale rows.
+  void _reapplyPaymentModelsForSelectedOrg() {
+    final orgId = selectedOrgId.value;
+    if (orgId.isEmpty) return;
+    final row = assignedPartners.firstWhereOrNull(
+      (p) => p['id']?.toString() == orgId,
+    );
+    if (row != null) _applyPartnerPaymentModels(row);
+  }
+
+  /// Looks an organization up in the cached partner rows and applies its sales
+  /// model entitlements. Used when we hold an org ID but not the row itself
+  /// (own-org roles, and restoring a queued draft).
+  void _applyPaymentModelsForOrgId(String? orgId) {
+    if (orgId == null || orgId.isEmpty) return;
+    final cached = Get.find<LocalCacheService>().getAssignedPartners();
+    final row = cached.firstWhereOrNull((p) => p['id']?.toString() == orgId);
+    if (row != null) _applyPartnerPaymentModels(row);
   }
 
   /// Partner picker source: super admin = all orgs; ACSL agents/managers = their
@@ -280,6 +388,11 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
       );
       assignedPartners.assignAll(rows);
       cache.saveAssignedPartners(rows);
+      // The cached rows shown while this was in flight may predate
+      // `payment_model_ids` (cached before the field existed), which reads as
+      // "unknown" and shows every model. Re-apply from the fresh rows so a
+      // partner picked during the fetch gets its real entitlements.
+      _reapplyPaymentModelsForSelectedOrg();
     } catch (_) {
       // keep cached list on failure
     } finally {
@@ -312,7 +425,62 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
     final orgId = branch['id']?.toString() ?? '';
     selectedOrgId.value = orgId;
     retailerBranchCtrl.text = (branch['branch'] ?? '').toString();
+    _applyPartnerPaymentModels(branch);
     if (orgId.isNotEmpty) _loadStovesForOrg(orgId);
+  }
+
+  /// Reads the partner's sales model IDs off the org row. Absent key (an older
+  /// cached row, or a backend that failed to look them up) leaves the list
+  /// `null` so the seller still sees every model rather than none.
+  void _applyPartnerPaymentModels(Map<String, dynamic> org) {
+    final raw = org['payment_model_ids'];
+    orgPaymentModelIds.value = raw is List
+        ? raw.map((e) => e.toString()).toList()
+        : null;
+    _dropSelectedModelIfNotAllowed();
+    _refreshCatalogueIfIdsUnknown();
+  }
+
+  /// The sync mints sales models on the fly, so a partner can reference a model
+  /// that did not exist when this catalogue was cached — leaving the picker
+  /// wrongly empty. Refresh once when we meet an unknown ID and we're online.
+  /// Offline we keep the cached list; there is nothing better to be had.
+  bool _refreshedForUnknownIds = false;
+  Future<void> _refreshCatalogueIfIdsUnknown() async {
+    final ids = orgPaymentModelIds.value;
+    if (ids == null || ids.isEmpty) return;
+    if (_refreshedForUnknownIds || !_connectivity.isOnline.value) return;
+
+    final known = paymentModels.map((m) => m.id).toSet();
+    if (ids.every(known.contains)) return;
+
+    _refreshedForUnknownIds = true;
+    await _loadPaymentModels();
+    _dropSelectedModelIfNotAllowed();
+  }
+
+  /// No catalogue at all — a load failure, not a partner problem. Blaming the
+  /// partner's models here sends you hunting in entirely the wrong place.
+  bool get paymentCatalogueEmpty => paymentModels.isEmpty;
+
+  /// The partner is assigned models that aren't in the catalogue we DO have —
+  /// they're inactive, or newer than our cache. Distinct from having none
+  /// assigned (which now means "all models") and from an empty catalogue.
+  bool get partnerModelsUnresolved {
+    final ids = orgPaymentModelIds.value;
+    return ids != null &&
+        ids.isNotEmpty &&
+        paymentModels.isNotEmpty &&
+        visiblePaymentModels.isEmpty;
+  }
+
+  /// A model chosen for a previous partner must not survive into this one.
+  void _dropSelectedModelIfNotAllowed() {
+    final current = selectedModel.value;
+    if (current == null) return;
+    if (!visiblePaymentModels.any((m) => m.id == current.id)) {
+      selectPaymentType(null);
+    }
   }
 
   void _clearBranchSelection() {
@@ -320,6 +488,8 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
     retailerBranchCtrl.text = '';
     availableStoves.clear();
     selectedStove.value = null;
+    orgPaymentModelIds.value = null;
+    _dropSelectedModelIfNotAllowed();
   }
 
   /// Reset the whole partner cascade (the "change partner" action).
@@ -525,6 +695,7 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
     }
     if (payload['organizationId'] != null) {
       selectedOrgId.value = payload['organizationId'].toString();
+      _applyPaymentModelsForOrgId(selectedOrgId.value);
     }
 
     // Stove — reconstruct enough for display/submit.
@@ -671,7 +842,9 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
     // Location — set state/LGA (must exist in NigeriaData) + a coordinate so
     // GPS validation passes. Real vs vague addresses exercise map matching.
     selectedState.value = sample['state'] ?? '';
-    if (NigeriaData.getLgas(selectedState.value).contains(sample['lga'])) {
+    if (Get.find<GeoDataService>()
+        .getLgas(selectedState.value)
+        .contains(sample['lga'])) {
       selectedLga.value = sample['lga'];
     }
     fullAddressCtrl.text = sample['fullAddress'] ?? '';
@@ -802,24 +975,39 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
 
   Future<void> _loadPaymentModels() async {
     final cache = Get.find<LocalCacheService>();
-    if (_connectivity.isOnline.value) {
+
+    // Seed from cache FIRST, always. The online check below relies on an active
+    // network probe that often hasn't resolved at init, so gating the cache read
+    // on "offline" used to leave the catalogue empty on a fast connection.
+    final cached = cache.getPaymentModels();
+    if (cached.isNotEmpty && paymentModels.isEmpty) {
+      paymentModels.assignAll(cached);
+    }
+
+    if (!_connectivity.isOnline.value) return;
+
+    try {
       final resp = await _service.getAllActivePaymentModels();
-      if (resp.success && resp.data != null) {
-        final raw = resp.data is List ? resp.data as List : ((resp.data as Map?))?['data'] as List? ?? [];
-        // 'payment-models' returns plain models; tolerate a nested shape too.
-        final list = raw.map((e) {
-          final map = Map<String, dynamic>.from(e as Map);
-          return map.containsKey('payment_model') && map['payment_model'] is Map
-              ? Map<String, dynamic>.from(map['payment_model'] as Map)
-              : map;
-        }).where((m) => m['id'] != null).toList();
-        final models = list.map((e) => PaymentModel.fromJson(e)).toList();
-        paymentModels.assignAll(models);
-        cache.savePaymentModels(models);
+      if (!resp.success || resp.data == null) {
+        // Keep whatever the cache gave us rather than blanking the picker.
+        return;
       }
-    } else {
-      final cached = cache.getPaymentModels();
-      if (cached.isNotEmpty) paymentModels.assignAll(cached);
+      final raw = resp.data is List ? resp.data as List : ((resp.data as Map?))?['data'] as List? ?? [];
+      // 'payment-models' returns plain models; tolerate a nested shape too.
+      final list = raw.map((e) {
+        final map = Map<String, dynamic>.from(e as Map);
+        return map.containsKey('payment_model') && map['payment_model'] is Map
+            ? Map<String, dynamic>.from(map['payment_model'] as Map)
+            : map;
+      }).where((m) => m['id'] != null).toList();
+      final models = list.map((e) => PaymentModel.fromJson(e)).toList();
+      // An empty response is almost always a transient auth/network fault; a
+      // real catalogue is never empty. Don't overwrite good cached data with it.
+      if (models.isEmpty && paymentModels.isNotEmpty) return;
+      paymentModels.assignAll(models);
+      cache.savePaymentModels(models);
+    } catch (_) {
+      // Cached list stands; the connectivity listener retries when we're back.
     }
   }
 
@@ -997,7 +1185,7 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
       final types = (c['types'] as List?)?.cast<String>() ?? [];
       if (types.contains('administrative_area_level_1')) {
         final stateName = (c['long_name'] as String? ?? '').replaceAll(' State', '').trim();
-        final match = NigeriaData.states.firstWhereOrNull(
+        final match = Get.find<GeoDataService>().states.firstWhereOrNull(
           (s) => s.toLowerCase() == stateName.toLowerCase(),
         );
         if (match != null) {
@@ -1011,6 +1199,33 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
   /// True once we've captured the device's position for this offline sale, so
   /// the location UI can show "GPS auto-filled from your current position".
   final autoGpsCaptured = false.obs;
+
+  /// Pin the form to offline mode for the rest of this sale. Idempotent, so the
+  /// repeated drops of a flapping link don't re-trigger the GPS capture.
+  void _latchOffline() {
+    final alreadyOffline = isOfflineMode.value;
+    _offlineLatched = true;
+    isOfflineMode.value = true;
+    // A pending "you're stable again" offer is stale the moment we drop.
+    showBackOnlinePrompt.value = false;
+    // Went offline mid-form with no coordinate yet → grab the device position in
+    // the background so the sale can be submitted without GPS friction.
+    if (!alreadyOffline) ensureDeviceLocation();
+  }
+
+  /// Leave latched offline mode. Only ever called from an explicit user action
+  /// on the "stable connection" prompt — never automatically.
+  void switchToOnline() {
+    _offlineLatched = false;
+    showBackOnlinePrompt.value = false;
+    isOfflineMode.value = !_connectivity.isOnline.value;
+    // The catalogue may have been skipped while we were offline.
+    if (paymentModels.isEmpty) _loadPaymentModels();
+  }
+
+  /// Dismiss the offer without leaving offline mode. It will be re-offered if
+  /// the connection drops and settles again.
+  void dismissBackOnlinePrompt() => showBackOnlinePrompt.value = false;
 
   /// Silently captures the device's current GPS position and fills lat/lng —
   /// NO dialogs, snackbars or errors. Used offline so a field agent who forgets
@@ -1278,7 +1493,11 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
     try {
       final payload = _buildPayload();
 
-      if (!_connectivity.isOnline.value) {
+      // Respect the latch, not just the instantaneous link state. On a flapping
+      // connection the probe can read "online" at this exact moment and then die
+      // mid-upload, leaving the agent on a spinner. Queuing is instant and the
+      // sale is never lost — SyncService pushes it once the link is genuinely up.
+      if (isOfflineMode.value || !_connectivity.isOnline.value) {
         await _saveOffline(payload);
         return;
       }

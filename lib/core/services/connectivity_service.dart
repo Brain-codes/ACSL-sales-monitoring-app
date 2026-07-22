@@ -40,9 +40,32 @@ class ConnectivityService extends GetxService {
 
   final Rx<NetworkQuality> quality = NetworkQuality.online.obs;
 
+  /// True only once the connection has been usable for several CONSECUTIVE
+  /// probes and isn't currently flapping — i.e. genuinely settled, not a
+  /// momentary "up" blip in an on/off/on cycle. Use this (not [isOnline]) to
+  /// decide whether it's safe to offer a user a switch back to online mode.
+  final RxBool isStable = true.obs;
+
+  /// True when the connection has dropped repeatedly inside [_flapWindow].
+  /// A network that keeps bouncing is worse than a cleanly dead one: UI that
+  /// reacts to every transition thrashes, and long uploads restart forever.
+  /// Consumers latch themselves into offline mode when this trips.
+  final RxBool isFlapping = false.obs;
+
   StreamSubscription? _subscription;
   Timer? _pollTimer;
   bool _probing = false;
+
+  /// Consecutive `online` probes required before we call the link "stable".
+  /// 3 × [_pollInterval] ≈ 60s of uninterrupted health.
+  static const _stableProbes = 3;
+
+  /// Rolling window used to judge flapping, and how many drops trip it.
+  static const _flapWindow = Duration(minutes: 2);
+  static const _flapDropsToTrip = 2;
+
+  int _consecutiveOnline = 0;
+  final List<DateTime> _drops = [];
 
   /// A probe that finishes under this is treated as a healthy connection.
   /// Above it (but still succeeds) counts as "poor".
@@ -99,6 +122,8 @@ class ConnectivityService extends GetxService {
       isOnline.value = result == NetworkQuality.online;
       isPoorConnection.value = result == NetworkQuality.poor;
 
+      _updateStability(result, wasUsable: wasUsable);
+
       // Only treat a transition into a *usable* connection as a reconnect.
       if (!wasUsable && isOnline.value && triggerReconnect) {
         _onReconnected();
@@ -106,6 +131,31 @@ class ConnectivityService extends GetxService {
     } finally {
       _probing = false;
     }
+  }
+
+  /// Maintains [isStable] / [isFlapping] from the probe history.
+  ///
+  /// A drop is only counted when we go from *usable* to unusable, so a link
+  /// that is simply down the whole time never registers as "flapping" — that's
+  /// a steady offline state, which the UI already handles well.
+  void _updateStability(NetworkQuality result, {required bool wasUsable}) {
+    final now = DateTime.now();
+
+    if (result == NetworkQuality.online) {
+      _consecutiveOnline++;
+    } else {
+      _consecutiveOnline = 0;
+      if (wasUsable) _drops.add(now);
+    }
+
+    _drops.removeWhere((t) => now.difference(t) > _flapWindow);
+    isFlapping.value = _drops.length >= _flapDropsToTrip;
+
+    // "Stable" demands BOTH a run of healthy probes and no recent drops, so a
+    // connection that just came back mid-flap can't masquerade as settled.
+    isStable.value = result == NetworkQuality.online &&
+        _consecutiveOnline >= _stableProbes &&
+        !isFlapping.value;
   }
 
   /// Tiny timed request to Supabase's health endpoint. Classifies the network

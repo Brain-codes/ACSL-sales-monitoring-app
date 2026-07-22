@@ -12,7 +12,7 @@ User directive — pause the broad super-admin build, focus on **making sales wo
 - **Backend (docs only — do NOT edit frontend-transactions code):** SQL + docs delivered in `docs/backend/`:
   - `20260628_sales_platform_and_on_behalf.sql` — adds `sales.platform` (web|mobile) + `sales.sold_on_behalf_of` (profiles FK).
   - `sales-platform-and-on-behalf.md` — create-sale edge-fn changes (read platform, validate+insert on-behalf agent).
-  - `payment-model-decoupling.md` — every partner gets every active payment model; remove the `organization_payment_models` gate in create-sale; pick any active model at point of sale.
+  - `payment-model-decoupling.md` — SUPERSEDED Jul 2026. Sales models are tied to a partner again, assigned by the external sync (not a super admin). See "Sales models tied to partners" below.
 - **Schema facts:** `profiles.manager_id` (agent→manager), `acsl_agent_organizations` (agent↔partner), `payment_models.authenticated_read_active` already lets anyone read active models, `sales.created_by` stays the creator.
 - Offline-first remains mandatory for the sales flow.
 
@@ -41,10 +41,10 @@ User authorized direct Supabase table access for assignment filtering (mirrors w
 A "partner" groups multiple org rows (branches across states). Picker now: pick partner by `partner_name` → State dropdown (states where partner has branches) → Branch dropdown (each branch is an org row; its `id` = organization_id). Auto-advances when a single state/branch. `selectedOrgId` is set only on branch pick → then loads that branch's stoves + on-behalf candidates. `assignedPartners` already holds all branch rows (no new fetch). Controller getters: `distinctPartners`, `statesForSelectedPartner`, `branchesForSelectedState`; handlers `onPartnerNameSelected`/`onBranchStateSelected`/`onBranchSelected`/`clearPartnerSelection`. validateAll() requires a branch for picker roles.
 
 ### Create-sale dynamic flow — DONE (super admin + manager paths)
-- `create_sale_controller`: `isSuperAdmin`, `needsPartnerPicker` (acsl+super), `needsAgentPicker` (super+manager). Super admin loads ALL orgs (`manage-organizations`); partner pick → loads stoves + candidate agents (`get-organization-agents?organization_id=`). Payment models now load globally via `payment-models` (decoupled, all active) for every role. Payload adds `platform:'mobile'` + `soldOnBehalfOf` (selected agent or self). Offline queue carries the same payload.
+- `create_sale_controller`: `isSuperAdmin`, `needsPartnerPicker` (acsl+super), `needsAgentPicker` (super+manager). Super admin loads ALL orgs (`manage-organizations`); partner pick → loads stoves + candidate agents (`get-organization-agents?organization_id=`). Payment models load globally via `payment-models` (one call, all active, cached) and are then FILTERED to the selected partner's `payment_model_ids` — never fetched per partner. Payload adds `platform:'mobile'` + `soldOnBehalfOf` (selected agent or self). Offline queue carries the same payload.
 - `create_sale_screen`: partner picker shown for `needsPartnerPicker`; new "Sell on behalf of" dropdown (Myself + candidates) for `needsAgentPicker` after a partner is chosen.
 - NEW edge fn (user deploys): `frontend-transactions/supabase/functions/get-organization-agents/index.ts`.
-- NOT YET: server-side create-sale changes (platform/soldOnBehalfOf insert + remove org-payment-model gate) — these are in `docs/backend/` for the web team to deploy. Until deployed, the live create-sale ignores the new fields / may reject non-assigned payment models.
+- NOT YET: server-side create-sale changes (platform/soldOnBehalfOf insert) — these are in `docs/backend/` for the web team to deploy. Until deployed, the live create-sale ignores the new fields. The org-payment-model gate is now DELIBERATELY BACK (see below) — it is no longer something to remove.
 
 ---
 
@@ -404,3 +404,82 @@ Three field-reported issues fixed together:
    `isOnline=false`. Re-probes on connectivity change AND a 20s poll (catches
    silent slowdowns). New `isPoorConnection` drives OfflineBanner "Very poor
    internet — working offline" message vs plain offline.
+
+## Sales models tied to partners, sourced from the external sync (Jul 2026)
+
+Reverses the Jun 2026 decoupling. A sales model is again restricted to the
+partners entitled to it — but the entitlement now comes from the **external
+application**, not from a super admin screen. Full write-up:
+`frontend-transactions/supabase/payment-model-decoupling.md`.
+
+**Backend (web repo, needs deploy).**
+- `external-csv-sync` / `external-sync`: parse `Partner Sales Models`
+  (`"Hakimi Sales Model (6m); Amina Sales Model (12m)"`), match each entry to
+  `payment_models` on normalized name + `duration_months`, then reconcile
+  `organization_payment_models` for that partner (CSV is authoritative). An
+  unmatched name CREATES A ZERO-PRICED STUB model so a partner is never blocked
+  from selling; logged as `warn` for super admin review. Empty/absent column =
+  "nothing said", never "revoke everything". Runs even for `manually_edited`
+  partners; non-fatal so stove IDs still process.
+- `manage-organizations`: every org row (list + single) now carries
+  `payment_model_ids` — a bare ID array from one bulk query.
+- `create-sale`: org↔model gate RESTORED (403 if the partner isn't assigned the
+  model). Sale `amount` stays operator-entered — `fixed_price` is only a
+  fallback, which is why zero-priced stubs are safe for now.
+- Migration `20260721_sales_models_from_external_sync.sql`: `assigned_by` /
+  `created_by` become nullable (the sync has no acting user), plus an index on
+  `organization_payment_models.organization_id`.
+
+**Mobile.** The point is that we NEVER call payment models per partner — there
+are ~900+ partners and the flow must work offline. Unchanged: one global
+`payment-models` fetch, cached. Added in `create_sale_controller`:
+- `orgPaymentModelIds` (`Rxn<List<String>>`) + `visiblePaymentModels` getter =
+  cached catalogue filtered by the partner's IDs. Pure in-memory lookup, so
+  online and offline behave identically.
+- `payment_model_ids` rides along on the cached partner rows
+  (`cache_assigned_partners`) — no new cache key, no new request.
+- **UNASSIGNED PARTNERS GET EVERYTHING** (user directive, 21 Jul 2026). A list =
+  exactly those models; `[]` or `null` = **every active model**. Only an explicit
+  list restricts. The sync covers only partners the external app has sent, so
+  "no assignments" must not mean "no models" — that would block every unsynced
+  partner. `create-sale` enforces the SAME rule; client and server must never
+  diverge, or the picker offers models the server rejects.
+- Still one real empty state: assigned models that don't resolve (inactive, or
+  created after the catalogue was cached) → amber warning, NOT a fallback to
+  everything, since that's a data fault worth surfacing. Both clients also
+  refetch the catalogue once on meeting an unknown ID (mobile: only when online).
+- **Mobile showed ALL models for a restricted partner — two causes (22 Jul 2026).**
+  1. **Wrong endpoint.** Mobile reads partners via `PartnerAccessService`:
+     super_admin → `manage-organizations`, but every OTHER role →
+     `super-admin-agents/{id}/organizations`, which never returned
+     `payment_model_ids`. Missing key = "unknown" = show everything. Fixed by
+     adding the same bulk lookup to `getAgentOrganizations` in
+     `super-admin-agents/readOptions.ts` (also fixes web's agent path, which
+     calls the same endpoint). **Any new partner-listing endpoint must return
+     this field** or it silently disables the restriction.
+  2. **Stale-cache race.** `_fetchPartnersForRole` shows cached rows first, then
+     pages ~900 partners. Picking a partner during that window used a pre-deploy
+     row with no `payment_model_ids`. Now `_reapplyPaymentModelsForSelectedOrg()`
+     re-resolves the selected org once fresh rows land.
+- **`_loadPaymentModels` init race (fixed 22 Jul 2026).** It branched on
+  `_connectivity.isOnline`, which is decided by an ACTIVE PROBE that usually
+  hasn't resolved at `onInit` — so a genuinely online device took the offline
+  branch, read an empty cache (fresh install, or post-logout `GetStorage().erase()`),
+  and left the catalogue permanently empty with every failure swallowed. Now:
+  seed from cache unconditionally first; never overwrite a good list with an
+  empty/failed response; retry via the `ever(isOnline)` listener when we come
+  online with an empty catalogue. An empty catalogue also gets its OWN message
+  (`paymentCatalogueEmpty`) — the old one blamed the partner's models and sent
+  debugging in the wrong direction entirely.
+- Applied from `onBranchSelected` (picker roles), `_applyOwnOrganizationPaymentModels`
+  (own-org roles, cache-only), and on draft restore. A selected model that the
+  new partner isn't entitled to is dropped back to full payment.
+- `create_sale_screen`: dropdown maps `visiblePaymentModels`; a note explains
+  when a partner has no models.
+
+**Web.** Same idea in `CreateSalesForm.jsx` — `orgPaymentModelIds` set from the
+org row in `finalizeBranchPick`, `visiblePaymentModels` memo, no
+`organization-payment-models/{orgId}` call.
+
+**Coming:** the external app will start sending the sales model AMOUNT. Stubs
+stop being zero-priced then; revisit whether the operator may still edit it.

@@ -7,7 +7,6 @@ import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:signature/signature.dart';
 import 'package:stove_transaction/core/constants/app_colors.dart';
-import 'package:stove_transaction/core/constants/nigeria_data.dart';
 import 'package:stove_transaction/core/utils/formatters.dart';
 import 'package:stove_transaction/core/widgets/app_text_field.dart';
 import 'package:stove_transaction/core/widgets/offline_banner.dart';
@@ -62,7 +61,14 @@ class CreateSaleScreen extends StatelessWidget {
       ),
       body: Column(
         children: [
-          const OfflineBanner(),
+          // Reflects the LATCH, not raw connectivity: while this sale is pinned
+          // offline the banner stays up (with a "Go online" action once the link
+          // settles) so the agent always knows where the sale is headed.
+          Obx(() => OfflineBanner(
+                forceOffline: c.isOfflineMode.value,
+                onGoOnline: c.switchToOnline,
+              )),
+          const _BackOnlineListener(),
           Obx(() => c.singleViewMode.value
               ? const SizedBox.shrink()
               : _StepProgress()),
@@ -112,6 +118,56 @@ class CreateSaleScreen extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Renders nothing; watches for "the connection has settled again" while this
+/// sale is latched offline and surfaces it as a SnackBar with an explicit
+/// opt-in. We never switch back automatically — the agent decides, so a flap
+/// can't yank the form back online mid-entry.
+class _BackOnlineListener extends StatefulWidget {
+  const _BackOnlineListener();
+
+  @override
+  State<_BackOnlineListener> createState() => _BackOnlineListenerState();
+}
+
+class _BackOnlineListenerState extends State<_BackOnlineListener> {
+  Worker? _worker;
+
+  @override
+  void initState() {
+    super.initState();
+    final c = Get.find<CreateSaleController>();
+    _worker = ever(c.showBackOnlinePrompt, (show) {
+      if (!show || !mounted) return;
+      final messenger = ScaffoldMessenger.of(context);
+      messenger.clearSnackBars();
+      messenger.showSnackBar(
+        SnackBar(
+          content: const Text(
+            "You're back on a stable connection. This sale is still in offline mode.",
+          ),
+          duration: const Duration(seconds: 8),
+          action: SnackBarAction(
+            label: 'Go online',
+            onPressed: c.switchToOnline,
+          ),
+        ),
+      );
+      // Mark consumed so it can fire again after a later drop+recovery, instead
+      // of re-showing on every rebuild. The banner keeps a persistent way back.
+      c.dismissBackOnlinePrompt();
+    });
+  }
+
+  @override
+  void dispose() {
+    _worker?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => const SizedBox.shrink();
 }
 
 class _StepProgress extends StatelessWidget {
@@ -949,7 +1005,7 @@ class _Step3LocationState extends State<_Step3Location> {
                   final picked = await _showSearchPicker(
                     context,
                     title: 'Select State',
-                    items: NigeriaData.states,
+                    items: c.states,
                     selected: c.selectedState.value,
                   );
                   if (picked != null) {
@@ -1185,7 +1241,9 @@ class _Step5SaleDetails extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
-              ...c.paymentModels.map((m) => DropdownMenuItem(
+              // Only the sales models this partner is tied to — resolved
+              // locally against the cached catalogue, so this works offline.
+              ...c.visiblePaymentModels.map((m) => DropdownMenuItem(
                     value: m.id,
                     child: Text(m.dropdownLabel, overflow: TextOverflow.ellipsis),
                   )),
@@ -1193,6 +1251,22 @@ class _Step5SaleDetails extends StatelessWidget {
             onChanged: (v) => c.selectPaymentType(v == 'full_payment' ? null : v),
             decoration: const InputDecoration(),
           ),
+          if (c.paymentCatalogueEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              'Sales models could not be loaded — no installment options are '
+              'available. Reconnect and reopen this form, or continue with '
+              'full payment.',
+              style: TextStyle(fontSize: 12, color: AppColors.warning),
+            ),
+          ] else if (c.partnerModelsUnresolved) ...[
+            const SizedBox(height: 8),
+            Text(
+              "This partner's assigned sales models are inactive or unknown. "
+              'Only full payment is available.',
+              style: TextStyle(fontSize: 12, color: AppColors.warning),
+            ),
+          ],
           const SizedBox(height: 16),
 
           // Installment model summary card
@@ -1488,9 +1562,20 @@ class _Step8Terms extends StatelessWidget {
     final c = Get.find<CreateSaleController>();
     final col = Column(
       children: [
-        const SectionHeader(
-            title: 'Terms & Conditions',
-              subtitle: 'All terms must be accepted to proceed'),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Expanded(
+              child: SectionHeader(
+                  title: 'Terms & Conditions',
+                  subtitle: 'All terms must be accepted to proceed'),
+            ),
+            Obx(() => TextButton(
+                  onPressed: () => c.setAllTc(!c.allTcAccepted),
+                  child: Text(c.allTcAccepted ? 'Clear all' : 'Accept all'),
+                )),
+          ],
+        ),
           Card(
             child: Column(
               children: [
@@ -1733,6 +1818,22 @@ class _ImagePickerTile extends StatelessWidget {
                         height: 140,
                         width: double.infinity,
                         fit: BoxFit.cover,
+                        // Decode at thumbnail scale. Without cacheWidth the FULL
+                        // camera image is decoded into memory just to paint a
+                        // 140px strip — a needless multi-MB spike on the same
+                        // low-RAM devices that were being killed during capture.
+                        cacheWidth: 600,
+                        // A queued/recovered photo can point at a temp file the
+                        // OS has since cleared; render a placeholder instead of
+                        // throwing inside the widget tree.
+                        errorBuilder: (_, __, ___) => Container(
+                          height: 140,
+                          width: double.infinity,
+                          color: AppColors.cardBg,
+                          alignment: Alignment.center,
+                          child: const Icon(Icons.broken_image_outlined,
+                              color: AppColors.textMuted),
+                        ),
                       ),
                     ),
                   ),
@@ -1983,7 +2084,18 @@ class _FullscreenImageViewer extends StatelessWidget {
               minScale: 0.5,
               maxScale: 4.0,
               child: Center(
-                child: Image.file(file, fit: BoxFit.contain),
+                child: Image.file(
+                  file,
+                  fit: BoxFit.contain,
+                  // Cap the decode even in the fullscreen viewer — plenty for
+                  // any phone screen and avoids a full-res bitmap in memory.
+                  cacheWidth: 1600,
+                  errorBuilder: (_, __, ___) => const Icon(
+                    Icons.broken_image_outlined,
+                    color: Colors.white70,
+                    size: 48,
+                  ),
+                ),
               ),
             ),
           ),

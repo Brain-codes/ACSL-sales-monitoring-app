@@ -55,6 +55,23 @@ class LocalCacheService extends GetxService {
     }
   }
 
+  /// Cache a single JSON map under [key].
+  void saveJsonMap(String key, Map<String, dynamic> value) {
+    _box.write(key, jsonEncode(value));
+    _box.write('${key}_at', DateTime.now().toIso8601String());
+  }
+
+  /// Read a cached single JSON map for [key]; null if absent/corrupt.
+  Map<String, dynamic>? getJsonMap(String key) {
+    final raw = _box.read<String>(key);
+    if (raw == null) return null;
+    try {
+      return Map<String, dynamic>.from(jsonDecode(raw) as Map);
+    } catch (_) {
+      return null;
+    }
+  }
+
   // ── Dashboard stats (offline-first, per year) ───────────────────────────────
 
   /// Persist the raw dashboard stats payload for [year] so the dashboard can

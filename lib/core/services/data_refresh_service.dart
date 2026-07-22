@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:get/get.dart';
 import 'package:logger/logger.dart';
 import 'package:stove_transaction/core/services/connectivity_service.dart';
+import 'package:stove_transaction/core/services/geo_data_service.dart';
 import 'package:stove_transaction/core/services/local_cache_service.dart';
 import 'package:stove_transaction/core/services/session_manager.dart';
 import 'package:stove_transaction/core/services/supabase_service.dart';
@@ -72,6 +73,11 @@ class DataRefreshService extends GetxService {
       // hang this future forever — leaving isRefreshing stuck true and the
       // indicator spinning endlessly. Cap the whole run.
       await () async {
+        // Cheap (one small call, TTL-gated to ~weekly) and the create-sale form
+        // is unusable without it, so it runs FIRST — behind the 900-org partner
+        // sync it would be the first casualty of the overall timeout below.
+        _stage('Getting states & LGAs…', 0.03);
+        await Get.find<GeoDataService>().refresh();
         await _refreshAllPartnersData(session);
         _stage('Getting payment models…', 0.72);
         await _refreshGlobalPaymentModels();

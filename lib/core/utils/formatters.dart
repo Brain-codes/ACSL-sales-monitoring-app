@@ -14,7 +14,11 @@ String formatNaira(double? v) => v != null ? _nairaFmt.format(v) : '—';
 String formatAmountInput(String raw) {
   final digits = raw.replaceAll(RegExp(r'[^0-9]'), '');
   if (digits.isEmpty) return '';
-  final n = int.parse(digits);
+  // int.parse THROWS on anything past the 64-bit range (~19 digits), so a long
+  // pasted/typed number would blow up mid-format. Fall back to the raw digits
+  // rather than crashing.
+  final n = int.tryParse(digits);
+  if (n == null) return digits;
   return NumberFormat('#,##0', 'en_NG').format(n);
 }
 
@@ -29,7 +33,12 @@ class ThousandsSeparatorInputFormatter extends TextInputFormatter {
     if (digits.isEmpty) {
       return newValue.copyWith(text: '');
     }
-    final formatted = NumberFormat('#,##0', 'en_NG').format(int.parse(digits));
+    // A formatter that throws takes down text input entirely, so never let a
+    // number too large for a 64-bit int (>19 digits, easily pasted) crash here —
+    // just keep the previous value instead.
+    final n = int.tryParse(digits);
+    if (n == null) return oldValue;
+    final formatted = NumberFormat('#,##0', 'en_NG').format(n);
     return TextEditingValue(
       text: formatted,
       selection: TextSelection.collapsed(offset: formatted.length),

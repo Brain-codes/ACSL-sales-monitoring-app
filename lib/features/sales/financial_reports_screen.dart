@@ -85,7 +85,7 @@ class _Report {
     final byStatus = <String, int>{};
     for (final s in sales) {
       value += s.amount ?? s.paymentModelFixedPrice ?? 0;
-      collected += s.totalPaid ?? s.initialPaymentAmount ?? 0;
+      collected += s.paidAmount;
       final status = (s.status ?? 'unknown').replaceAll('_', ' ');
       byStatus[status] = (byStatus[status] ?? 0) + 1;
     }

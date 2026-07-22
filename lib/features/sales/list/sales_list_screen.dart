@@ -24,18 +24,8 @@ final _dateFmt = DateFormat('d MMM yyyy');
 String _fmtAmount(double? v) => formatNaira(v);
 
 /// Amount actually PAID so far (never the outstanding balance).
-///  • Installment  → total_paid (what's been collected), else amount_received.
-///  • Full payment → the full sale amount (a completed full-payment sale is
-///    fully paid). We deliberately ignore a zero/absent amount_received here so
-///    completed sales stop showing ₦0.
-double _amountPaid(SaleModel s) {
-  if (s.isInstallment == true) {
-    final paid = s.totalPaid ?? s.amountReceived ?? 0;
-    return paid > 0 ? paid : (s.amount ?? 0);
-  }
-  final received = s.amountReceived ?? 0;
-  return received > 0 ? received : (s.amount ?? 0);
-}
+/// See [SaleModel.paidAmount] — full-payment sales carry `total_paid = 0`.
+double _amountPaid(SaleModel s) => s.paidAmount;
 
 String _fmtAmountPaid(SaleModel s) => formatNaira(_amountPaid(s));
 
