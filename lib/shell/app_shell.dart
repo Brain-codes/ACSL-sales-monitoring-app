@@ -40,31 +40,8 @@ class _AppShellState extends ConsumerState<AppShell> {
     // Already handled on a previous launch, or nothing left to grant.
     if (permissions.hasAsked) return;
     if (await permissions.allGranted()) return;
-    if (!mounted) return;
 
-    // Short primer before the OS dialogs. Android permanently denies a
-    // permission dismissed twice, so explaining WHY first materially improves
-    // the chance the agent accepts and never sees these prompts again.
-    final proceed = await showDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Before you start'),
-        content: const Text(
-          'This app needs two permissions to record a sale:\n\n'
-          '•  Camera — to take the stove photo\n'
-          '•  Location — to tag each sale with its GPS position\n\n'
-          'Please allow both so you are not interrupted while recording a sale.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Continue'),
-          ),
-        ],
-      ),
-    );
-    if (proceed != true || !mounted) return;
+    // Fire the OS prompts straight away — no in-app primer to tap through.
     await permissions.requestStartupPermissions();
 
     // "Don't allow" is sticky on Android — the app can never prompt again, and
