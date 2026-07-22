@@ -29,6 +29,7 @@ class _OfflineCacheDebugScreenState extends State<OfflineCacheDebugScreen> {
   int _totalStoves = 0;
   int _orgsWithZero = 0;
   int _globalModels = 0;
+  int _cachedPhones = 0;
 
   @override
   void initState() {
@@ -56,6 +57,10 @@ class _OfflineCacheDebugScreenState extends State<OfflineCacheDebugScreen> {
     }
     // Payment models are global (one list for all partners), cached once.
     _globalModels = _cache.getPaymentModels().length;
+    // End-user phones are global too, and role-independent — the count should
+    // read the same for every logged-in user. A number that differs between
+    // accounts means the phone sync is being scoped somewhere it shouldn't be.
+    _cachedPhones = _cache.endUserPhoneCount;
     // Surface partners with 0 cached stoves first — those are the suspicious ones.
     rows.sort((a, b) => a.stoves.compareTo(b.stoves));
     setState(() {
@@ -128,6 +133,8 @@ class _OfflineCacheDebugScreenState extends State<OfflineCacheDebugScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Two rows of three: five tiles across one row squeezes each to ~65px
+          // on a 360dp screen and the longer labels overflow.
           Row(
             children: [
               _stat('Partners', '${_rows.length}'),
@@ -135,9 +142,18 @@ class _OfflineCacheDebugScreenState extends State<OfflineCacheDebugScreen> {
               _stat('Stove IDs', '$_totalStoves'),
               const SizedBox(width: 12),
               _stat('Payment models', '$_globalModels'),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              _stat('Phone numbers', '$_cachedPhones'),
               const SizedBox(width: 12),
               _stat('Empty partners', '$_orgsWithZero',
                   danger: _orgsWithZero > 0),
+              const SizedBox(width: 12),
+              // Keeps the two rows on the same 3-column grid.
+              const Expanded(child: SizedBox.shrink()),
             ],
           ),
           const SizedBox(height: 10),

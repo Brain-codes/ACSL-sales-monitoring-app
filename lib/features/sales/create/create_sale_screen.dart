@@ -659,7 +659,12 @@ class _Step2Contact extends StatelessWidget {
             controller: c.phoneCtrl,
             keyboardType: TextInputType.phone,
             required: true,
+            onChanged: c.onEndUserPhoneChanged,
             textInputAction: TextInputAction.next),
+        Obx(() => _FieldMessage(
+              message: c.phoneDuplicateError.value,
+              isError: true,
+            )),
         const SizedBox(height: 12),
         AppTextField(
             label: 'AKA',
@@ -2414,6 +2419,44 @@ class _PreviewSection extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// Inline message under a field. Collapses to nothing when [message] is null so
+/// the form doesn't jump around as validation comes and goes.
+class _FieldMessage extends StatelessWidget {
+  const _FieldMessage({required this.message, this.isError = false});
+
+  final String? message;
+  final bool isError;
+
+  @override
+  Widget build(BuildContext context) {
+    final text = message;
+    if (text == null || text.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 6, left: 2),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            isError ? Icons.error_outline : Icons.info_outline,
+            size: 14,
+            color: isError ? AppColors.error : AppColors.textMuted,
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(
+                fontSize: 12,
+                color: isError ? AppColors.error : AppColors.textMuted,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

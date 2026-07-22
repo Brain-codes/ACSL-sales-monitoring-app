@@ -4,6 +4,8 @@ import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:uuid/uuid.dart';
 
+import 'package:stove_transaction/core/utils/phone_utils.dart';
+
 class OfflineQueueService extends GetxService {
   late Database _db;
   final RxInt pendingCount = 0.obs;
@@ -220,6 +222,27 @@ class OfflineQueueService extends GetxService {
       } catch (_) {}
     }
     return ids;
+  }
+
+  /// Normalized end-user phones of sales still waiting to sync. These aren't on
+  /// the server yet, so the cached phone set can't know about them — without
+  /// this, two sales created back-to-back offline could share a phone and the
+  /// second would only fail later, at sync, with the sale already "made".
+  Future<Set<String>> getPendingEndUserPhones() async {
+    final rows = await _db.query(
+      'offline_sales',
+      columns: ['payload'],
+      where: 'synced = 0',
+    );
+    final phones = <String>{};
+    for (final row in rows) {
+      try {
+        final payload = jsonDecode(row['payload'] as String) as Map<String, dynamic>;
+        final key = PhoneUtils.normalizePhone(payload['phone']?.toString());
+        if (key.isNotEmpty) phones.add(key);
+      } catch (_) {}
+    }
+    return phones;
   }
 
   Future<void> _refreshCounts() async {

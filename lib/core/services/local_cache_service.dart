@@ -17,6 +17,8 @@ class LocalCacheService extends GetxService {
   static const _keySalesAt = 'cache_sales_at';
   static const _keyGoogleKeys = 'cache_google_keys';
   static const _keyGoogleKeysAt = 'cache_google_keys_at';
+  static const _keyEndUserPhones = 'cache_end_user_phones';
+  static const _keyEndUserPhonesAt = 'cache_end_user_phones_at';
 
   static const _keyDevAutofill = 'dev_autofill_enabled';
 
@@ -137,6 +139,54 @@ class LocalCacheService extends GetxService {
   }
 
   bool get hasPaymentModels => _box.read<String>(_keyPaymentModels) != null;
+
+  // ── End-user phones (global uniqueness, offline) ──────────────────────────
+  //
+  // Every sale must have a unique end-user phone, and that has to be enforced
+  // while offline. We cache ONLY the normalized 10-digit keys — never the sale
+  // rows — so 20k+ sales costs a few hundred KB instead of tens of MB. The set
+  // is global and role-independent: a number taken by any partner is taken for
+  // everyone, so the same cache serves every logged-in user.
+
+  /// In-memory mirror so lookups don't re-decode a 20k-entry list per keystroke.
+  /// Invalidated on write; rebuilt lazily on first read.
+  Set<String>? _phoneSetCache;
+
+  void saveEndUserPhones(Iterable<String> normalizedPhones) {
+    final unique = normalizedPhones.where((p) => p.isNotEmpty).toSet();
+    _box.write(_keyEndUserPhones, jsonEncode(unique.toList()));
+    _box.write(_keyEndUserPhonesAt, DateTime.now().toIso8601String());
+    _phoneSetCache = unique;
+  }
+
+  /// The cached set of normalized end-user phones. Keys only — see above.
+  Set<String> getEndUserPhones() {
+    final cached = _phoneSetCache;
+    if (cached != null) return cached;
+    final raw = _box.read<String>(_keyEndUserPhones);
+    if (raw == null) return _phoneSetCache = <String>{};
+    try {
+      final list = jsonDecode(raw) as List;
+      return _phoneSetCache = list.map((e) => e.toString()).toSet();
+    } catch (_) {
+      return _phoneSetCache = <String>{};
+    }
+  }
+
+  /// Adds one number without a full re-download — used after a sale is created
+  /// (including an offline one) so the very next sale sees it as taken.
+  void addEndUserPhone(String normalizedPhone) {
+    if (normalizedPhone.isEmpty) return;
+    final set = {...getEndUserPhones(), normalizedPhone};
+    saveEndUserPhones(set);
+  }
+
+  int get endUserPhoneCount => getEndUserPhones().length;
+
+  DateTime? get endUserPhonesCachedAt {
+    final raw = _box.read<String>(_keyEndUserPhonesAt);
+    return raw == null ? null : DateTime.tryParse(raw);
+  }
 
   // ── Per-org stoves (ACSL agents) ──────────────────────────────────────────
 

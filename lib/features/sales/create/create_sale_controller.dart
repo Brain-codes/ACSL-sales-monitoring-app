@@ -17,7 +17,9 @@ import 'package:stove_transaction/core/services/connectivity_service.dart';
 import 'package:stove_transaction/core/services/geo_data_service.dart';
 import 'package:stove_transaction/core/services/local_cache_service.dart';
 import 'package:stove_transaction/core/services/offline_queue_service.dart';
+import 'package:stove_transaction/core/services/permission_service.dart';
 import 'package:stove_transaction/core/services/session_manager.dart';
+import 'package:stove_transaction/core/utils/phone_utils.dart';
 import 'package:stove_transaction/features/partners/partner_access_service.dart';
 import 'package:stove_transaction/features/sales/models/payment_model.dart';
 import 'package:stove_transaction/features/sales/models/stove_model.dart';
@@ -82,6 +84,77 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
   final akaCtrl = TextEditingController();
   final phoneCtrl = TextEditingController();
   final otherPhoneCtrl = TextEditingController();
+
+  // ── End-user phone: live uniqueness ─────────────────────────────────────
+  //
+  // Every sale must carry a unique end-user phone, and the seller must learn
+  // about a clash AS THEY TYPE — not after filling nine steps and submitting.
+  // The check runs entirely against local data (the cached phone set plus
+  // phones held in the offline queue), so it behaves identically offline. The
+  // server re-checks on submit and is the final authority.
+  //
+  // No FORMAT validation here by design (removed 22 Jul 2026): sellers enter
+  // numbers in whatever notation they have, and nagging about it blocked real
+  // entries. Uniqueness still normalizes to the last 10 digits, so the same
+  // number in different notations still collides.
+
+  /// Set when the typed end-user phone is already taken. Null when it's free.
+  final phoneDuplicateError = RxnString();
+
+  Timer? _phoneCheckDebounce;
+
+  /// Phones sitting in the offline queue — refreshed alongside each check so a
+  /// second offline sale can't reuse the first one's number.
+  Set<String> _pendingQueuePhones = <String>{};
+
+  /// True while the end-user phone is unusable — i.e. already taken.
+  bool get hasEndUserPhoneProblem => phoneDuplicateError.value != null;
+
+  /// Debounced so a fast typist triggers one check, not twelve.
+  void onEndUserPhoneChanged(String value) {
+    _phoneCheckDebounce?.cancel();
+    final trimmed = value.trim();
+
+    if (trimmed.length < 6) {
+      phoneDuplicateError.value = null;
+      return;
+    }
+
+    _phoneCheckDebounce = Timer(const Duration(milliseconds: 300), () {
+      checkEndUserPhoneDuplicate(trimmed);
+    });
+  }
+
+  /// Flags the number if it already belongs to a sale — synced or still queued.
+  Future<void> checkEndUserPhoneDuplicate(String value) async {
+    final key = PhoneUtils.normalizePhone(value);
+    if (key.isEmpty) {
+      phoneDuplicateError.value = null;
+      return;
+    }
+
+    // A draft being edited legitimately keeps its own phone.
+    if (key == _editingOriginalPhoneKey) {
+      phoneDuplicateError.value = null;
+      return;
+    }
+
+    try {
+      _pendingQueuePhones = await _queue.getPendingEndUserPhones();
+    } catch (_) {
+      // Queue unreadable — fall through to the cached set rather than blocking.
+    }
+
+    final cached = Get.find<LocalCacheService>().getEndUserPhones();
+    final taken = cached.contains(key) || _pendingQueuePhones.contains(key);
+
+    phoneDuplicateError.value = taken
+        ? 'A customer with this phone number already exists.'
+        : null;
+  }
+
+  /// The phone a restored draft started with — editing it must not flag itself.
+  String? _editingOriginalPhoneKey;
 
   // Step 3 — Location
   final selectedState = ''.obs;
@@ -676,6 +749,10 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
     akaCtrl.text = payload['aka']?.toString() ?? '';
     phoneCtrl.text = payload['phone']?.toString() ?? '';
     otherPhoneCtrl.text = payload['otherPhone']?.toString() ?? '';
+    // A queued sale being edited already owns its phone — remember it so the
+    // duplicate check doesn't flag the draft against itself.
+    _editingOriginalPhoneKey = PhoneUtils.normalizePhone(phoneCtrl.text);
+    phoneDuplicateError.value = null;
 
     // Location
     selectedState.value = payload['stateBackup']?.toString() ?? '';
@@ -1308,6 +1385,10 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
     }
     if (phoneCtrl.text.trim().isEmpty) {
       errors.add(const ValidationError(step: 1, stepTitle: 'Buyer & End User', field: 'End User Phone', message: 'End user phone number is required'));
+    } else if (phoneDuplicateError.value != null) {
+      // Re-stated at submit as well as inline: the inline flag can be scrolled
+      // past, and a duplicate is rejected by the server anyway.
+      errors.add(ValidationError(step: 1, stepTitle: 'Buyer & End User', field: 'End User Phone', message: phoneDuplicateError.value!));
     }
 
     // Step 4 — Sale & Payment
@@ -1410,6 +1491,23 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
   String? _pendingImageField;
 
   Future<void> pickImage(ImageSource source, {required String field}) async {
+    // Camera needs an explicit grant; the gallery does not (the system photo
+    // picker carries its own). Without this check a denied camera permission
+    // made the "take photo" button do NOTHING while upload kept working.
+    if (source == ImageSource.camera) {
+      final result = await Get.find<PermissionService>().ensureCamera();
+      if (result == CameraPermissionResult.permanentlyDenied) {
+        _showError('Camera access is blocked. Enable it in Settings > Apps > '
+            'Atmosfair > Permissions, or upload from your gallery instead.');
+        return;
+      }
+      if (result == CameraPermissionResult.denied) {
+        _showError('Camera permission is needed to take the photo. '
+            'You can also upload from your gallery.');
+        return;
+      }
+    }
+
     _pendingImageField = field;
     XFile? xFile;
     try {
@@ -1429,10 +1527,14 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
       );
     } catch (e, st) {
       // A thrown PlatformException here (camera unavailable, permission race)
-      // must NOT bubble up and tear down the create-sale flow. Swallow, log,
-      // and let the user retry.
+      // must NOT bubble up and tear down the create-sale flow — but it must not
+      // be silent either. Returning without a word is what made a failing
+      // camera look like a dead button with no explanation.
       _logger.w('pickImage failed for $field: $e', error: e, stackTrace: st);
       _pendingImageField = null;
+      _showError(source == ImageSource.camera
+          ? 'Could not open the camera. Please try again, or upload from your gallery.'
+          : 'Could not open the gallery. Please try again.');
       return;
     }
     _pendingImageField = null;
@@ -1543,6 +1645,10 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
         if (_editingQueueId != null) {
           await _queue.deleteById(_editingQueueId!);
         }
+        // Reserve the phone locally right away. Waiting for the next full sync
+        // would leave a window where this number still looks free.
+        Get.find<LocalCacheService>()
+            .addEndUserPhone(PhoneUtils.normalizePhone(payload['phone']?.toString()));
         _showSuccess('Sale created successfully!');
         resetForm();
         rootNavigatorKey.currentState?.pop(true);
@@ -1707,6 +1813,7 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
     amountReceivedCtrl.dispose();
     initialPaymentCtrl.dispose();
     _initialPaymentDebounce?.cancel();
+    _phoneCheckDebounce?.cancel();
     previousStoveOtherCtrl.dispose();
     mealsPerDayCtrl.dispose();
     cookingFuelSourceCtrl.dispose();

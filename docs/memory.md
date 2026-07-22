@@ -483,3 +483,53 @@ org row in `finalizeBranchPick`, `visiblePaymentModels` memo, no
 
 **Coming:** the external app will start sending the sales model AMOUNT. Stubs
 stop being zero-priced then; revisit whether the operator may still edit it.
+
+## End-user phone: unique, offline (Jul 2026)
+
+Every sale must carry a UNIQUE end-user phone, flagged AS THE SELLER TYPES —
+not at submit.
+
+**NO format validation on mobile** (user directive, 22 Jul 2026 — it was built,
+then removed). Sellers enter numbers in whatever notation they have and the
+"Use 08031234567, …" nag blocked real entries. Do not reinstate it. Format
+never mattered to duplicate detection anyway, because of the normalization
+below. Note the WEB still format-validates via upstream's `isValidNgPhone` —
+the two clients differ here deliberately.
+
+**The shared comparison key is the LAST 10 DIGITS.** All three formats collapse
+to `8031234567`, so the same subscriber can't be entered twice in different
+notations. Four places implement this and MUST stay identical:
+`PhoneUtils.normalizePhone` (mobile), `get-end-user-phones`, `create-sale`, and
+the web form's live check. A previous bug compared FULL digit strings in
+`create-sale` + web, so `0803…` and `234803…` did NOT collide — fixed.
+
+**Offline design (the point of the whole thing).** Caching full sale rows to
+check uniqueness would be enormous at 20k+ sales, so we cache **phone keys
+only** — a few hundred KB:
+- `get-end-user-phones` (NEW edge fn) returns bare 10-digit keys for every sale,
+  deduped, in one call. Deliberately NOT org-scoped: uniqueness is global, so a
+  per-agent view would let two agents register the same customer. It reports
+  `truncated` if it hits its row cap, and the client then KEEPS its existing
+  cache rather than trusting a partial set (a partial set silently admits
+  duplicates).
+- `LocalCacheService.saveEndUserPhones/getEndUserPhones` — backed by an
+  in-memory `Set` so a lookup per keystroke doesn't re-decode 20k entries.
+- `DataRefreshService._refreshEndUserPhones()` runs in `refreshAll`.
+- `OfflineQueueService.getPendingEndUserPhones()` — queued-but-unsynced sales
+  aren't on the server, so without this two offline sales could share a phone
+  and only fail later, at sync, with the sale already "made".
+- After a successful online sale the phone is added to the cache immediately
+  (`addEndUserPhone`) — waiting for the next sync leaves a window where the
+  number still looks free.
+- Editing a queued draft remembers `_editingOriginalPhoneKey` so the draft
+  doesn't flag itself as a duplicate.
+
+**UI.** `onEndUserPhoneChanged` debounces 300ms and shows exactly one message —
+"A customer with this phone number already exists." (kept deliberately short;
+an earlier longer version was trimmed). Re-checked in `validateAll`.
+Debug page (`offline_cache_debug_screen`)
+gained a **"Phone numbers"** stat — it is role-independent, so a count that
+differs between logged-in users means the phone sync is being scoped somewhere
+it shouldn't be. Stats are now 2 rows of 3 (5 tiles in one row overflowed).
+
+Tests: `test/phone_utils_test.dart` (normalization collisions, partial input).

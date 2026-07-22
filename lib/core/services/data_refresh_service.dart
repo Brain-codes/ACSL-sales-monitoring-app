@@ -83,6 +83,8 @@ class DataRefreshService extends GetxService {
         await _refreshGlobalPaymentModels();
         _stage('Getting sales…', 0.82);
         await _refreshSales();
+        _stage('Getting customer phone numbers…', 0.90);
+        await _refreshEndUserPhones();
         _stage('Getting location keys…', 0.94);
         await _refreshGoogleKeys();
         _stage('Finishing up…', 1.0);
@@ -348,6 +350,44 @@ class DataRefreshService extends GetxService {
       }
     } catch (e) {
       _logger.w('Sales refresh failed: $e');
+    }
+  }
+
+  /// Caches the normalized end-user phone of EVERY sale, so the create-sale
+  /// form can reject a duplicate while offline.
+  ///
+  /// Phones only — deliberately not the sale rows. `get-end-user-phones`
+  /// returns bare 10-digit keys for the whole table in one call, which stays
+  /// small enough to hold on device at 20k+ sales. It is also global rather
+  /// than org-scoped: uniqueness spans every partner, so the cache is identical
+  /// no matter who is logged in.
+  Future<void> _refreshEndUserPhones() async {
+    try {
+      final supabase = Get.find<SupabaseService>();
+      final resp = await supabase.callEdgeFunction(
+        'get-end-user-phones',
+        body: {},
+        method: 'GET',
+      );
+      if (!resp.success || resp.data == null) {
+        _logger.w('End-user phone refresh returned no data');
+        return;
+      }
+      final data = resp.data;
+      final List raw = data is List
+          ? data
+          : (data is Map ? (data['data'] as List? ?? []) : []);
+      // A truncated set would silently let duplicates through offline, so keep
+      // the previous (complete) cache rather than replacing it with a partial one.
+      final truncated = data is Map && data['truncated'] == true;
+      if (truncated) {
+        _logger.w('End-user phone list truncated by the server — keeping cache');
+        return;
+      }
+      final phones = raw.map((e) => e.toString()).where((e) => e.isNotEmpty);
+      Get.find<LocalCacheService>().saveEndUserPhones(phones);
+    } catch (e) {
+      _logger.w('End-user phone refresh failed: $e');
     }
   }
 

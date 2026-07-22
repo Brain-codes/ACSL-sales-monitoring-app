@@ -3,6 +3,17 @@ import 'package:get_storage/get_storage.dart';
 import 'package:logger/logger.dart';
 import 'package:permission_handler/permission_handler.dart';
 
+/// Outcome of an in-context camera permission check.
+enum CameraPermissionResult {
+  granted,
+
+  /// Declined this time — asking again later is still allowed.
+  denied,
+
+  /// Blocked for good; only the system settings screen can undo it.
+  permanentlyDenied,
+}
+
 /// Asks for every RUNTIME permission the app needs in one batch at launch,
 /// instead of interrupting an agent halfway through recording a sale.
 ///
@@ -64,6 +75,41 @@ class PermissionService extends GetxService {
       _logger.w('Startup permission request failed: $e',
           error: e, stackTrace: st);
       return {};
+    }
+  }
+
+  /// Makes sure the camera is usable RIGHT NOW, at the moment the user tapped
+  /// "take photo".
+  ///
+  /// The startup batch is only an optimisation — if the agent tapped "Don't
+  /// allow" there (easy to do on a prompt that appears before they've used the
+  /// app), the camera button would otherwise be permanently dead while gallery
+  /// upload kept working. This re-asks in context, which is exactly where people
+  /// do grant it.
+  ///
+  /// Returns a [CameraPermissionResult] so the caller can tell "user declined"
+  /// apart from "blocked in Settings" and message accordingly.
+  Future<CameraPermissionResult> ensureCamera() async {
+    try {
+      var status = await Permission.camera.status;
+      if (status.isGranted || status.isLimited) {
+        return CameraPermissionResult.granted;
+      }
+      if (status.isPermanentlyDenied) {
+        return CameraPermissionResult.permanentlyDenied;
+      }
+      status = await Permission.camera.request();
+      if (status.isGranted || status.isLimited) {
+        return CameraPermissionResult.granted;
+      }
+      return status.isPermanentlyDenied
+          ? CameraPermissionResult.permanentlyDenied
+          : CameraPermissionResult.denied;
+    } catch (e) {
+      // If the permission plugin itself misbehaves, don't block the capture —
+      // let image_picker try and surface its own error.
+      _logger.w('Camera permission check failed: $e');
+      return CameraPermissionResult.granted;
     }
   }
 
