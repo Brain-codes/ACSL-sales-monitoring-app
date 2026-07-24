@@ -1041,9 +1041,12 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
       );
     }
 
-    // Amount (locked) + amount received.
+    // Amount (locked) + amount received. The collected figure lives in
+    // `total_paid` server-side (there is no `amount_received` column — see
+    // SaleModel.paidAmount), so read it through that fallback or the amount
+    // received field ends up blank/zero even though a real value was saved.
     amountCtrl.text = _fmtAmountInput(sale.amount);
-    amountReceivedCtrl.text = _fmtAmountInput(sale.amountReceived);
+    amountReceivedCtrl.text = _fmtAmountInput(sale.paidAmount);
 
     // Payment model — locked in edit mode.
     final pmId = sale.paymentModelId ?? sale.selectedModelId;
