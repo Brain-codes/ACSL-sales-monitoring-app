@@ -108,6 +108,30 @@ class CreateSaleService {
     return _supabase.callEdgeFunction('create-sale', body: payload);
   }
 
+  /// Update an existing (already-synced) sale. Mirrors the web
+  /// `adminSalesService.updateSale` → POST update-sale?id=<saleId>.
+  Future<SupabaseApiResponse<dynamic>> updateSale(
+    String saleId,
+    Map<String, dynamic> payload,
+  ) {
+    return _supabase.callEdgeFunction(
+      'update-sale',
+      body: payload,
+      queryParams: {'id': saleId},
+    );
+  }
+
+  /// Full detail for one sale (used to pre-fill the edit form). get-sale reads
+  /// `id` from the query string (`url.searchParams.get("id")`), not the body.
+  Future<SupabaseApiResponse<dynamic>> getSale(String saleId) {
+    return _supabase.callEdgeFunction(
+      'get-sale',
+      body: {},
+      method: 'GET',
+      queryParams: {'id': saleId},
+    );
+  }
+
   Future<SupabaseApiResponse<dynamic>> getGoogleKeys() {
     return _supabase.callEdgeFunction('get-google-keys', body: {}, method: 'GET');
   }

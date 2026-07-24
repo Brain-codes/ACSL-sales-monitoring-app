@@ -17,9 +17,13 @@ enum CameraPermissionResult {
 /// Asks for every RUNTIME permission the app needs in one batch at launch,
 /// instead of interrupting an agent halfway through recording a sale.
 ///
-/// Only two permissions actually prompt on Android:
-///   * camera   — stove photo capture
+/// Only location actually prompts on Android:
 ///   * location — GPS coordinates attached to each sale
+///
+/// Camera is NOT requested: photos are captured via image_picker, which
+/// launches the system camera app (its own permission), and the app does not
+/// declare CAMERA in the manifest — declaring it forced a runtime grant that
+/// drifted out of sync and caused a persistent "camera access is blocked" bug.
 ///
 /// INTERNET / ACCESS_NETWORK_STATE are *install-time* ("normal") permissions:
 /// Android grants them at install and there is no dialog to show, so they are
@@ -33,8 +37,11 @@ class PermissionService extends GetxService {
   static const _askedKey = 'startup_permissions_asked_v1';
 
   /// The permissions we request up front, in prompt order.
+  ///
+  /// Camera is deliberately absent: the app captures photos through
+  /// image_picker, which launches the system camera app (no app-level CAMERA
+  /// permission needed), and CAMERA is no longer declared in the manifest.
   static const _startupPermissions = <Permission>[
-    Permission.camera,
     Permission.locationWhenInUse,
   ];
 
@@ -95,9 +102,10 @@ class PermissionService extends GetxService {
       if (status.isGranted || status.isLimited) {
         return CameraPermissionResult.granted;
       }
-      if (status.isPermanentlyDenied) {
-        return CameraPermissionResult.permanentlyDenied;
-      }
+      // Do NOT short-circuit on a cached `permanentlyDenied`: after the user
+      // enables the permission from the system Settings screen, the cached
+      // status can still read permanentlyDenied until an actual request()
+      // re-reads it. Always re-request so a freshly-granted camera is picked up.
       status = await Permission.camera.request();
       if (status.isGranted || status.isLimited) {
         return CameraPermissionResult.granted;

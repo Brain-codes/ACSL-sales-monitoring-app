@@ -12,6 +12,7 @@ import 'package:stove_transaction/features/dashboard/dashboard_screen.dart';
 import 'package:stove_transaction/features/partners/partners_screen.dart';
 import 'package:stove_transaction/features/profile/profile_screen.dart';
 import 'package:stove_transaction/features/sales/create/create_sale_screen.dart';
+import 'package:stove_transaction/features/sales/models/sale_model.dart';
 import 'package:stove_transaction/features/sales/financial_reports_screen.dart';
 import 'package:stove_transaction/features/sales/list/sales_list_screen.dart';
 import 'package:stove_transaction/features/settings/payment_models_screen.dart';
@@ -82,6 +83,7 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/sales/create',
         builder: (_, state) => CreateSaleScreen(
           editQueueId: state.extra is int ? state.extra as int : null,
+          editSale: state.extra is SaleModel ? state.extra as SaleModel : null,
         ),
       ),
       GoRoute(path: '/sales/financial-reports', builder: (_, __) => const FinancialReportsScreen()),

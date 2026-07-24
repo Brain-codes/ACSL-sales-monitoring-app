@@ -32,6 +32,7 @@ class SaleModel {
   double? initialPaymentAmount;
   String? initialPaymentMethod;
   String? stoveImageId;
+  String? stoveImageUrl;
   String? agreementImageId;
   String? agreementImageUrl;
   String? signatureId;
@@ -56,6 +57,10 @@ class SaleModel {
   double? totalPaid;
   bool? agentApproved;
   bool? isArchived;
+
+  // Organization (partner branch) this sale belongs to — needed to satisfy
+  // the partner-picker validation in edit mode, where the picker is locked.
+  String? organizationId;
 
   // Nested objects flattened for display
   String? paymentModelName;
@@ -96,6 +101,7 @@ class SaleModel {
     this.initialPaymentAmount,
     this.initialPaymentMethod,
     this.stoveImageId,
+    this.stoveImageUrl,
     this.agreementImageId,
     this.agreementImageUrl,
     this.signatureId,
@@ -121,6 +127,7 @@ class SaleModel {
     this.paymentModelName,
     this.paymentModelFixedPrice,
     this.paymentModelDurationMonths,
+    this.organizationId,
     this.organizationName,
     this.organizationBranch,
     this.creatorName,
@@ -145,6 +152,7 @@ class SaleModel {
     // get-sales-advanced), as a plain id string, or — for cached sales — split
     // into <field>_url. Normalise to an id + url pair.
     final agreementImg = json["agreement_image"] ?? json["agreement_image_id"];
+    final stoveImg = json["stove_image"];
 
     return SaleModel(
       id: json["id"]?.toString() ?? "",
@@ -183,12 +191,14 @@ class SaleModel {
               : null,
       partnerName: json["partner_name"] ?? json["partnerName"] ?? org?["partner_name"]?.toString(),
       retailerBranch: json["retailer_branch"] ?? json["retailerBranch"],
+      organizationId: json["organization_id"]?.toString() ?? json["organizationId"]?.toString(),
       amount: json["amount"] != null ? (json["amount"] as num).toDouble() : null,
       amountReceived: json["amount_received"] != null ? (json["amount_received"] as num).toDouble() : null,
       selectedModelId: json["selected_model_id"]?.toString() ?? json["payment_model_id"]?.toString(),
       initialPaymentAmount: json["initial_payment_amount"] != null ? (json["initial_payment_amount"] as num).toDouble() : null,
       initialPaymentMethod: json["initial_payment_method"],
       stoveImageId: json["stove_image_id"]?.toString(),
+      stoveImageUrl: stoveImg is Map ? stoveImg["url"]?.toString() : null,
       agreementImageId: agreementImg is Map
           ? agreementImg["id"]?.toString()
           : agreementImg?.toString(),
@@ -248,12 +258,14 @@ class SaleModel {
         "longitude": longitude,
         "partner_name": partnerName,
         "retailer_branch": retailerBranch,
+        "organization_id": organizationId,
         "amount": amount,
         "amount_received": amountReceived,
         "selected_model_id": selectedModelId,
         "initial_payment_amount": initialPaymentAmount,
         "initial_payment_method": initialPaymentMethod,
         "stove_image_id": stoveImageId,
+        "stove_image_url": stoveImageUrl,
         "agreement_image_id": agreementImageId,
         "agreement_image_url": agreementImageUrl,
         "signature_id": signatureId,

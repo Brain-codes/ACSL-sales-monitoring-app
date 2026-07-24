@@ -22,6 +22,7 @@ import 'package:stove_transaction/core/services/session_manager.dart';
 import 'package:stove_transaction/core/utils/phone_utils.dart';
 import 'package:stove_transaction/features/partners/partner_access_service.dart';
 import 'package:stove_transaction/features/sales/models/payment_model.dart';
+import 'package:stove_transaction/features/sales/models/sale_model.dart';
 import 'package:stove_transaction/features/sales/models/stove_model.dart';
 import 'create_sale_service.dart';
 import 'create_sale_test_data.dart';
@@ -61,6 +62,20 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
   int? _editingQueueId;
   bool _hydrated = false;
 
+  /// When set, this form is editing an already-SYNCED sale (server row id).
+  /// Submitting calls update-sale. Edits to synced sales are online-only:
+  /// unlike a fresh create, they are never queued offline.
+  final editingSaleId = RxnString();
+  bool get isEditingSale => editingSaleId.value != null;
+
+  /// The sale id whose data has actually been loaded into the form fields.
+  /// [editingSaleId] is set eagerly (synchronously, on first build) purely to
+  /// lock UI fields before hydration completes — it must NOT be reused as the
+  /// "already hydrated" guard below, or opening sale B right after cancelling
+  /// an edit of sale A sees editingSaleId already pointing at B and skips
+  /// hydration entirely, leaving A's data on screen.
+  String? _hydratedSaleId;
+
   /// Signature carried over from a queued sale being edited. Strokes can't be
   /// restored into the pad, so we keep the original PNG and reuse it unless the
   /// user draws a new one.
@@ -84,6 +99,30 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
   final akaCtrl = TextEditingController();
   final phoneCtrl = TextEditingController();
   final otherPhoneCtrl = TextEditingController();
+
+  // ── "Same as end user" ──────────────────────────────────────────────────
+  // When on, the Contact Person / Buyer and Contact Phone are auto-filled from
+  // the end-user's name and phone, and kept in sync as those fields change —
+  // mirroring the web form. Purely local, so it behaves identically offline.
+  final sameAsEndUser = false.obs;
+
+  void setSameAsEndUser(bool value) {
+    sameAsEndUser.value = value;
+    if (value) _syncContactFromEndUser();
+  }
+
+  /// Called from the end-user name fields' onChanged so the contact fields
+  /// mirror keystrokes live while "same as end user" is ticked.
+  void onEndUserIdentityChanged(String _) => _syncContactFromEndUser();
+
+  void _syncContactFromEndUser() {
+    if (!sameAsEndUser.value) return;
+    final fullName = [endUserNameCtrl.text.trim(), endUserSurnameCtrl.text.trim()]
+        .where((s) => s.isNotEmpty)
+        .join(' ');
+    contactPersonCtrl.text = fullName;
+    contactPhoneCtrl.text = phoneCtrl.text;
+  }
 
   // ── End-user phone: live uniqueness ─────────────────────────────────────
   //
@@ -112,6 +151,8 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
 
   /// Debounced so a fast typist triggers one check, not twelve.
   void onEndUserPhoneChanged(String value) {
+    // Live-mirror into Contact Phone when "same as end user" is on.
+    _syncContactFromEndUser();
     _phoneCheckDebounce?.cancel();
     final trimmed = value.trim();
 
@@ -303,12 +344,62 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
   final stoveImageSet = false.obs;
   final stoveImageFile = Rxn<File>();
   final stoveImageUploadProgress = Rxn<double>();
+  // Remote preview for an existing sale's stove/agreement photo (edit mode) —
+  // no local File exists for these until the user replaces them.
+  final existingStoveImageUrl = Rxn<String>();
   File? agreementImage;
   String? agreementImageId;
   final agreementImageSet = false.obs;
   final agreementImageFile = Rxn<File>();
   final agreementImageUploadProgress = Rxn<double>();
-  bool get hasSignature => signatureController.isNotEmpty || _existingSignatureB64 != null;
+  final existingAgreementImageUrl = Rxn<String>();
+  bool get hasSignature =>
+      signatureController.isNotEmpty ||
+      signatureImageFile.value != null ||
+      _existingSignatureB64 != null;
+  String? get existingSignatureB64 => _existingSignatureB64;
+
+  /// Signature drawing is LOCKED by default; the pad only captures strokes once
+  /// the user toggles this on. Prevents accidental marks while scrolling the
+  /// form up/down on a touch screen.
+  final signatureDrawEnabled = false.obs;
+
+  /// An uploaded signature image (an alternative to drawing on the pad). When
+  /// set, its bytes are carried in [_existingSignatureB64] and sent as the
+  /// signature, and this file is shown as a preview.
+  final signatureImageFile = Rxn<File>();
+
+  /// Bumped whenever signature state changes (draw end, upload, clear) so Obx
+  /// widgets re-read [hasSignature] — the pad controller itself is not an Rx.
+  final signatureRevision = 0.obs;
+
+  /// Pick a signature image from the gallery instead of drawing it. Routed
+  /// through [pickImage] so it gets the same downscale/compress + lost-capture
+  /// recovery that keeps low-memory devices from crashing.
+  Future<void> pickSignatureImage() => pickImage(ImageSource.gallery, field: 'signature');
+
+  /// Capture a signature photo with the camera. Uses the identical
+  /// memory-safe capture path as the stove photo.
+  Future<void> takeSignaturePhoto() => pickImage(ImageSource.camera, field: 'signature');
+
+  /// Resolve the signature to raw base64 for the payload/queue. Priority:
+  /// a freshly drawn signature, then a captured/uploaded image, then a
+  /// signature carried over from an edited queued sale.
+  Future<String?> _resolveSignatureB64() async {
+    final sigBytes = await signatureController.toPngBytes();
+    if (sigBytes != null) return base64Encode(sigBytes);
+    final file = signatureImageFile.value;
+    if (file != null) return base64Encode(await file.readAsBytes());
+    return _existingSignatureB64;
+  }
+
+  /// Clears both a drawn signature and any uploaded signature image.
+  void clearSignature() {
+    signatureController.clear();
+    _existingSignatureB64 = null;
+    signatureImageFile.value = null;
+    signatureRevision.value++;
+  }
 
   // Option lists
   final paymentMethods = ['Cash', 'Bank Transfer', 'POS', 'Mobile Money'];
@@ -358,6 +449,14 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
     // Observe app lifecycle so we can pull back a camera capture that Android
     // discarded when it killed the process mid-shot (see recoverLostImage).
     WidgetsBinding.instance.addObserver(this);
+    // Keep [hasSignature]-driven Obx widgets in sync — the pad controller isn't
+    // an Rx, so we bump a revision each time a stroke finishes.
+    signatureController.onDrawEnd = () => signatureRevision.value++;
+    // Keep Contact Person / Phone mirrored to the end-user details while the
+    // "same as end user" box is ticked (matches the web form's auto-fill).
+    endUserNameCtrl.addListener(_syncContactFromEndUser);
+    endUserSurnameCtrl.addListener(_syncContactFromEndUser);
+    phoneCtrl.addListener(_syncContactFromEndUser);
     // Also attempt recovery immediately in case this controller is being
     // recreated right after such a kill.
     recoverLostImage();
@@ -662,6 +761,7 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
     salesDate.value = DateTime.now();
 
     // Step 2 — Contact
+    sameAsEndUser.value = false;
     contactPersonCtrl.clear();
     contactPhoneCtrl.clear();
     endUserNameCtrl.clear();
@@ -719,6 +819,9 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
     clearImage('agreement');
     signatureController.clear();
     _existingSignatureB64 = null;
+    signatureImageFile.value = null;
+    signatureDrawEnabled.value = false;
+    signatureRevision.value++;
 
     // Reset navigation to the first step.
     currentStep.value = 0;
@@ -726,6 +829,10 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
       pageController.jumpToPage(0);
     }
     _editingQueueId = null;
+    editingSaleId.value = null;
+    _editingOriginalPhoneKey = null;
+    _hydrated = false;
+    _hydratedSaleId = null;
   }
 
   /// Loads a queued (pending/failed) sale back into the form for editing.
@@ -744,8 +851,19 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
     // Contact / end user
     contactPersonCtrl.text = payload['contactPerson']?.toString() ?? '';
     contactPhoneCtrl.text = payload['contactPhone']?.toString() ?? '';
-    endUserNameCtrl.text = payload['endUserName']?.toString() ?? '';
-    endUserSurnameCtrl.text = payload['endUserSurname']?.toString() ?? '';
+    // endUserName is stored combined ("first surname"); split it back so the
+    // first-name / surname fields repopulate. Legacy drafts may still carry a
+    // separate endUserSurname — honour it when present.
+    final queuedFullName = (payload['endUserName']?.toString() ?? '').trim();
+    final queuedSurname = payload['endUserSurname']?.toString();
+    if (queuedSurname != null && queuedSurname.isNotEmpty) {
+      endUserNameCtrl.text = queuedFullName;
+      endUserSurnameCtrl.text = queuedSurname;
+    } else {
+      final parts = queuedFullName.isEmpty ? <String>[] : queuedFullName.split(RegExp(r'\s+'));
+      endUserNameCtrl.text = parts.isNotEmpty ? parts.first : '';
+      endUserSurnameCtrl.text = parts.length > 1 ? parts.sublist(1).join(' ') : '';
+    }
     akaCtrl.text = payload['aka']?.toString() ?? '';
     phoneCtrl.text = payload['phone']?.toString() ?? '';
     otherPhoneCtrl.text = payload['otherPhone']?.toString() ?? '';
@@ -847,6 +965,142 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
         _logger.w('Failed to decode queued images: $e');
       }
     }
+  }
+
+  /// Loads an already-synced sale into the form for editing. Fetches full detail
+  /// (address, signature, terms) via get-sale, then submitting calls update-sale
+  /// (online only — see [_submitEdit]).
+  Future<void> hydrateFromSale(SaleModel listSale) async {
+    if (_hydratedSaleId == listSale.id) return;
+    _hydratedSaleId = listSale.id;
+    _hydrated = true;
+    editingSaleId.value = listSale.id;
+
+    // Pull full detail; fall back to the list row if the fetch fails.
+    SaleModel sale = listSale;
+    try {
+      final resp = await _service.getSale(listSale.id);
+      if (resp.success && resp.data != null) {
+        final raw = resp.data;
+        if (raw is Map) {
+          final inner = raw['sale'] ?? raw['data'] ?? raw;
+          if (inner is Map) {
+            sale = SaleModel.fromJson(Map<String, dynamic>.from(inner));
+          }
+        }
+      }
+    } catch (e) {
+      _logger.w('get-sale for edit failed: $e');
+    }
+
+    transactionId.value = sale.transactionId;
+    salesDate.value = sale.salesDate ?? DateTime.now();
+
+    // End user full name → first + surname (mirrors web populateFormDataForEdit).
+    final fullName = (sale.endUserName ?? '').trim();
+    final parts = fullName.isEmpty ? <String>[] : fullName.split(RegExp(r'\s+'));
+    endUserNameCtrl.text = parts.isNotEmpty ? parts.first : '';
+    endUserSurnameCtrl.text = parts.length > 1 ? parts.sublist(1).join(' ') : '';
+    akaCtrl.text = sale.aka ?? '';
+    phoneCtrl.text = sale.phone ?? '';
+    contactPersonCtrl.text = sale.contactPerson ?? '';
+    contactPhoneCtrl.text = sale.contactPhone ?? '';
+    otherPhoneCtrl.text = sale.otherPhone ?? '';
+    // Editing a sale owns its phone — don't flag it as a duplicate of itself.
+    _editingOriginalPhoneKey = PhoneUtils.normalizePhone(phoneCtrl.text);
+    // Detect whether the contact person actually IS the end user (matches web
+    // behaviour) so the "Same as end user" checkbox reflects saved data instead
+    // of always starting unticked on edit.
+    sameAsEndUser.value = contactPersonCtrl.text.trim() == fullName &&
+        contactPhoneCtrl.text.trim() == phoneCtrl.text.trim();
+    phoneDuplicateError.value = null;
+
+    // Location — canonicalized to the geo catalogue's casing so the pickers show
+    // the saved values (mirrors web normalizeSaleLocation).
+    final loc = _canonicalizeLocation(sale.state, sale.lga);
+    selectedState.value = loc.$1;
+    selectedLga.value = loc.$2;
+    fullAddressCtrl.text = sale.address ?? '';
+    latitude.value = sale.latitude;
+    longitude.value = sale.longitude;
+
+    // Partner / branch — read-only in edit mode. selectedOrgId must still be
+    // populated even though the picker itself is locked: validateAll() requires
+    // it for super admin / ACSL agents, and it's otherwise only ever set via
+    // the (hidden-in-edit) branch picker.
+    partnerNameCtrl.text = sale.partnerName ?? '';
+    retailerBranchCtrl.text = sale.retailerBranch ?? '';
+    selectedPartnerName.value = sale.partnerName ?? '';
+    selectedOrgId.value = sale.organizationId ?? '';
+
+    // Stove — locked in edit mode.
+    if (sale.stoveSerialNo != null || sale.stoveId != null) {
+      selectedStove.value = StoveModel(
+        stoveId: sale.stoveId ?? sale.stoveSerialNo ?? '',
+        serialNo: sale.stoveSerialNo,
+      );
+    }
+
+    // Amount (locked) + amount received.
+    amountCtrl.text = _fmtAmountInput(sale.amount);
+    amountReceivedCtrl.text = _fmtAmountInput(sale.amountReceived);
+
+    // Payment model — locked in edit mode.
+    final pmId = sale.paymentModelId ?? sale.selectedModelId;
+    if (sale.isInstallment == true && pmId != null) {
+      selectedModel.value = paymentModels.firstWhereOrNull((m) => m.id == pmId);
+    }
+
+    // Stove set.
+    potQuantity.value = sale.potQuantity ?? 1;
+    heatRetentionDevice.value = sale.heatRetentionDevice ?? false;
+
+    // Cooking habits.
+    previousStoveType.value = sale.previousStoveType ?? '';
+    previousStoveOtherCtrl.text = sale.previousStoveOther ?? '';
+    mealsPerDayCtrl.text = sale.mealsPerDay ?? '';
+    cookingFuelSourceCtrl.text = sale.cookingFuelSource ?? '';
+    cookingLocationCtrl.text = sale.cookingLocation ?? '';
+
+    // Terms.
+    final terms = sale.termsAccepted ?? const {};
+    tcPoaGoverned.value = terms['poaGoverned'] == true;
+    tcMonitoring.value = terms['monitoring'] == true;
+    tcNoResell.value = terms['noResell'] == true;
+    tcEmissions.value = terms['emissionReductions'] == true;
+    tcNoExport.value = terms['noExport'] == true;
+    tcDemonstration.value = terms['demonstration'] == true;
+
+    // Existing image ids preserved so an untouched edit keeps its photos.
+    stoveImageId = sale.stoveImageId;
+    agreementImageId = sale.agreementImageId;
+    stoveImageSet.value = sale.stoveImageId != null;
+    agreementImageSet.value = sale.agreementImageId != null;
+    existingStoveImageUrl.value = sale.stoveImageUrl;
+    existingAgreementImageUrl.value = sale.agreementImageUrl;
+
+    // Existing signature (base64) reused unless the user re-signs/uploads.
+    _existingSignatureB64 = sale.signature;
+    signatureRevision.value++;
+  }
+
+  /// Canonicalize a persisted state/LGA to the geo catalogue's exact casing so
+  /// the strict-match pickers render the saved values. Returns (state, lga).
+  (String, String) _canonicalizeLocation(String? rawState, String? rawLga) {
+    final geo = Get.find<GeoDataService>();
+    var state = (rawState ?? '').trim();
+    final matchState =
+        geo.states.firstWhereOrNull((s) => s.toLowerCase() == state.toLowerCase());
+    if (matchState != null) state = matchState;
+
+    var lga = (rawLga ?? '').trim();
+    if (state.isNotEmpty && lga.isNotEmpty) {
+      final matchLga = geo
+          .getLgas(state)
+          .firstWhereOrNull((l) => l.toLowerCase() == lga.toLowerCase());
+      if (matchLga != null) lga = matchLga;
+    }
+    return (state, lga);
   }
 
   String _fmtAmountInput(dynamic v) {
@@ -1403,9 +1657,8 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
     if (fullAddressCtrl.text.trim().isEmpty) {
       errors.add(const ValidationError(step: 2, stepTitle: 'Location', field: 'Address', message: 'Full address is required'));
     }
-    if (latitude.value == null || longitude.value == null) {
-      errors.add(const ValidationError(step: 2, stepTitle: 'Location', field: 'GPS Coordinates', message: 'Location is required — use the map or GPS button'));
-    }
+    // GPS is OPTIONAL. A raw address (not on Google Maps) can be typed manually
+    // and submitted without coordinates — they default to 0,0 in _buildPayload.
 
     // Step 4 — Sale Details
     final amt = double.tryParse(amountCtrl.text.replaceAll(',', ''));
@@ -1470,12 +1723,14 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
       stoveImageFile.value = null;
       stoveImageUploadProgress.value = null;
       stoveImageSet.value = false;
+      existingStoveImageUrl.value = null;
     } else if (field == 'agreement') {
       agreementImage = null;
       agreementImageId = null;
       agreementImageFile.value = null;
       agreementImageUploadProgress.value = null;
       agreementImageSet.value = false;
+      existingAgreementImageUrl.value = null;
     } else if (field == 'paymentProof') {
       paymentProofImage = null;
       paymentProofImageId = null;
@@ -1491,23 +1746,12 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
   String? _pendingImageField;
 
   Future<void> pickImage(ImageSource source, {required String field}) async {
-    // Camera needs an explicit grant; the gallery does not (the system photo
-    // picker carries its own). Without this check a denied camera permission
-    // made the "take photo" button do NOTHING while upload kept working.
-    if (source == ImageSource.camera) {
-      final result = await Get.find<PermissionService>().ensureCamera();
-      if (result == CameraPermissionResult.permanentlyDenied) {
-        _showError('Camera access is blocked. Enable it in Settings > Apps > '
-            'Atmosfair > Permissions, or upload from your gallery instead.');
-        return;
-      }
-      if (result == CameraPermissionResult.denied) {
-        _showError('Camera permission is needed to take the photo. '
-            'You can also upload from your gallery.');
-        return;
-      }
-    }
-
+    // No app-level camera permission is requested here by design. image_picker
+    // launches the system camera app (ACTION_IMAGE_CAPTURE), which carries its
+    // own permission — and the app no longer declares CAMERA in the manifest,
+    // so there is nothing to grant. Gating here was the source of the recurring
+    // "camera access is blocked" false negative. The gallery picker likewise
+    // carries its own grant. Genuine failures are caught below.
     _pendingImageField = field;
     XFile? xFile;
     try {
@@ -1532,9 +1776,13 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
       // camera look like a dead button with no explanation.
       _logger.w('pickImage failed for $field: $e', error: e, stackTrace: st);
       _pendingImageField = null;
-      _showError(source == ImageSource.camera
-          ? 'Could not open the camera. Please try again, or upload from your gallery.'
-          : 'Could not open the gallery. Please try again.');
+      if (source == ImageSource.camera) {
+        // The camera couldn't open — most often because it's genuinely blocked.
+        // Offer the direct route to Settings plus the gallery fallback.
+        _showCameraBlockedDialog();
+      } else {
+        _showError('Could not open the gallery. Please try again.');
+      }
       return;
     }
     _pendingImageField = null;
@@ -1587,10 +1835,21 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
       paymentProofFile.value = file;
       paymentProofUploadProgress.value = null;
       paymentProofSet.value = true;
+    } else if (field == 'signature') {
+      // A captured/uploaded signature image. Its bytes are encoded to base64 at
+      // submit time (see _resolveSignatureB64), so there is nothing to upload.
+      signatureImageFile.value = file;
+      signatureController.clear();
+      signatureRevision.value++;
     }
   }
 
   Future<void> doSubmit() async {
+    // Editing an already-synced sale takes a separate, online-only path.
+    if (isEditingSale) {
+      await _submitEdit();
+      return;
+    }
     isSubmitting.value = true;
     try {
       final payload = _buildPayload();
@@ -1625,13 +1884,8 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
       }
 
       // Signature goes as raw base64 in the payload (matches frontend format).
-      // Fall back to the signature carried over from an edited queued sale.
-      final sigBytes = await signatureController.toPngBytes();
-      if (sigBytes != null) {
-        payload['signature'] = base64Encode(sigBytes);
-      } else if (_existingSignatureB64 != null) {
-        payload['signature'] = _existingSignatureB64;
-      }
+      final sig = await _resolveSignatureB64();
+      if (sig != null) payload['signature'] = sig;
 
       if (stoveImageId != null) payload['stoveImageId'] = stoveImageId;
       if (agreementImageId != null) payload['agreementImageId'] = agreementImageId;
@@ -1671,17 +1925,60 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
     }
   }
 
+  /// Update path for an already-synced sale. Online-only by decision: unlike a
+  /// fresh create, an edit is never queued offline.
+  Future<void> _submitEdit() async {
+    if (isOfflineMode.value || !_connectivity.isOnline.value) {
+      _showError('Editing a sale requires an internet connection. '
+          'Reconnect and try again.');
+      return;
+    }
+    isSubmitting.value = true;
+    try {
+      final payload = _buildPayload();
+
+      // Upload any newly-picked images (re-picking clears the id so it re-uploads).
+      if (stoveImageId == null && stoveImage != null) {
+        stoveImageUploadProgress.value = -1;
+        final resp = await _uploadFile(stoveImage, 'stove_image');
+        stoveImageId = resp?.id;
+        stoveImageUploadProgress.value = resp != null ? 1.0 : null;
+      }
+      if (agreementImageId == null && agreementImage != null) {
+        agreementImageUploadProgress.value = -1;
+        final resp = await _uploadFile(agreementImage, 'agreement_image');
+        agreementImageId = resp?.id;
+        agreementImageUploadProgress.value = resp != null ? 1.0 : null;
+      }
+
+      final sig = await _resolveSignatureB64();
+      if (sig != null) payload['signature'] = sig;
+      if (stoveImageId != null) payload['stoveImageId'] = stoveImageId;
+      if (agreementImageId != null) payload['agreementImageId'] = agreementImageId;
+
+      final resp = await _service.updateSale(editingSaleId.value!, payload);
+      if (resp.success) {
+        _showSuccess('Sale updated successfully!');
+        resetForm();
+        rootNavigatorKey.currentState?.pop(true);
+      } else {
+        _showError(resp.message);
+      }
+    } catch (e) {
+      _logger.e('Update sale error: $e');
+      _showError('Failed to update sale. Please try again.');
+    } finally {
+      isSubmitting.value = false;
+    }
+  }
+
   Future<void> _saveOffline(Map<String, dynamic> payload) async {
     final images = <String, String>{};
     if (stoveImage != null) images['stove_image'] = base64Encode(await stoveImage!.readAsBytes());
     if (agreementImage != null) images['agreement_image'] = base64Encode(await agreementImage!.readAsBytes());
     if (paymentProofImage != null) images['payment_proof'] = base64Encode(await paymentProofImage!.readAsBytes());
-    final sigBytes = await signatureController.toPngBytes();
-    if (sigBytes != null) {
-      images['signature'] = base64Encode(sigBytes);
-    } else if (_existingSignatureB64 != null) {
-      images['signature'] = _existingSignatureB64!;
-    }
+    final sig = await _resolveSignatureB64();
+    if (sig != null) images['signature'] = sig;
 
     if (_editingQueueId != null) {
       // Editing a previously-queued sale — update that row in place instead of
@@ -1727,8 +2024,13 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
       'salesDate': salesDate.value.toIso8601String().substring(0, 10),
       'contactPerson': contactPersonCtrl.text,
       'contactPhone': contactPhoneCtrl.text,
-      'endUserName': endUserNameCtrl.text,
-      'endUserSurname': endUserSurnameCtrl.text,
+      // Web sends endUserName as the COMBINED "first surname" and no separate
+      // surname field (see salesFormUtils.transformFormDataForAPI). Sending them
+      // split caused the surname to be dropped on the backend, which then
+      // surfaced as surname/aka swapping on edit hydration.
+      'endUserName': [endUserNameCtrl.text.trim(), endUserSurnameCtrl.text.trim()]
+          .where((s) => s.isNotEmpty)
+          .join(' '),
       'aka': akaCtrl.text,
       'phone': phoneCtrl.text,
       'otherPhone': otherPhoneCtrl.text,
@@ -1740,8 +2042,9 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
         'city': '',
         'state': selectedState.value,
         'country': 'Nigeria',
-        'latitude': latitude.value,
-        'longitude': longitude.value,
+        // GPS optional — default to 0,0 when the address was typed manually.
+        'latitude': latitude.value ?? 0,
+        'longitude': longitude.value ?? 0,
       },
       'partnerName': partnerNameCtrl.text,
       'retailerBranch': retailerBranchCtrl.text,
@@ -1781,6 +2084,43 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
 
   void _showError(String msg) {
     toastification.show(title: Text(msg), type: ToastificationType.error, autoCloseDuration: const Duration(seconds: 4));
+  }
+
+  /// Camera was permanently denied — a toast can't fix that, so offer a direct
+  /// jump to the OS settings screen (the only place the block can be lifted),
+  /// plus the gallery/upload fallback.
+  void _showCameraBlockedDialog() {
+    // This app uses MaterialApp.router (not GetMaterialApp), so Get.dialog has
+    // no navigator — use the router's root context for showDialog.
+    final ctx = rootNavigatorKey.currentContext;
+    if (ctx == null) {
+      _showError('Camera access is blocked. Enable it in your device Settings, '
+          'or upload from your gallery instead.');
+      return;
+    }
+    showDialog(
+      context: ctx,
+      builder: (dialogCtx) => AlertDialog(
+        title: const Text('Camera access is blocked'),
+        content: const Text(
+          'Camera permission is turned off for this app. Enable it in Settings '
+          'to take a photo, or upload from your gallery instead.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogCtx).pop(),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.of(dialogCtx).pop();
+              Get.find<PermissionService>().openSettings();
+            },
+            child: const Text('Open Settings'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _showSuccess(String msg) {

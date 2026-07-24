@@ -3,7 +3,12 @@
     <!-- Add necessary permissions here -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <uses-permission android:name="android.permission.CAMERA" />
+    <!-- CAMERA intentionally NOT declared. image_picker captures photos by
+         launching the system camera app via ACTION_IMAGE_CAPTURE, which needs
+         no app-level camera permission. Declaring CAMERA instead REQUIRES a
+         runtime grant and throws a SecurityException whenever the OS grant and
+         permission_handler's cached state drift apart — that was the recurring
+         "camera access is blocked" bug. -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <!-- Required for url_launcher to open https/http URLs on Android 11+ -->

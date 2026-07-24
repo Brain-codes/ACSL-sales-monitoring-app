@@ -1219,13 +1219,57 @@ class _SaleDetailSheet extends StatelessWidget {
           const Divider(height: 1),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-            child: SizedBox(
-              width: double.infinity,
-              child: OutlinedButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Close'),
-              ),
-            ),
+            child: Obx(() {
+              // Editing a synced sale is online-only (fetches full detail via
+              // get-sale, submits via update-sale — neither works offline), so
+              // the entry point itself stays disabled until the link is up.
+              final online = Get.find<ConnectivityService>().isOnline.value;
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (!online)
+                    const Padding(
+                      padding: EdgeInsets.only(bottom: 8),
+                      child: Text(
+                        'Editing requires an internet connection.',
+                        style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+                      ),
+                    ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () => Navigator.of(context).pop(),
+                          child: const Text('Close'),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        flex: 2,
+                        child: ElevatedButton.icon(
+                          icon: const Icon(Icons.edit_outlined, size: 18),
+                          label: const Text('Edit Sale'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.brandPrimary,
+                            foregroundColor: Colors.white,
+                          ),
+                          onPressed: !online
+                              ? null
+                              : () async {
+                                  Navigator.of(context).pop();
+                                  // Open the create form in edit mode (online-only update).
+                                  await context.push('/sales/create', extra: sale);
+                                  if (Get.isRegistered<SalesListController>()) {
+                                    await Get.find<SalesListController>().fetchSales();
+                                  }
+                                },
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              );
+            }),
           ),
         ],
       ),

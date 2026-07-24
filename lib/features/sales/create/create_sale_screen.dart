@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
@@ -8,6 +9,7 @@ import 'package:intl/intl.dart';
 import 'package:signature/signature.dart';
 import 'package:stove_transaction/core/constants/app_colors.dart';
 import 'package:stove_transaction/core/utils/formatters.dart';
+import 'package:stove_transaction/features/sales/models/sale_model.dart';
 import 'package:stove_transaction/core/widgets/app_text_field.dart';
 import 'package:stove_transaction/core/widgets/offline_banner.dart';
 import 'package:stove_transaction/core/widgets/primary_button.dart';
@@ -18,7 +20,10 @@ class CreateSaleScreen extends StatelessWidget {
   /// When set, the form is editing this queued (pending/failed) sale instead of
   /// creating a new one.
   final int? editQueueId;
-  const CreateSaleScreen({super.key, this.editQueueId});
+
+  /// When set, the form is editing this already-SYNCED sale (online-only update).
+  final SaleModel? editSale;
+  const CreateSaleScreen({super.key, this.editQueueId, this.editSale});
 
   static const _stepTitles = [
     'Transaction Info',
@@ -35,13 +40,21 @@ class CreateSaleScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = Get.put(CreateSaleController());
+    // Reflect edit-mode synchronously so the very first build already locks the
+    // partner/stove/amount fields (Step 1's partner check isn't reactive).
+    if (editSale != null && c.editingSaleId.value != editSale!.id) {
+      c.editingSaleId.value = editSale!.id;
+    }
     if (editQueueId != null) {
       // Hydrate the form from the queued sale after the first frame so its
       // async load (images, partners) doesn't block the initial build.
       WidgetsBinding.instance.addPostFrameCallback((_) => c.hydrateFromQueue(editQueueId!));
-    } else if (c.isEditingQueued) {
+    } else if (editSale != null) {
+      // Editing an already-synced sale — pull full detail and pre-fill.
+      WidgetsBinding.instance.addPostFrameCallback((_) => c.hydrateFromSale(editSale!));
+    } else if (c.isEditingQueued || c.isEditingSale) {
       // The persistent controller was left in edit mode from a previous, aborted
-      // queued-sale edit — start this fresh create from a clean slate.
+      // edit — start this fresh create from a clean slate.
       WidgetsBinding.instance.addPostFrameCallback((_) => c.resetForm());
     }
     return Scaffold(
@@ -51,7 +64,11 @@ class CreateSaleScreen extends StatelessWidget {
           // Triple-tap fills the form with test data (dev backdoor).
           onTap: c.onTitleTap,
           child: Obx(() => Text(
-            c.singleViewMode.value ? 'Create Sale' : _stepTitles[c.currentStep.value],
+            c.isEditingSale
+                ? 'Edit Sale'
+                : c.singleViewMode.value
+                    ? 'Create Sale'
+                    : _stepTitles[c.currentStep.value],
           )),
         ),
         leading: IconButton(
@@ -277,7 +294,7 @@ class _SingleViewSubmitButton extends StatelessWidget {
           color: AppColors.white,
           border: Border(top: BorderSide(color: AppColors.borderColor))),
       child: Obx(() => PrimaryButton(
-            label: 'Submit Sale',
+            label: c.isEditingSale ? 'Update Sale' : 'Submit Sale',
             loading: c.isSubmitting.value,
             onPressed: () => _handleSubmitRequest(context, c),
           )),
@@ -392,8 +409,21 @@ class _Step1TransactionState extends State<_Step1Transaction> {
             readOnly: true)),
         const SizedBox(height: 16),
 
+        // ── Partner / branch — LOCKED (read-only) when editing a synced sale ──
+        if (c.isEditingSale) ...[
+          AppTextField(
+              label: 'Partner',
+              controller: c.partnerNameCtrl,
+              readOnly: true),
+          const SizedBox(height: 12),
+          AppTextField(
+              label: 'Retailer Branch / CSO',
+              controller: c.retailerBranchCtrl,
+              readOnly: true),
+          const SizedBox(height: 16),
+        ]
         // ── Partner picker (ACSL agents + super admin) ────────────────────
-        if (c.needsPartnerPicker) ...[
+        else if (c.needsPartnerPicker) ...[
           Row(
             children: [
               const Text('Partner *',
@@ -600,17 +630,21 @@ class _Step1TransactionState extends State<_Step1Transaction> {
                   style: TextStyle(fontWeight: FontWeight.w500, fontSize: 13)),
               subtitle:
                   Text(DateFormat('d MMMM yyyy').format(c.salesDate.value)),
-              trailing: const Icon(Icons.calendar_today_outlined,
-                  color: AppColors.brandPrimary),
-              onTap: () async {
-                final picked = await showDatePicker(
-                  context: context,
-                  initialDate: c.salesDate.value,
-                  firstDate: DateTime(2020),
-                  lastDate: DateTime.now(),
-                );
-                if (picked != null) c.salesDate.value = picked;
-              },
+              trailing: c.isEditingSale
+                  ? null
+                  : const Icon(Icons.calendar_today_outlined,
+                      color: AppColors.brandPrimary),
+              onTap: c.isEditingSale
+                  ? null
+                  : () async {
+                      final picked = await showDatePicker(
+                        context: context,
+                        initialDate: c.salesDate.value,
+                        firstDate: DateTime(2020),
+                        lastDate: DateTime.now(),
+                      );
+                      if (picked != null) c.salesDate.value = picked;
+                    },
             )),
       ],
     );
@@ -629,29 +663,20 @@ class _Step2Contact extends StatelessWidget {
     final col = Column(
       children: [
         const SectionHeader(title: 'Buyer & End User'),
-        AppTextField(
-            label: 'Contact Person / Buyer',
-            controller: c.contactPersonCtrl,
-            required: true,
-            textInputAction: TextInputAction.next),
-        const SizedBox(height: 12),
-        AppTextField(
-            label: 'Contact Phone',
-            controller: c.contactPhoneCtrl,
-            keyboardType: TextInputType.phone,
-            required: true,
-            textInputAction: TextInputAction.next),
-        const SizedBox(height: 12),
+        // Field order mirrors the web form: end-user details first, then the
+        // contact person / buyer.
         AppTextField(
             label: 'End User First Name',
             controller: c.endUserNameCtrl,
             required: true,
+            onChanged: c.onEndUserIdentityChanged,
             textInputAction: TextInputAction.next),
         const SizedBox(height: 12),
         AppTextField(
             label: 'End User Surname',
             controller: c.endUserSurnameCtrl,
             required: true,
+            onChanged: c.onEndUserIdentityChanged,
             textInputAction: TextInputAction.next),
         const SizedBox(height: 12),
         AppTextField(
@@ -670,12 +695,34 @@ class _Step2Contact extends StatelessWidget {
             label: 'AKA',
             controller: c.akaCtrl,
             textInputAction: TextInputAction.next),
+        const SizedBox(height: 4),
+        Obx(() => CheckboxListTile(
+              value: c.sameAsEndUser.value,
+              onChanged: (v) => c.setSameAsEndUser(v ?? false),
+              activeColor: AppColors.brandPrimary,
+              contentPadding: EdgeInsets.zero,
+              controlAffinity: ListTileControlAffinity.leading,
+              dense: true,
+              title: const Text(
+                'Select if End User is same as Contact Person',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+              ),
+            )),
+        const SizedBox(height: 8),
+        AppTextField(
+            label: 'Contact Person / Buyer',
+            controller: c.contactPersonCtrl,
+            required: true,
+            textInputAction: TextInputAction.next),
         const SizedBox(height: 12),
         AppTextField(
-            label: 'Other Phone',
-            controller: c.otherPhoneCtrl,
+            label: 'Contact Phone',
+            controller: c.contactPhoneCtrl,
             keyboardType: TextInputType.phone,
+            required: true,
             textInputAction: TextInputAction.done),
+        // Note: the web form has no "Other Phone" input — `otherPhone` is kept
+        // in the payload (empty) purely to match the web schema. No UI field.
       ],
     );
     if (singleView) return Padding(padding: const EdgeInsets.all(16), child: col);
@@ -922,6 +969,14 @@ class _Step3LocationState extends State<_Step3Location> {
             ),
           ],
         ),
+        const Padding(
+          padding: EdgeInsets.only(top: 6),
+          child: Text(
+            'Type the address freely — you don\'t have to pick a Google result. '
+            'Using the map pin for GPS is optional.',
+            style: TextStyle(fontSize: 11, color: AppColors.textMuted),
+          ),
+        ),
         if (_suggestions.isNotEmpty)
           Container(
             margin: const EdgeInsets.only(top: 2),
@@ -1140,7 +1195,11 @@ class _Step5SaleDetails extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Obx(() {
-            final partnerRequired = c.needsPartnerPicker && c.selectedOrgId.value.isEmpty;
+            // In edit mode the stove is locked and pre-set, so never gate it on
+            // partner selection (a synced sale carries no local org id).
+            final partnerRequired = !c.isEditingSale &&
+                c.needsPartnerPicker &&
+                c.selectedOrgId.value.isEmpty;
             final isLoading = c.isLoadingStoves.value;
             if (isLoading) {
               return const Row(
@@ -1189,12 +1248,15 @@ class _Step5SaleDetails extends StatelessWidget {
                       ),
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  IconButton(
-                    onPressed: () { c.selectedStove.value = null; c.stoveSearchQuery.value = ''; },
-                    icon: const Icon(Icons.close, color: AppColors.textMuted),
-                    tooltip: 'Clear selection',
-                  ),
+                  // Stove serial is locked when editing a synced sale.
+                  if (!c.isEditingSale) ...[
+                    const SizedBox(width: 8),
+                    IconButton(
+                      onPressed: () { c.selectedStove.value = null; c.stoveSearchQuery.value = ''; },
+                      icon: const Icon(Icons.close, color: AppColors.textMuted),
+                      tooltip: 'Clear selection',
+                    ),
+                  ],
                 ],
               );
             }
@@ -1253,7 +1315,10 @@ class _Step5SaleDetails extends StatelessWidget {
                     child: Text(m.dropdownLabel, overflow: TextOverflow.ellipsis),
                   )),
             ],
-            onChanged: (v) => c.selectPaymentType(v == 'full_payment' ? null : v),
+            // Payment type is locked when editing a synced sale.
+            onChanged: c.isEditingSale
+                ? null
+                : (v) => c.selectPaymentType(v == 'full_payment' ? null : v),
             decoration: const InputDecoration(),
           ),
           if (c.paymentCatalogueEmpty) ...[
@@ -1325,13 +1390,14 @@ class _Step5SaleDetails extends StatelessWidget {
             const SizedBox(height: 16),
           ],
 
-          // Sale amount — editable even for installment (model only pre-fills it)
+          // Sale amount — editable on create; LOCKED when editing a synced sale.
           AppTextField(
             label: 'Sale Amount (₦)',
             controller: c.amountCtrl,
             keyboardType: TextInputType.number,
             inputFormatters: [ThousandsSeparatorInputFormatter()],
             required: true,
+            readOnly: c.isEditingSale,
             textInputAction: TextInputAction.next,
           ),
           const SizedBox(height: 16),
@@ -1689,6 +1755,7 @@ class _Step9Media extends StatelessWidget {
             setObs: c.stoveImageSet,
             fileObs: c.stoveImageFile,
             uploadProgressObs: c.stoveImageUploadProgress,
+            existingUrlObs: c.existingStoveImageUrl,
             onClear: () => c.clearImage('stove'),
           ),
           const SizedBox(height: 12),
@@ -1701,36 +1768,171 @@ class _Step9Media extends StatelessWidget {
             setObs: c.agreementImageSet,
             fileObs: c.agreementImageFile,
             uploadProgressObs: c.agreementImageUploadProgress,
+            existingUrlObs: c.existingAgreementImageUrl,
             onClear: () => c.clearImage('agreement'),
           ),
           const SizedBox(height: 16),
           const Text('Customer Signature *',
               style: TextStyle(fontWeight: FontWeight.w500, fontSize: 13)),
           const SizedBox(height: 8),
-          Container(
-            height: 160,
-            decoration: BoxDecoration(
-              color: AppColors.white,
-              border: Border.all(color: AppColors.borderColor),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: Signature(
-                  controller: c.signatureController,
-                  backgroundColor: AppColors.white),
-            ),
-          ),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              TextButton.icon(
-                icon: const Icon(Icons.clear, size: 16),
-                label: const Text('Clear'),
-                onPressed: () => c.signatureController.clear(),
-              ),
-            ],
-          ),
+          Obx(() {
+            c.signatureRevision.value; // rebuild when an existing/drawn/uploaded signature changes
+            final hasUpload = c.signatureImageFile.value != null;
+            final drawOn = c.signatureDrawEnabled.value;
+            // A signature carried over from the server (edit mode, untouched) —
+            // shown read-only until the user chooses to draw/upload/capture a new one.
+            final existingSig = !hasUpload && !drawOn ? c.existingSignatureB64 : null;
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Activation toggle (draw). Disabled once an image is captured
+                // or uploaded — clear it first to draw instead.
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    icon: Icon(
+                        drawOn ? Icons.edit_outlined : Icons.lock_outline,
+                        size: 16),
+                    label: Text(drawOn ? 'Signing enabled' : 'Tap to sign'),
+                    onPressed:
+                        hasUpload ? null : () => c.signatureDrawEnabled.toggle(),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor:
+                          drawOn ? AppColors.white : AppColors.brandPrimary,
+                      backgroundColor: drawOn ? AppColors.brandPrimary : null,
+                      side: const BorderSide(color: AppColors.brandPrimary),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                // Capture or upload a signature image instead of drawing.
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        icon: const Icon(Icons.camera_alt_outlined, size: 16),
+                        label: const Text('Photo'),
+                        onPressed: c.takeSignaturePhoto,
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppColors.brandPrimary,
+                          side: const BorderSide(color: AppColors.brandPrimary),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        icon: const Icon(Icons.upload_outlined, size: 16),
+                        label: const Text('Upload'),
+                        onPressed: c.pickSignatureImage,
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppColors.brandPrimary,
+                          side: const BorderSide(color: AppColors.brandPrimary),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                // Either the uploaded image preview, the carried-over existing
+                // signature (edit mode), or the drawing pad.
+                if (hasUpload)
+                  Container(
+                    height: 160,
+                    width: double.infinity,
+                    decoration: BoxDecoration(
+                      color: AppColors.white,
+                      border: Border.all(color: AppColors.brandPrimary),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Image.file(c.signatureImageFile.value!,
+                          fit: BoxFit.contain),
+                    ),
+                  )
+                else if (existingSig != null && existingSig.isNotEmpty)
+                  Container(
+                    height: 160,
+                    width: double.infinity,
+                    decoration: BoxDecoration(
+                      color: AppColors.white,
+                      border: Border.all(color: AppColors.brandPrimary),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Image.memory(
+                        base64Decode(existingSig.contains(',')
+                            ? existingSig.split(',').last
+                            : existingSig),
+                        fit: BoxFit.contain,
+                        errorBuilder: (_, __, ___) => const Center(
+                          child: Icon(Icons.broken_image_outlined,
+                              color: AppColors.textMuted),
+                        ),
+                      ),
+                    ),
+                  )
+                else
+                  Stack(
+                    children: [
+                      Container(
+                        height: 160,
+                        decoration: BoxDecoration(
+                          color: AppColors.white,
+                          border: Border.all(
+                            color: drawOn
+                                ? AppColors.brandPrimary
+                                : AppColors.borderColor,
+                          ),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          // Lock the pad from strokes until signing is enabled so
+                          // scrolling the form never leaves accidental marks.
+                          child: IgnorePointer(
+                            ignoring: !drawOn,
+                            child: Signature(
+                              controller: c.signatureController,
+                              backgroundColor: AppColors.white,
+                            ),
+                          ),
+                        ),
+                      ),
+                      if (!drawOn)
+                        const Positioned.fill(
+                          child: Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.lock_outline,
+                                    color: AppColors.textMuted, size: 20),
+                                SizedBox(height: 4),
+                                Text('Tap "Tap to sign" to enable drawing',
+                                    style: TextStyle(
+                                        fontSize: 12,
+                                        color: AppColors.textMuted)),
+                              ],
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton.icon(
+                      icon: const Icon(Icons.clear, size: 16),
+                      label: const Text('Clear'),
+                      onPressed: c.clearSignature,
+                    ),
+                  ],
+                ),
+              ],
+            );
+          }),
         ],
       );
     if (singleView) return Padding(padding: const EdgeInsets.all(16), child: col);
@@ -1746,6 +1948,10 @@ class _ImagePickerTile extends StatelessWidget {
   final Rxn<File>? fileObs;
   final Rxn<double>? uploadProgressObs;
   final VoidCallback? onClear;
+  // Remote preview for an already-uploaded image (edit mode) — used only when
+  // no local File has been picked yet, e.g. an untouched photo from a synced
+  // sale that only exists on the server.
+  final Rxn<String>? existingUrlObs;
 
   const _ImagePickerTile({
     required this.label,
@@ -1755,6 +1961,7 @@ class _ImagePickerTile extends StatelessWidget {
     this.fileObs,
     this.uploadProgressObs,
     this.onClear,
+    this.existingUrlObs,
   });
 
   void _openFullscreen(BuildContext context, File file) {
@@ -1772,6 +1979,7 @@ class _ImagePickerTile extends StatelessWidget {
     return Obx(() {
       final done = setObs.value;
       final file = fileObs?.value;
+      final existingUrl = existingUrlObs?.value;
       final progress = uploadProgressObs?.value;
       final isUploading = progress == -1;
 
@@ -1810,6 +2018,40 @@ class _ImagePickerTile extends StatelessWidget {
                 ),
               ],
             ),
+            if (file == null && existingUrl != null && existingUrl.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(6),
+                child: Image.network(
+                  existingUrl,
+                  height: 140,
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                  loadingBuilder: (context, child, progress) {
+                    if (progress == null) return child;
+                    return Container(
+                      height: 140,
+                      width: double.infinity,
+                      color: AppColors.cardBg,
+                      alignment: Alignment.center,
+                      child: const SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    );
+                  },
+                  errorBuilder: (_, __, ___) => Container(
+                    height: 140,
+                    width: double.infinity,
+                    color: AppColors.cardBg,
+                    alignment: Alignment.center,
+                    child: const Icon(Icons.broken_image_outlined,
+                        color: AppColors.textMuted),
+                  ),
+                ),
+              ),
+            ],
             if (file != null) ...[
               const SizedBox(height: 10),
               Stack(
