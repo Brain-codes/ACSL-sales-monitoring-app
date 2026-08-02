@@ -265,8 +265,15 @@ class _SyncCard extends StatelessWidget {
                             ? null
                             : () async {
                                 await Get.find<SyncService>().syncPendingSales();
-                                await ctrl.refreshData();
+                                final changed = await ctrl.refreshData();
                                 ctrl.update();
+                                toastification.show(
+                                  title: Text(changed
+                                      ? 'Data synchronized'
+                                      : 'Data already up to date'),
+                                  type: ToastificationType.success,
+                                  autoCloseDuration: const Duration(seconds: 3),
+                                );
                               },
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppColors.brandPrimary,

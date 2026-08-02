@@ -4,6 +4,7 @@ import 'package:get/get.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:stove_transaction/core/auth/permissions.dart';
+import 'package:stove_transaction/core/providers/services.dart';
 import 'package:stove_transaction/core/router/route_meta.dart';
 import 'package:stove_transaction/core/services/offline_queue_service.dart';
 import 'package:stove_transaction/core/services/permission_service.dart';
@@ -97,19 +98,37 @@ class _AppShellState extends ConsumerState<AppShell> {
   }
 
   Widget _bottomNav() {
-    final tabs = tabRoutes;
+    // Only the tabs this role may reach — e.g. a partner never sees "Partners".
+    // Branch index still comes from the tab's position in [tabRoutes], since
+    // the shell's branches are declared in that fixed order.
+    final perms = ref.watch(permissionsProvider);
+    final all = tabRoutes;
+    final visible = <(int, AppRoute)>[
+      for (var i = 0; i < all.length; i++)
+        if (perms.canAccess(all[i].key)) (i, all[i]),
+    ];
+    if (visible.length < 2) return const SizedBox.shrink();
+
+    // Current branch may be hidden for this role (deep link / redirect race);
+    // fall back to no selection rather than highlighting the wrong tab.
+    var current = visible.indexWhere((e) => e.$1 == navigationShell.currentIndex);
+    if (current < 0) current = 0;
+
     // TRANSITIONAL: pending count still read from the GetX offline queue.
     final queue = Get.find<OfflineQueueService>();
     return Obx(() {
       final pending = queue.pendingCount.value;
       return BottomNavigationBar(
-        currentIndex: navigationShell.currentIndex,
-        onTap: (i) => navigationShell.goBranch(
-          i,
-          initialLocation: i == navigationShell.currentIndex,
-        ),
+        currentIndex: current,
+        onTap: (i) {
+          final branch = visible[i].$1;
+          navigationShell.goBranch(
+            branch,
+            initialLocation: branch == navigationShell.currentIndex,
+          );
+        },
         items: [
-          for (final tab in tabs)
+          for (final (_, tab) in visible)
             BottomNavigationBarItem(
               icon: tab.key == RouteKey.sales && pending > 0
                   ? Badge(label: Text('$pending'), child: Icon(tab.icon))

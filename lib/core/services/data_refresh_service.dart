@@ -13,13 +13,22 @@ import 'package:stove_transaction/features/sales/models/stove_model.dart';
 
 class DataRefreshService extends GetxService {
   final _logger = Logger();
+
+  /// Drives the floating pill / Profile "Refreshing…" state. Only ever set
+  /// true for a LOUD refresh (first-ever sync, or a manual tap on "Refresh
+  /// Data" in Profile). Silent background refreshes never touch this, so
+  /// they run with no visible indication anywhere in the app.
   final RxBool isRefreshing = false.obs;
   final Rxn<DateTime> lastRefreshedAt = Rxn();
+
+  /// Internal concurrency guard covering BOTH loud and silent runs, so a
+  /// silent hourly tick can never overlap a manual refresh (or vice versa).
+  bool _inFlight = false;
 
   /// Live progress for the floating sync indicator. [syncStage] is a short
   /// human label ("Getting stoves…") and [syncProgress] is 0‥1. They let the
   /// pill show real, moving progress instead of a static spinner so the user
-  /// can see the sync is genuinely working.
+  /// can see the sync is genuinely working. Only updated during loud runs.
   final RxString syncStage = ''.obs;
   final RxDouble syncProgress = 0.0.obs;
 
@@ -30,34 +39,70 @@ class DataRefreshService extends GetxService {
 
   Timer? _timer;
 
+  /// True once we have persisted, on-device data from a previous sync (this
+  /// session or an earlier one) — i.e. this is NOT the user's first ever
+  /// fetch. Used to decide whether a refresh needs to be loud.
+  bool _hasPersistedCache() {
+    try {
+      final cache = Get.find<LocalCacheService>();
+      return cache.getAssignedPartners().isNotEmpty || cache.getSales().isNotEmpty;
+    } catch (_) {
+      return false;
+    }
+  }
+
   @override
   void onInit() {
     super.onInit();
     // Pull a COMPLETE dataset on every launch when online — not just on login.
-    // Restored-session cold starts otherwise kept whatever was cached before
-    // (e.g. a stale, previously-capped partner list) until a reconnect or the
-    // 5-min timer. refreshAll self-guards on connectivity, so this is a no-op
+    // Loud only the very first time ever (nothing cached yet); otherwise the
+    // user already has last-session's data on screen, so this happens quietly
+    // in the background — "last sync is as good as the last time you were
+    // online". refreshAll self-guards on connectivity, so this is a no-op
     // offline.
-    refreshAll();
+    refreshAll(silent: true);
     _startPeriodicTimer();
   }
 
+  /// Hourly background refresh. Skipped during closing hours (12am–5am) —
+  /// nobody is working then, so there's nothing worth silently fetching for.
+  /// Always silent: the user only ever sees refresh activity by opening
+  /// Profile and tapping "Refresh Data" (or on the very first sync).
   void _startPeriodicTimer() {
-    _timer = Timer.periodic(const Duration(minutes: 5), (_) {
+    _timer = Timer.periodic(const Duration(hours: 1), (_) {
+      final hour = DateTime.now().hour;
+      if (hour >= 0 && hour < 5) return; // closing hours — skip
       final connectivity = Get.find<ConnectivityService>();
       if (connectivity.isOnline.value) {
-        refreshAll();
+        refreshAll(silent: true);
       }
     });
   }
 
-  Future<void> refreshAll() async {
-    if (isRefreshing.value) return;
+  /// Refreshes every offline-cached dataset.
+  ///
+  /// [silent] requests a background run with no visible UI (no floating
+  /// pill, no progress stage) — used for the hourly tick and reconnect
+  /// fetches. It's automatically upgraded to a LOUD run when there's no
+  /// persisted cache yet, since the user genuinely needs to see that their
+  /// first download is in progress. A manual "Refresh Data" tap always
+  /// passes `silent: false` and is always loud.
+  /// Returns true when the refresh brought down data that differed from what
+  /// was already on the device.
+  Future<bool> refreshAll({bool silent = false}) async {
+    if (_inFlight) return false;
     final connectivity = Get.find<ConnectivityService>();
-    if (!connectivity.isOnline.value) return;
+    if (!connectivity.isOnline.value) return false;
 
-    isRefreshing.value = true;
-    _stage('Preparing sync…', 0.02);
+    final loud = !silent || !_hasPersistedCache();
+    final cache = Get.find<LocalCacheService>();
+    final mutationsBefore = cache.mutationCount;
+
+    _inFlight = true;
+    if (loud) {
+      isRefreshing.value = true;
+      _stage('Preparing sync…', 0.02);
+    }
     try {
       final session = Get.find<SessionManager>();
       // Offline-first: download stove IDs + payment models for EVERY partner org
@@ -76,18 +121,18 @@ class DataRefreshService extends GetxService {
         // Cheap (one small call, TTL-gated to ~weekly) and the create-sale form
         // is unusable without it, so it runs FIRST — behind the 900-org partner
         // sync it would be the first casualty of the overall timeout below.
-        _stage('Getting states & LGAs…', 0.03);
+        if (loud) _stage('Getting states & LGAs…', 0.03);
         await Get.find<GeoDataService>().refresh();
-        await _refreshAllPartnersData(session);
-        _stage('Getting payment models…', 0.72);
+        await _refreshAllPartnersData(session, loud: loud);
+        if (loud) _stage('Getting payment models…', 0.72);
         await _refreshGlobalPaymentModels();
-        _stage('Getting sales…', 0.82);
+        if (loud) _stage('Getting sales…', 0.82);
         await _refreshSales();
-        _stage('Getting customer phone numbers…', 0.90);
+        if (loud) _stage('Getting customer phone numbers…', 0.90);
         await _refreshEndUserPhones();
-        _stage('Getting location keys…', 0.94);
+        if (loud) _stage('Getting location keys…', 0.94);
         await _refreshGoogleKeys();
-        _stage('Finishing up…', 1.0);
+        if (loud) _stage('Finishing up…', 1.0);
       }()
           // Generous cap: a full sync of 900+ orgs is legitimately long, so this
           // only trips on a true hang — never truncates a valid large refresh.
@@ -96,22 +141,27 @@ class DataRefreshService extends GetxService {
     } catch (e) {
       _logger.e('DataRefreshService.refreshAll error: $e');
     } finally {
-      isRefreshing.value = false;
-      syncStage.value = '';
-      syncProgress.value = 0.0;
+      _inFlight = false;
+      if (loud) {
+        isRefreshing.value = false;
+        syncStage.value = '';
+        syncProgress.value = 0.0;
+      }
     }
+    return cache.mutationCount != mutationsBefore;
   }
 
   // ── Fetch accessible partners, then stoves + models for every partner org ──
 
-  Future<void> _refreshAllPartnersData(SessionManager session) async {
+  Future<void> _refreshAllPartnersData(SessionManager session,
+      {required bool loud}) async {
     final userId = session.userId;
     if (userId == null || userId.isEmpty) return;
 
     final cache = Get.find<LocalCacheService>();
     final supabase = Get.find<SupabaseService>();
 
-    _stage('Getting partners…', 0.05);
+    if (loud) _stage('Getting partners…', 0.05);
 
     // 1. Fetch every partner the user can access (super admin = all orgs,
     //    ACSL agent = assigned partners), via the same source the sale picker uses.
@@ -127,7 +177,7 @@ class DataRefreshService extends GetxService {
     }
     cache.saveAssignedPartners(partners);
     _logger.d('Cached ${partners.length} accessible partners');
-    _stage('Getting stoves…', 0.10);
+    if (loud) _stage('Getting stoves…', 0.10);
 
     // 2. For each partner org, download its stove IDs so they're available
     //    offline when that partner is picked in create-sale. (Payment models are
@@ -144,7 +194,7 @@ class DataRefreshService extends GetxService {
     // instead of ~900 per-org calls. Falls back to the per-org pool if the
     // deployed edge function doesn't support format2 yet, so this ships safely
     // before the backend is deployed.
-    final bulkOk = await _refreshAllStovesBulk(orgIds, supabase, cache);
+    final bulkOk = await _refreshAllStovesBulk(orgIds, supabase, cache, loud: loud);
     if (!bulkOk) {
       _logger.w('Bulk stove fetch unsupported — falling back to per-org.');
       await _runPooled(
@@ -162,8 +212,9 @@ class DataRefreshService extends GetxService {
   Future<bool> _refreshAllStovesBulk(
     List<String> orgIds,
     SupabaseService supabase,
-    LocalCacheService cache,
-  ) async {
+    LocalCacheService cache, {
+    required bool loud,
+  }) async {
     const pageSize = 500;
     final byOrg = <String, List<StoveModel>>{};
     var offset = 0;
@@ -203,7 +254,7 @@ class DataRefreshService extends GetxService {
           : null;
       offset += pageSize;
       // Map paging progress into the stove band (10 → 70%).
-      if (total != null && total > 0) {
+      if (loud && total != null && total > 0) {
         final frac = (offset / total).clamp(0.0, 1.0);
         _stage('Getting stoves… ${(frac * 100).round()}%', 0.10 + 0.60 * frac);
       }

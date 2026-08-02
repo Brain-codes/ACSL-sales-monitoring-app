@@ -29,6 +29,27 @@ class LocalCacheService extends GetxService {
   bool get devAutofillEnabled => _box.read<bool>(_keyDevAutofill) ?? kDebugMode;
   set devAutofillEnabled(bool v) => _box.write(_keyDevAutofill, v);
 
+  /// Writes [encoded] under [key] only when it differs from what's already
+  /// cached; the "last updated" stamp is refreshed either way.
+  ///
+  /// Background refreshes re-fetch the same rows most of the time. Rewriting
+  /// an identical multi-megabyte payload churns storage for nothing, so an
+  /// unchanged fetch just updates the timestamp and is otherwise discarded.
+  /// Returns true when the cached data actually changed.
+  bool _writeIfChanged(String key, String atKey, String encoded) {
+    final changed = _box.read<String>(key) != encoded;
+    if (changed) {
+      _box.write(key, encoded);
+      mutationCount++;
+    }
+    _box.write(atKey, DateTime.now().toIso8601String());
+    return changed;
+  }
+
+  /// Bumped every time a cached dataset actually changes. A refresh can
+  /// compare this before/after to tell "new data arrived" from "same data".
+  int mutationCount = 0;
+
   bool isStale(String timestampKey, {Duration ttl = const Duration(minutes: 5)}) {
     final raw = _box.read<String>(timestampKey);
     if (raw == null) return true;
@@ -123,8 +144,8 @@ class LocalCacheService extends GetxService {
   // ── Payment Models ────────────────────────────────────────────────────────
 
   void savePaymentModels(List<PaymentModel> models) {
-    _box.write(_keyPaymentModels, jsonEncode(models.map((m) => m.toJson()).toList()));
-    _box.write(_keyPaymentModelsAt, DateTime.now().toIso8601String());
+    _writeIfChanged(_keyPaymentModels, _keyPaymentModelsAt,
+        jsonEncode(models.map((m) => m.toJson()).toList()));
   }
 
   List<PaymentModel> getPaymentModels() {
@@ -154,8 +175,7 @@ class LocalCacheService extends GetxService {
 
   void saveEndUserPhones(Iterable<String> normalizedPhones) {
     final unique = normalizedPhones.where((p) => p.isNotEmpty).toSet();
-    _box.write(_keyEndUserPhones, jsonEncode(unique.toList()));
-    _box.write(_keyEndUserPhonesAt, DateTime.now().toIso8601String());
+    _writeIfChanged(_keyEndUserPhones, _keyEndUserPhonesAt, jsonEncode(unique.toList()));
     _phoneSetCache = unique;
   }
 
@@ -191,8 +211,8 @@ class LocalCacheService extends GetxService {
   // ── Per-org stoves (ACSL agents) ──────────────────────────────────────────
 
   void saveStovesForOrg(String orgId, List<StoveModel> stoves) {
-    _box.write('cache_stoves_$orgId', jsonEncode(stoves.map((s) => s.toJson()).toList()));
-    _box.write('cache_stoves_${orgId}_at', DateTime.now().toIso8601String());
+    _writeIfChanged('cache_stoves_$orgId', 'cache_stoves_${orgId}_at',
+        jsonEncode(stoves.map((s) => s.toJson()).toList()));
   }
 
   List<StoveModel> getStovesForOrg(String orgId) {
@@ -227,8 +247,8 @@ class LocalCacheService extends GetxService {
   // ── Assigned partners (ACSL agents) ───────────────────────────────────────
 
   void saveAssignedPartners(List<Map<String, dynamic>> partners) {
-    _box.write('cache_assigned_partners', jsonEncode(partners));
-    _box.write('cache_assigned_partners_at', DateTime.now().toIso8601String());
+    _writeIfChanged('cache_assigned_partners', 'cache_assigned_partners_at',
+        jsonEncode(partners));
   }
 
   List<Map<String, dynamic>> getAssignedPartners() {
@@ -245,8 +265,8 @@ class LocalCacheService extends GetxService {
   // ── Sales ─────────────────────────────────────────────────────────────────
 
   void saveSales(List<SaleModel> sales) {
-    _box.write(_keySales, jsonEncode(sales.map((s) => s.toJson()).toList()));
-    _box.write(_keySalesAt, DateTime.now().toIso8601String());
+    _writeIfChanged(_keySales, _keySalesAt,
+        jsonEncode(sales.map((s) => s.toJson()).toList()));
   }
 
   List<SaleModel> getSales() {

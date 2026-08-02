@@ -21,6 +21,24 @@ class SalesListController extends GetxController {
   final customStart = Rxn<DateTime>();
   final customEnd = Rxn<DateTime>();
 
+  /// Client-side paging only. The full result set is already on the device
+  /// (fetched in one go so the list works offline); this just slices it so the
+  /// user gets pages instead of an endless scroll.
+  static const pageSize = 25;
+  final page = 1.obs;
+
+  int get totalPages => sales.isEmpty ? 1 : (sales.length + pageSize - 1) ~/ pageSize;
+
+  List<SaleModel> get pageSales {
+    final start = (page.value - 1) * pageSize;
+    if (start >= sales.length) return const [];
+    return sales.sublist(start, (start + pageSize).clamp(0, sales.length));
+  }
+
+  void goToPage(int p) {
+    page.value = p.clamp(1, totalPages);
+  }
+
   void toggleView() => isTableView.value = !isTableView.value;
 
   @override
@@ -72,6 +90,7 @@ class SalesListController extends GetxController {
       }
     } finally {
       await _loadPendingSales();
+      goToPage(page.value);
       isLoading.value = false;
     }
   }
@@ -202,6 +221,7 @@ class SalesListController extends GetxController {
     customStart.value = start;
     customEnd.value = end;
     filter.value = SalesFilter.custom;
+    page.value = 1;
     fetchSales();
   }
 
@@ -220,6 +240,7 @@ class SalesListController extends GetxController {
 
   void setFilter(SalesFilter f) {
     filter.value = f;
+    page.value = 1;
     fetchSales();
   }
 }

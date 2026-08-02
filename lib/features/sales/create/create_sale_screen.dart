@@ -745,13 +745,57 @@ class _Step3LocationState extends State<_Step3Location> {
   bool _isSearching = false;
   bool _isCapturingLocation = false;
   bool _skipNextResults = false;
+  // Separate from `_suggestions` — the dropdown (incl. "Use as entered") must
+  // stay reachable even with zero Google matches, but must also be able to
+  // close explicitly once the agent picks something. Driven by typing/focus,
+  // not by whether Google found a match.
+  bool _dropdownVisible = false;
+  // Tracks focus on the online address field so losing focus with text
+  // still in it can collapse the field into the confirmed card below.
+  final _addressFocusNode = FocusNode();
+  // Once an address is confirmed (Google pick, "use as entered", or the
+  // field loses focus with text in it) the search input collapses into a
+  // compact card — mirrors the selected-partner chip pattern on Step 1.
+  bool _addressConfirmed = false;
 
-  Future<void> _captureCurrentLocation(CreateSaleController c) async {
+  @override
+  void initState() {
+    super.initState();
+    _addressFocusNode.addListener(() {
+      if (!mounted || _addressFocusNode.hasFocus) return;
+      final c = Get.find<CreateSaleController>();
+      if (c.fullAddressCtrl.text.trim().isNotEmpty) {
+        setState(() => _addressConfirmed = true);
+      }
+    });
+    // Auto-capture GPS in the background as soon as this step opens — for
+    // villages/landmarks Google can't resolve, agents no longer have to tap a
+    // button to get coordinates. Silent: never surfaces a permission prompt
+    // failure as a SnackBar, and never overwrites a location already set.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final c = Get.find<CreateSaleController>();
+      if (c.fullAddressCtrl.text.trim().isNotEmpty) {
+        setState(() => _addressConfirmed = true);
+      }
+      if (c.latitude.value == null || c.longitude.value == null) {
+        _captureCurrentLocation(c, silent: true);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _addressFocusNode.dispose();
+    super.dispose();
+  }
+
+  Future<void> _captureCurrentLocation(CreateSaleController c, {bool silent = false}) async {
     if (mounted) setState(() => _isCapturingLocation = true);
     try {
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
-        if (mounted) {
+        if (!silent && mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Location services are disabled. Please enable GPS.')),
           );
@@ -762,7 +806,7 @@ class _Step3LocationState extends State<_Step3Location> {
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
         if (permission == LocationPermission.denied) {
-          if (mounted) {
+          if (!silent && mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(content: Text('Location permission denied.')),
             );
@@ -771,7 +815,7 @@ class _Step3LocationState extends State<_Step3Location> {
         }
       }
       if (permission == LocationPermission.deniedForever) {
-        if (mounted) {
+        if (!silent && mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Location permission permanently denied. Enable in settings.')),
           );
@@ -781,10 +825,14 @@ class _Step3LocationState extends State<_Step3Location> {
       final position = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
       );
-      c.latitude.value = position.latitude;
-      c.longitude.value = position.longitude;
+      // Never clobber a location the user already picked/captured while this
+      // background request was in flight.
+      if (c.latitude.value == null || c.longitude.value == null) {
+        c.latitude.value = position.latitude;
+        c.longitude.value = position.longitude;
+      }
     } catch (e) {
-      if (mounted) {
+      if (!silent && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Could not get location: $e')),
         );
@@ -795,11 +843,15 @@ class _Step3LocationState extends State<_Step3Location> {
   }
 
   Future<void> _onAddressChanged(String value, CreateSaleController c) async {
-    if (value.length < 3) {
-      if (mounted) setState(() => _suggestions = []);
+    if (value.trim().isEmpty) {
+      if (mounted) setState(() { _suggestions = []; _dropdownVisible = false; });
       return;
     }
-    if (mounted) setState(() => _isSearching = true);
+    if (value.length < 3) {
+      if (mounted) setState(() { _suggestions = []; _dropdownVisible = true; });
+      return;
+    }
+    if (mounted) setState(() { _isSearching = true; _dropdownVisible = true; });
     final results = await c.searchPlaces(value);
     if (!mounted) return;
     if (_skipNextResults) {
@@ -813,7 +865,7 @@ class _Step3LocationState extends State<_Step3Location> {
   Future<void> _onSuggestionTap(Map<String, String> s, CreateSaleController c) async {
     _skipNextResults = true;
     FocusScope.of(context).unfocus();
-    setState(() => _suggestions = []);
+    setState(() { _suggestions = []; _dropdownVisible = false; _addressConfirmed = true; });
     final details = await c.fetchPlaceDetails(s['place_id']!);
     if (details != null && mounted) {
       c.fullAddressCtrl.text = details.address;
@@ -894,7 +946,95 @@ class _Step3LocationState extends State<_Step3Location> {
     );
   }
 
+  Widget _buildAddressConfirmedCard(CreateSaleController c) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('Residential Address *',
+            style: TextStyle(fontWeight: FontWeight.w500, fontSize: 13)),
+        const SizedBox(height: 8),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+          decoration: BoxDecoration(
+            color: AppColors.brandPrimary.withValues(alpha: 0.07),
+            border: Border.all(color: AppColors.brandPrimary),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(Icons.check_circle, color: AppColors.brandPrimary, size: 18),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  c.fullAddressCtrl.text,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                      color: AppColors.brandPrimary, fontWeight: FontWeight.w600),
+                ),
+              ),
+              const SizedBox(width: 4),
+              InkWell(
+                borderRadius: BorderRadius.circular(6),
+                onTap: () {
+                  setState(() => _addressConfirmed = false);
+                  WidgetsBinding.instance
+                      .addPostFrameCallback((_) => _addressFocusNode.requestFocus());
+                },
+                child: const Padding(
+                  padding: EdgeInsets.all(4),
+                  child: Icon(Icons.edit_outlined, color: AppColors.brandPrimary, size: 18),
+                ),
+              ),
+              InkWell(
+                borderRadius: BorderRadius.circular(6),
+                onTap: () {
+                  c.fullAddressCtrl.clear();
+                  c.latitude.value = null;
+                  c.longitude.value = null;
+                  setState(() {
+                    _suggestions = [];
+                    _dropdownVisible = false;
+                    _addressConfirmed = false;
+                  });
+                },
+                child: const Padding(
+                  padding: EdgeInsets.all(4),
+                  child: Icon(Icons.close, color: AppColors.textMuted, size: 18),
+                ),
+              ),
+            ],
+          ),
+        ),
+        Obx(() {
+          final lat = c.latitude.value;
+          final lng = c.longitude.value;
+          if (lat == null || lng == null) return const SizedBox.shrink();
+          return Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Row(
+              children: [
+                const Icon(Icons.my_location, size: 13, color: AppColors.brandPrimary),
+                const SizedBox(width: 5),
+                Text(
+                  '${lat.toStringAsFixed(5)},  ${lng.toStringAsFixed(5)}',
+                  style: const TextStyle(
+                    fontSize: 12, color: AppColors.brandPrimary, fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          );
+        }),
+      ],
+    );
+  }
+
   Widget _buildOnlineAddressSection(CreateSaleController c) {
+    if (_addressConfirmed && c.fullAddressCtrl.text.trim().isNotEmpty) {
+      return _buildAddressConfirmedCard(c);
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -907,7 +1047,13 @@ class _Step3LocationState extends State<_Step3Location> {
             Expanded(
               child: TextField(
                 controller: c.fullAddressCtrl,
+                focusNode: _addressFocusNode,
                 onChanged: (v) => _onAddressChanged(v, c),
+                onTap: () {
+                  if (c.fullAddressCtrl.text.trim().isNotEmpty && !_dropdownVisible) {
+                    setState(() => _dropdownVisible = true);
+                  }
+                },
                 decoration: InputDecoration(
                   hintText: 'Search address...',
                   hintStyle: const TextStyle(fontSize: 14, color: AppColors.textMuted),
@@ -926,7 +1072,11 @@ class _Step3LocationState extends State<_Step3Location> {
                                 c.fullAddressCtrl.clear();
                                 c.latitude.value = null;
                                 c.longitude.value = null;
-                                setState(() => _suggestions = []);
+                                setState(() {
+                                  _suggestions = [];
+                                  _dropdownVisible = false;
+                                  _addressConfirmed = false;
+                                });
                               },
                             )
                           : null,
@@ -969,15 +1119,24 @@ class _Step3LocationState extends State<_Step3Location> {
             ),
           ],
         ),
-        const Padding(
-          padding: EdgeInsets.only(top: 6),
+        Padding(
+          padding: const EdgeInsets.only(top: 6),
           child: Text(
-            'Type the address freely — you don\'t have to pick a Google result. '
-            'Using the map pin for GPS is optional.',
-            style: TextStyle(fontSize: 11, color: AppColors.textMuted),
+            _isCapturingLocation
+                ? 'Type the address freely — you don\'t have to pick a Google result. '
+                    'Capturing your GPS location in the background…'
+                : 'Type the address freely — you don\'t have to pick a Google result. '
+                    'For villages or areas Google doesn\'t recognise, use it as entered.',
+            style: const TextStyle(fontSize: 11, color: AppColors.textMuted),
           ),
         ),
-        if (_suggestions.isNotEmpty)
+        // Shows whenever there's typed text — independent of whether Google
+        // found any matches — so "Use as entered" is always reachable for
+        // villages/landmarks Google can't resolve. The typed address is
+        // already the value in play either way (it's bound straight to
+        // `fullAddressCtrl` and saved regardless of a tap here); this row is
+        // just a visible, explicit confirmation for the agent.
+        if (_dropdownVisible && c.fullAddressCtrl.text.trim().isNotEmpty)
           Container(
             margin: const EdgeInsets.only(top: 2),
             decoration: BoxDecoration(
@@ -993,7 +1152,44 @@ class _Step3LocationState extends State<_Step3Location> {
               ],
             ),
             child: Column(
-              children: _suggestions.map((s) {
+              children: [
+                // Confirms the typed text as-is (no Google match) — for
+                // villages/landmarks Google doesn't resolve. Always first, so
+                // it's not lost among the Google results.
+                InkWell(
+                  borderRadius: _suggestions.isEmpty
+                      ? const BorderRadius.all(Radius.circular(10))
+                      : const BorderRadius.vertical(top: Radius.circular(10)),
+                  onTap: () {
+                    _skipNextResults = true;
+                    FocusScope.of(context).unfocus();
+                    setState(() { _suggestions = []; _dropdownVisible = false; });
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: AppColors.brandLight,
+                      border: _suggestions.isEmpty
+                          ? null
+                          : const Border(bottom: BorderSide(color: AppColors.borderColor)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.edit_location_alt_outlined,
+                            size: 17, color: AppColors.brandPrimary),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text('Use "${c.fullAddressCtrl.text}" as entered',
+                              style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.brandPrimary)),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                ..._suggestions.map((s) {
                 final isLast = s == _suggestions.last;
                 return InkWell(
                   borderRadius: isLast
@@ -1019,7 +1215,8 @@ class _Step3LocationState extends State<_Step3Location> {
                     ),
                   ),
                 );
-              }).toList(),
+                }),
+              ],
             ),
           ),
         Obx(() {

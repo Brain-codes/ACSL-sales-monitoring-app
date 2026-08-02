@@ -51,7 +51,11 @@ A "partner" groups multiple org rows (branches across states). Picker now: pick 
 
 Living record of what's done / not done. Update after every unit of work. Status: `TODO` | `WIP` | `DONE`.
 
-Branch: `rewrite/super-admin`. Building for **super admin ONLY** (full surface). Per user directive (2026-06-27): ignore every other role — do not build/gate/branch for them. `getRolePermissions()` returns `RolePermissions.all` for any authenticated user; every route + feature open. Role map reintroduced later, no new screens needed.
+Branch: `rewrite/super-admin`. Built for **super admin first** (full surface), single-view screens gated by `canAccess`/`can`.
+
+**2026-08-02 — role map restored (ends the "everyone is super admin" phase).** Bug: a partner logging in still saw the **Partners** bottom-nav tab. Two causes, both fixed:
+- `getRolePermissions()` returned `RolePermissions.all` for everyone. It now looks up `rolePermissions` in `lib/core/auth/permissions.dart` — a direct port of the web `PERMISSIONS` map (`frontend-transactions/src/lib/permissions.ts`), plus `roleAliases`/`resolveRole` (`super_admin_agent`→`acsl_agent`, `admin`→`partner`, `agent_user`→`agent`). Unknown role ⇒ `RolePermissions.empty`. Web-only route keys with no mobile screen (sales-cancelled, end-user-records, performance-report, partner-agents-profiles) are omitted. **Keep the two maps in sync.**
+- `AppShell._bottomNav()` rendered `tabRoutes` unfiltered. It now filters by `perms.canAccess`, and maps the visible index back to the fixed `StatefulShellRoute` branch index (branches are still declared dashboard/sales/partners/profile). Drawer and router `redirect` already gated correctly.
 
 ## Foundation (Phase 0)
 
@@ -533,3 +537,39 @@ differs between logged-in users means the phone sync is being scoped somewhere
 it shouldn't be. Stats are now 2 rows of 3 (5 tiles in one row overflowed).
 
 Tests: `test/phone_utils_test.dart` (normalization collisions, partial input).
+
+---
+
+## Silent vs. loud data sync + sales pagination (Aug 2026)
+
+**Two kinds of resync — manual (loud) and automatic (silent).**
+`DataRefreshService.refreshAll({bool silent})`:
+- `silent: false` (default) — LOUD: floating pill + staged progress labels
+  ("Getting stoves… 40%"). Only from **Profile → Refresh Data**, the cache
+  debug page, and post-login.
+- `silent: true` — background run, no pill, no stage updates. Used by the
+  hourly timer, app launch, and reconnect.
+- A silent run is auto-upgraded to loud when nothing is cached yet
+  (`_hasPersistedCache()`): the user's very first download must be visible.
+- `_inFlight` guards both kinds, so loud and silent runs never overlap
+  (`isRefreshing` is now the *loud-only* UI flag, not the concurrency guard).
+
+**Timer** is 1 hour (was 5 min) and skips **00:00–05:00** (closing hours).
+
+**Reconnect = resync.** `ConnectivityService._onReconnected()` fires a silent
+`refreshAll` — "your last sync is as good as the last time you were online", so
+the hourly tick rarely matters in practice.
+
+**Same data → discard.** `LocalCacheService._writeIfChanged(key, atKey, json)`
+compares the encoded payload to what's stored: unchanged → only the "last
+updated" stamp moves, no rewrite. Used by saveSales / saveAssignedPartners /
+saveStovesForOrg / savePaymentModels / saveEndUserPhones. Real changes bump
+`mutationCount`; `refreshAll` diffs it before/after and returns whether
+anything changed, which Profile uses to toast "Data synchronized" vs
+"Data already up to date".
+
+**Sales pagination (UI only).** Sales are still fetched in one shot (offline
+requirement). `SalesListController` slices client-side: `pageSize = 25`,
+`page`, `totalPages`, `pageSales`, `goToPage`. `_Paginator` at the bottom of
+the list shows "Page X of Y · a–b of N sales". Filter/date changes reset to
+page 1. No network call is involved in paging.

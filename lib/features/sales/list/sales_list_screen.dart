@@ -105,9 +105,10 @@ class SalesListScreen extends StatelessWidget {
                     if (c.pendingSales.isNotEmpty) _PendingSalesSection(sales: c.pendingSales),
                     Expanded(
                       child: c.isTableView.value
-                          ? _SalesTableView(sales: c.sales)
-                          : _SalesCardList(sales: c.sales),
+                          ? _SalesTableView(sales: c.pageSales)
+                          : _SalesCardList(sales: c.pageSales),
                     ),
+                    _Paginator(c: c),
                   ],
                 ),
               );
@@ -718,6 +719,54 @@ class _SalesCardList extends StatelessWidget {
       itemCount: sales.length,
       separatorBuilder: (_, __) => const SizedBox(height: 8),
       itemBuilder: (_, i) => _SaleCard(sale: sales[i]),
+    );
+  }
+}
+
+// ── Paginator ─────────────────────────────────────────────────────────────────
+
+/// Pure UI paging over the already-downloaded sales list — no network calls.
+/// It exists so a large result set reads as bounded pages instead of an
+/// endless scroll.
+class _Paginator extends StatelessWidget {
+  final SalesListController c;
+  const _Paginator({required this.c});
+
+  @override
+  Widget build(BuildContext context) => Obx(_build);
+
+  Widget _build() {
+    if (c.sales.isEmpty) return const SizedBox.shrink();
+    final page = c.page.value;
+    final total = c.totalPages;
+    final first = (page - 1) * SalesListController.pageSize + 1;
+    final last = (first + c.pageSales.length - 1);
+
+    return Container(
+      color: AppColors.white,
+      padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          IconButton(
+            icon: const Icon(Icons.chevron_left, size: 22),
+            onPressed: page > 1 ? () => c.goToPage(page - 1) : null,
+          ),
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('Page $page of $total',
+                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+              Text('$first–$last of ${c.sales.length} sales',
+                  style: const TextStyle(fontSize: 11, color: AppColors.textMuted)),
+            ],
+          ),
+          IconButton(
+            icon: const Icon(Icons.chevron_right, size: 22),
+            onPressed: page < total ? () => c.goToPage(page + 1) : null,
+          ),
+        ],
+      ),
     );
   }
 }

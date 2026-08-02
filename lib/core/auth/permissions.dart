@@ -1,13 +1,9 @@
 /// Permission model.
 ///
-/// SUPER-ADMIN-ONLY BUILD (current phase): we are intentionally ignoring every
-/// other role. Any authenticated user is treated as super admin and gets the
-/// full surface — every route, every feature, open at a go.
-///
-/// The gating *infrastructure* (RouteKey / FeatureKey / canAccess / can) is kept
-/// so screens stay single-view and other roles can be reintroduced later by
-/// restoring a role -> permissions map. For now [getRolePermissions] always
-/// returns [RolePermissions.all].
+/// Screens stay single-view: widgets and nav entries are shown/hidden through
+/// `canAccess` / `can`, never by forking a screen per role. The role ->
+/// permissions map below is a direct port of the web app's `PERMISSIONS`
+/// (`frontend-transactions/src/lib/permissions.ts`) — keep the two in sync.
 library;
 
 /// Every route the app can show. Mirror of the web `RouteKey`.
@@ -86,9 +82,140 @@ class RolePermissions {
   static const empty = RolePermissions(routes: [], features: []);
 }
 
-/// SUPER-ADMIN-ONLY: every authenticated user gets full access for now.
-/// Reintroduce the role -> permissions map here when other roles come back.
-RolePermissions getRolePermissions(String? role) => RolePermissions.all;
+/// Legacy role values mapped to their canonical equivalent. Mirror of the web
+/// `ROLE_ALIASES`.
+const Map<String, String> roleAliases = {
+  'super_admin_agent': 'acsl_agent',
+  'admin': 'partner',
+  'agent_user': 'agent',
+};
 
-/// Super-admin-only build: treat everyone as super admin.
-bool isSuperAdminRole(String? role) => true;
+/// Canonical role for a raw role string, or null when logged out.
+String? resolveRole(String? role) {
+  if (role == null || role.isEmpty) return null;
+  return roleAliases[role] ?? role;
+}
+
+/// Role -> permissions. Ported from the web app's `PERMISSIONS`
+/// (`frontend-transactions/src/lib/permissions.ts`) so mobile and web agree on
+/// what each role can see. Web-only route keys with no mobile screen yet
+/// (sales-cancelled, end-user-records, performance-report, …) are omitted.
+const Map<String, RolePermissions> rolePermissions = {
+  // Super admin: every route, every feature.
+  'super_admin': RolePermissions.all,
+
+  'acsl_agent_manager': RolePermissions(
+    routes: [
+      RouteKey.dashboard,
+      RouteKey.sales,
+      RouteKey.salesCreate,
+      RouteKey.salesFinancialReports,
+      RouteKey.partners,
+      RouteKey.partnersProfiles,
+      RouteKey.agents,
+      RouteKey.agentsProfiles,
+      RouteKey.stoveManagement,
+      RouteKey.stoveManager,
+      RouteKey.stoveTransferHistory,
+      RouteKey.agreementImages,
+      RouteKey.userManagement,
+      RouteKey.userManagementUsers,
+      RouteKey.settingsUserManagement,
+      RouteKey.profile,
+      RouteKey.salesMonitoringApp,
+    ],
+    features: [
+      FeatureKey.myPartnersFilter,
+      FeatureKey.stoveAllocation,
+      FeatureKey.createSale,
+      FeatureKey.manageAcslAgentsScoped,
+      FeatureKey.managePartnerAgents,
+      FeatureKey.userManagement,
+      FeatureKey.orgSalesView,
+    ],
+  ),
+
+  'acsl_agent': RolePermissions(
+    routes: [
+      RouteKey.dashboard,
+      RouteKey.sales,
+      RouteKey.salesCreate,
+      RouteKey.salesFinancialReports,
+      RouteKey.partners,
+      RouteKey.partnersProfiles,
+      RouteKey.agents,
+      RouteKey.stoveManagement,
+      RouteKey.stoveManager,
+      RouteKey.stoveTransferHistory,
+      RouteKey.agreementImages,
+      RouteKey.profile,
+      RouteKey.salesMonitoringApp,
+    ],
+    features: [
+      FeatureKey.myPartnersFilter,
+      FeatureKey.stoveAllocation,
+      FeatureKey.createSale,
+      FeatureKey.orgSalesView,
+    ],
+  ),
+
+  // Partners: no partner management (they ARE a partner), no ACSL agent
+  // profiles, no map, no settings.
+  'partner': RolePermissions(
+    routes: [
+      RouteKey.dashboard,
+      RouteKey.sales,
+      RouteKey.salesCreate,
+      RouteKey.salesFinancialReports,
+      RouteKey.agents,
+      RouteKey.stoveManagement,
+      RouteKey.stoveManager,
+      RouteKey.stoveTransferHistory,
+      RouteKey.agreementImages,
+      RouteKey.userManagement,
+      RouteKey.userManagementUsers,
+      RouteKey.settingsUserManagement,
+      RouteKey.profile,
+      RouteKey.salesMonitoringApp,
+    ],
+    features: [
+      FeatureKey.manageAgents,
+      FeatureKey.managePartnerAgents,
+      FeatureKey.orgSalesView,
+      FeatureKey.createSale,
+      FeatureKey.userManagement,
+    ],
+  ),
+
+  'partner_agent': RolePermissions(
+    routes: [
+      RouteKey.dashboard,
+      RouteKey.sales,
+      RouteKey.salesCreate,
+      RouteKey.stoveManagement,
+      RouteKey.stoveManager,
+      RouteKey.profile,
+      RouteKey.salesMonitoringApp,
+    ],
+    features: [FeatureKey.createSale],
+  ),
+
+  'agent': RolePermissions(
+    routes: [
+      RouteKey.dashboard,
+      RouteKey.sales,
+      RouteKey.salesCreate,
+      RouteKey.stoveManagement,
+      RouteKey.stoveManager,
+      RouteKey.profile,
+      RouteKey.salesMonitoringApp,
+    ],
+    features: [FeatureKey.createSale],
+  ),
+};
+
+/// Permissions for the current role. Unknown/absent role => nothing.
+RolePermissions getRolePermissions(String? role) =>
+    rolePermissions[resolveRole(role) ?? ''] ?? RolePermissions.empty;
+
+bool isSuperAdminRole(String? role) => resolveRole(role) == 'super_admin';

@@ -6,7 +6,7 @@ Operating rules for this codebase. **Read `docs/memory.md`, `docs/design.md`, an
 
 Rebuilding the app as a **single-view, monolith UI** that mirrors the `frontend-transactions` web app. One screen serves all roles; widgets/buttons are shown or hidden by permission checks — never fork a screen per role.
 
-**SUPER-ADMIN-ONLY (current phase):** Build only for super admin. Ignore every other role — do not build, gate, or branch for them. Any authenticated user is treated as super admin and gets the **full surface: every route and feature open at a go**. `getRolePermissions()` in `permissions.dart` returns `RolePermissions.all` for everyone. The gating infrastructure (`canAccess`/`can`) stays in place so screens remain single-view; other roles are reintroduced **later** by restoring a role→permissions map — **not** by writing new screens.
+**Roles (as of 2026-08-02):** the role→permissions map is live. `getRolePermissions()` in `lib/core/auth/permissions.dart` is a port of the web `PERMISSIONS` map (`frontend-transactions/src/lib/permissions.ts`) — keep them in sync, and use `resolveRole()` for legacy role aliases. Screens stay **single-view**: gate with `canAccess`/`can`, never fork a screen per role. Anything that lists navigable routes (bottom nav, drawer, router redirect) must filter through `canAccess`.
 
 ## Hard rules
 

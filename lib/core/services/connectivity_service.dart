@@ -213,7 +213,10 @@ class ConnectivityService extends GetxService {
 
   void _triggerDataRefresh() {
     try {
-      Get.find<DataRefreshService>().refreshAll();
+      // Silent: "your last sync is as good as the last time you were online" —
+      // regaining connectivity re-fetches immediately, but in the background
+      // with no progress UI (unless nothing has ever been cached).
+      Get.find<DataRefreshService>().refreshAll(silent: true);
     } catch (_) {}
   }
 

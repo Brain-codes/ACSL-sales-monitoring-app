@@ -59,9 +59,13 @@ class ProfileController extends GetxController {
     return '${diff.inDays} day${diff.inDays > 1 ? 's' : ''} ago';
   }
 
-  Future<void> refreshData() async {
-    await _refreshService?.refreshAll();
+  /// Manual (user-initiated) resync. Always loud: shows the progress pill and
+  /// returns whether the fetch actually brought new data, so the caller can
+  /// say "synchronized" vs "already up to date".
+  Future<bool> refreshData() async {
+    final changed = await _refreshService?.refreshAll(silent: false) ?? false;
     update();
+    return changed;
   }
 
   int get pendingCount {
