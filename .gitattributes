@@ -1,0 +1,11 @@
+# Force LF for anything CI executes. Relying on each contributor having
+# core.autocrlf set is not a guarantee; a CRLF shebang fails on Linux with
+#   /usr/bin/env: 'bash\r': No such file or directory
+*.sh    text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+
+# Upstream for this repo is Brain-codes/ACSL-sales-monitoring-app.
+# Add merge=ours entries here for any file this repo should own against
+# upstream churn. Requires: bash scripts/setup-merge-drivers.sh
+.gitattributes   merge=ours
