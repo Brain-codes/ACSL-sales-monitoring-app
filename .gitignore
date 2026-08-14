@@ -48,3 +48,7 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Project-scoped credentials and CLI auth (see scripts/project-env.sh).
+# Kept out of git and out of the machine-wide credential stores.
+*.local
