@@ -8,6 +8,19 @@ import 'package:stove_transaction/features/sales/models/sale_model.dart';
 
 enum SalesFilter { all, today, week, month, custom }
 
+/// One page of sales, plus the server's own count and totals.
+class _SalesPage {
+  final List<SaleModel> rows;
+
+  /// `pagination.total` — how many rows MATCH, not how many were sent.
+  final int? total;
+
+  /// `summary` — totals computed in SQL for the same filter.
+  final Map<String, dynamic>? summary;
+
+  const _SalesPage({required this.rows, required this.total, required this.summary});
+}
+
 class SalesListController extends GetxController {
   final _supabase = Get.find<SupabaseService>();
   final _connectivity = Get.find<ConnectivityService>();
@@ -21,22 +34,64 @@ class SalesListController extends GetxController {
   final customStart = Rxn<DateTime>();
   final customEnd = Rxn<DateTime>();
 
-  /// Client-side paging only. The full result set is already on the device
-  /// (fetched in one go so the list works offline); this just slices it so the
-  /// user gets pages instead of an endless scroll.
+  /// Rows per page, and the page currently shown.
+  ///
+  /// M9: paging used to be client-side over a single fetch of 100 rows (500 for
+  /// a custom range). Production holds 2,145 sales, so everything past the
+  /// first fetch was simply unreachable, and "a to b of N" reported the number
+  /// of rows fetched rather than the number that exist. The server pages now.
   static const pageSize = 25;
   final page = 1.obs;
 
-  int get totalPages => sales.isEmpty ? 1 : (sales.length + pageSize - 1) ~/ pageSize;
+  /// The server's own count of matching rows, from `pagination.total`.
+  ///
+  /// Null while offline, where the device holds the whole cached set and pages
+  /// it locally instead.
+  final totalCount = Rxn<int>();
 
+  /// True when [sales] holds ONE page from the server, false when it holds the
+  /// whole cached set and this class slices it.
+  final _serverPaged = false.obs;
+
+  /// Server-computed totals for the active filter, from `withSummary: true`.
+  ///
+  /// M8: the reports and drill-downs used to add up whatever rows happened to
+  /// be fetched, which is wrong the moment the real count passes the cap — as
+  /// it long since has. Null until the first successful fetch.
+  final summary = Rxn<Map<String, dynamic>>();
+
+  int get totalPages {
+    final total = totalCount.value;
+    if (total != null) return total <= 0 ? 1 : (total + pageSize - 1) ~/ pageSize;
+    return sales.isEmpty ? 1 : (sales.length + pageSize - 1) ~/ pageSize;
+  }
+
+  /// The rows to show for the current page.
   List<SaleModel> get pageSales {
+    if (_serverPaged.value) return sales;
     final start = (page.value - 1) * pageSize;
     if (start >= sales.length) return const [];
     return sales.sublist(start, (start + pageSize).clamp(0, sales.length));
   }
 
+  /// 1-based index of the first row on this page, for "a to b of N".
+  int get rangeStart => sales.isEmpty ? 0 : (page.value - 1) * pageSize + 1;
+
+  /// 1-based index of the last row on this page.
+  int get rangeEnd => _serverPaged.value
+      ? (page.value - 1) * pageSize + sales.length
+      : ((page.value - 1) * pageSize + pageSize).clamp(0, sales.length);
+
+  /// The real number of matching sales — the server's when it gave one.
+  int get rangeTotal => totalCount.value ?? sales.length;
+
   void goToPage(int p) {
-    page.value = p.clamp(1, totalPages);
+    final target = p.clamp(1, totalPages);
+    if (target == page.value) return;
+    page.value = target;
+    // Server paging means a new page is a new request. Offline, the whole set
+    // is already here and the getter above just slices it.
+    if (_serverPaged.value) fetchSales(keepPage: true);
   }
 
   void toggleView() => isTableView.value = !isTableView.value;
@@ -62,35 +117,64 @@ class SalesListController extends GetxController {
     }
   }
 
-  Future<void> fetchSales() async {
+  /// Loads the current page.
+  ///
+  /// [keepPage] is set when the user moved to another page, so the page number
+  /// survives; every other caller (a filter change, a pull-to-refresh) resets
+  /// to the first page.
+  Future<void> fetchSales({bool keepPage = false}) async {
+    if (!keepPage) page.value = 1;
     isLoading.value = true;
     error.value = '';
 
     try {
       if (_connectivity.isOnline.value) {
         final result = await _fetchViaEdgeFunction();
-        // Always reflect exactly what the API returned for the active filter
-        sales.assignAll(result);
-        // Only persist the unfiltered full list to cache
-        if (filter.value == SalesFilter.all && result.isNotEmpty) {
-          Get.find<LocalCacheService>().saveSales(result);
+        _serverPaged.value = true;
+        sales.assignAll(result.rows);
+        totalCount.value = result.total;
+        summary.value = result.summary;
+
+        // Cache the first page of the unfiltered list so there is something to
+        // show offline. This is a page, not the whole set — the cache is a
+        // convenience, never the source of a total.
+        if (filter.value == SalesFilter.all &&
+            page.value == 1 &&
+            result.rows.isNotEmpty) {
+          Get.find<LocalCacheService>().saveSales(result.rows);
         }
-        // For "All" filter only: fall back to cache if API gave nothing
-        if (result.isEmpty && filter.value == SalesFilter.all) {
-          sales.assignAll(Get.find<LocalCacheService>().getSales());
+
+        // Nothing came back for "All" — fall back to whatever is cached, and
+        // page it locally, since a cached set carries no server total.
+        if (result.rows.isEmpty && filter.value == SalesFilter.all) {
+          final cached = Get.find<LocalCacheService>().getSales();
+          if (cached.isNotEmpty) {
+            _serverPaged.value = false;
+            totalCount.value = null;
+            sales.assignAll(cached);
+          }
         }
       } else {
+        _serverPaged.value = false;
+        totalCount.value = null;
+        summary.value = null;
         sales.assignAll(Get.find<LocalCacheService>().getSales());
       }
     } catch (e) {
       error.value = 'Failed to load sales.';
       if (filter.value == SalesFilter.all) {
         final cached = Get.find<LocalCacheService>().getSales();
-        if (cached.isNotEmpty) sales.assignAll(cached);
+        if (cached.isNotEmpty) {
+          _serverPaged.value = false;
+          totalCount.value = null;
+          sales.assignAll(cached);
+        }
       }
     } finally {
       await _loadPendingSales();
-      goToPage(page.value);
+      // Clamp without re-fetching: a filter change can leave the page number
+      // past the end of the new result set.
+      page.value = page.value.clamp(1, totalPages);
       isLoading.value = false;
     }
   }
@@ -173,7 +257,7 @@ class SalesListController extends GetxController {
     } catch (_) {}
   }
 
-  Future<List<SaleModel>> _fetchViaEdgeFunction() async {
+  Future<_SalesPage> _fetchViaEdgeFunction() async {
     final body = _buildRequestBody();
     final resp = await _supabase.callEdgeFunction(
       'get-sales-advanced',
@@ -182,18 +266,39 @@ class SalesListController extends GetxController {
 
     if (!resp.success || resp.data == null) {
       error.value = resp.message;
-      return [];
+      return const _SalesPage(rows: [], total: null, summary: null);
     }
 
     List raw = [];
+    Map? asMap;
     if (resp.data is List) {
       raw = resp.data as List;
     } else if (resp.data is Map) {
-      raw = (resp.data as Map)['data'] as List? ?? (resp.data as Map)['sales'] as List? ?? [];
+      asMap = resp.data as Map;
+      raw = asMap['data'] as List? ?? asMap['sales'] as List? ?? [];
     }
-    return raw
-        .map((e) => SaleModel.fromJson(Map<String, dynamic>.from(e as Map)))
-        .toList();
+
+    // The server's own count of matching rows, not the number it just sent.
+    int? total;
+    if (asMap != null) {
+      final pagination = asMap['pagination'];
+      if (pagination is Map) total = int.tryParse('${pagination['total']}');
+      total ??= int.tryParse('${asMap['total']}');
+    }
+
+    // Totals computed in SQL and scoped to the caller, filtered exactly as the
+    // rows are. Never derived from the rows themselves.
+    Map<String, dynamic>? summary;
+    final rawSummary = asMap?['summary'];
+    if (rawSummary is Map) summary = Map<String, dynamic>.from(rawSummary);
+
+    return _SalesPage(
+      rows: raw
+          .map((e) => SaleModel.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList(),
+      total: total,
+      summary: summary,
+    );
   }
 
   (String, String?)? _dateRange() {
@@ -227,12 +332,16 @@ class SalesListController extends GetxController {
 
   Map<String, dynamic> _buildRequestBody() {
     final range = _dateRange();
-    final isCustom = filter.value == SalesFilter.custom;
     return {
-      'page': 1,
-      'limit': isCustom ? 500 : 100,
+      // One page at a time, and the server says how many there are. This used
+      // to ask for 100 rows (500 for a custom range) once and page on the
+      // phone, which put everything past the first fetch out of reach.
+      'page': page.value,
+      'limit': pageSize,
       'responseFormat': 'format2',
       'includeCreator': true,
+      // Totals computed in SQL, scoped and filtered exactly as these rows.
+      'withSummary': true,
       if (range != null) 'dateFrom': range.$1,
       if (range != null && range.$2 != null) 'dateTo': range.$2!,
     };

@@ -522,20 +522,60 @@ class _StoveIdsSheetState extends State<_StoveIdsSheet> {
       return;
     }
 
-    final body = <String, dynamic>{'organization_id': widget.partner.id, 'limit': 500, 'offset': 0};
-    if (_statusFilter != 'all') body['status'] = _statusFilter;
-    final resp = await _supabase.callEdgeFunction('get-stove-ids', body: body);
-    if (!mounted) return;
-    if (resp.success && resp.data != null) {
-      final data = resp.data is Map ? resp.data as Map : {};
-      setState(() {
-        _stoveIds = List<Map<String, dynamic>>.from((data['data'] as List? ?? []).map((e) => Map<String, dynamic>.from(e as Map)));
-        _totals = data['totals'] != null ? Map<String, dynamic>.from(data['totals'] as Map) : null;
-        _loading = false;
-      });
-    } else {
-      setState(() { _error = resp.message; _loading = false; });
+    // M10: this asked for one 500-row page and showed it as the partner's whole
+    // stove sheet. A partner with more than 500 stoves silently lost the rest.
+    // Page to the end; `totals` comes off the first page, where the server
+    // reports it for the whole set rather than the page.
+    const pageSize = 500;
+    final rows = <Map<String, dynamic>>[];
+    Map<String, dynamic>? totals;
+    var offset = 0;
+    String? failure;
+
+    while (true) {
+      final body = <String, dynamic>{
+        'organization_id': widget.partner.id,
+        'limit': pageSize,
+        'offset': offset,
+      };
+      if (_statusFilter != 'all') body['status'] = _statusFilter;
+
+      final resp = await _supabase.callEdgeFunction('get-stove-ids', body: body);
+      if (!mounted) return;
+
+      if (!resp.success || resp.data == null) {
+        // Nothing yet means the call itself failed; otherwise keep what came.
+        if (rows.isEmpty) failure = resp.message;
+        break;
+      }
+
+      final data = resp.data is Map ? resp.data as Map : const {};
+      final page = List<Map<String, dynamic>>.from(
+          (data['data'] as List? ?? const []).map((e) => Map<String, dynamic>.from(e as Map)));
+      rows.addAll(page);
+      totals ??= data['totals'] != null
+          ? Map<String, dynamic>.from(data['totals'] as Map)
+          : null;
+
+      if (page.length < pageSize) break;
+      final pagination = data['pagination'];
+      if (pagination is Map && pagination['has_more'] == false) break;
+      offset += pageSize;
+      final total = pagination is Map
+          ? int.tryParse('${pagination['total']}')
+          : null;
+      if (total != null && offset >= total) break;
     }
+
+    setState(() {
+      if (failure != null) {
+        _error = failure;
+      } else {
+        _stoveIds = rows;
+        _totals = totals;
+      }
+      _loading = false;
+    });
   }
 
   List<Map<String, dynamic>> get _filtered {

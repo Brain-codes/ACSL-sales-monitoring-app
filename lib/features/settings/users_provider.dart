@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:stove_transaction/core/providers/services.dart';
+import 'package:stove_transaction/core/services/paged_fetch.dart';
 import 'package:stove_transaction/features/settings/models/user_account_model.dart';
 
 const _cacheKey = 'cache_users';
@@ -26,18 +27,19 @@ class UsersNotifier extends AsyncNotifier<List<UserAccountModel>> {
       return cached;
     }
 
-    final resp = await ref.read(supabaseServiceProvider).callEdgeFunction(
-          'manage-users',
-          body: {},
-          method: 'GET',
-        );
-
-    if (!resp.success || resp.data == null) {
+    // M10: fetched one capped page and showed it as every user.
+    List<Map<String, dynamic>> rows;
+    try {
+      rows = await fetchAllPages(
+        ref.read(supabaseServiceProvider),
+        'manage-users',
+        pageSize: 100,
+        errorMessage: 'Could not load users',
+      );
+    } catch (e) {
       if (cached.isNotEmpty) return cached;
-      throw resp.message;
+      rethrow;
     }
-
-    final rows = _extractRows(resp.data);
     cache.saveJsonList(_cacheKey, rows);
     return rows.map((e) => UserAccountModel.fromJson(e)).toList();
   }
@@ -47,12 +49,6 @@ class UsersNotifier extends AsyncNotifier<List<UserAccountModel>> {
     state = await AsyncValue.guard(_load);
   }
 
-  List<Map<String, dynamic>> _extractRows(dynamic data) {
-    final List raw = data is List
-        ? data
-        : (data is Map ? (data['data'] as List? ?? data['users'] as List? ?? []) : []);
-    return raw.map((e) => Map<String, dynamic>.from(e as Map)).toList();
-  }
 }
 
 final usersProvider =

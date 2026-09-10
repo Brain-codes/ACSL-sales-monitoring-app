@@ -103,6 +103,11 @@ class SalesListScreen extends StatelessWidget {
           )),
         ],
       ),
+      // A2: the paginator used to sit at the bottom of the body, where the
+      // "New Sale" button floated directly over it — the next-page arrow could
+      // not be tapped, so nothing past page one was reachable by touch either.
+      // As the bottom bar, Scaffold lifts the button clear of it.
+      bottomNavigationBar: _Paginator(c: c),
       floatingActionButton: FloatingActionButton.extended(
         heroTag: 'sales_list_create_sale',
         backgroundColor: AppColors.brandPrimary,
@@ -143,7 +148,6 @@ class SalesListScreen extends StatelessWidget {
                           ? _SalesTableView(sales: c.pageSales)
                           : _SalesCardList(sales: c.pageSales),
                     ),
-                    _Paginator(c: c),
                   ],
                 ),
               );
@@ -774,11 +778,18 @@ class _Paginator extends StatelessWidget {
     if (c.sales.isEmpty) return const SizedBox.shrink();
     final page = c.page.value;
     final total = c.totalPages;
-    final first = (page - 1) * SalesListController.pageSize + 1;
-    final last = (first + c.pageSales.length - 1);
+    // The real count now comes from the server (pagination.total). This used to
+    // report the number of rows FETCHED, which made 2,145 sales look like 100.
+    final first = c.rangeStart;
+    final last = c.rangeEnd;
+    final overall = c.rangeTotal;
 
-    return Container(
+    return Material(
       color: AppColors.white,
+      elevation: 8,
+      child: SafeArea(
+        top: false,
+        child: Padding(
       padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -792,7 +803,7 @@ class _Paginator extends StatelessWidget {
             children: [
               Text('Page $page of $total',
                   style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-              Text('$first–$last of ${c.sales.length} sales',
+              Text('$first–$last of $overall sales',
                   style: const TextStyle(fontSize: 11, color: AppColors.textMuted)),
             ],
           ),
@@ -801,6 +812,8 @@ class _Paginator extends StatelessWidget {
             onPressed: page < total ? () => c.goToPage(page + 1) : null,
           ),
         ],
+      ),
+        ),
       ),
     );
   }

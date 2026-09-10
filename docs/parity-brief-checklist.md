@@ -30,7 +30,7 @@ phone** is wrong or short today. Totals come from the server
 
 ## Also found while testing
 
-- [ ] **A2. The "New Sale" button covers the pagination control.** SAFE
+- [x] **A2. The "New Sale" button covers the pagination control.** SAFE
       The floating button sits over the bottom of the sales list, so the paging
       control underneath it cannot be reached. Folded in with M9.
 
@@ -63,14 +63,14 @@ phone** is wrong or short today. Totals come from the server
 
 ## Truncated on the phone
 
-- [ ] **M8. Financial Reports totals and dashboard drill-downs are summed on the
+- [x] **M8. Financial Reports totals and dashboard drill-downs are summed on the
       phone from one 500-row fetch.** SAFE — wrong today.
       Take totals from `get-sales-advanced` with `withSummary: true`.
-- [ ] **M9. The sales list fetches once and pages on the phone.** SAFE
+- [x] **M9. The sales list fetches once and pages on the phone.** SAFE
       100 rows (500 for a custom range), then paged locally in 25s. Nothing past
       the first fetch is reachable and "a to b of N" reports the fetched count,
       not the real one. Server offset paging; total from `pagination.total`.
-- [ ] **M10. Transfer history capped at 50, agents 25, users 25, partner stove
+- [x] **M10. Transfer history capped at 50, agents 25, users 25, partner stove
       sheet 500; `has_more` ignored.** SAFE
       The partner list already pages correctly — copy it.
 
