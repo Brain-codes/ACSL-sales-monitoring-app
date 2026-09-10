@@ -27,6 +27,8 @@ class SupabaseService {
     Map<String, dynamic>? queryParams,
     String method = 'POST',
     bool isRetryAfterRefresh = false,
+    Map<String, String>? extraHeaders,
+    bool returnHeaders = false,
   }) async {
     try {
       var session = _client.auth.currentSession;
@@ -78,6 +80,9 @@ class SupabaseService {
         final reqHeaders = {
           ...headers,
           'Content-Type': 'application/json',
+          // Conditional-request headers (If-None-Match) ride here. Added last
+          // so a caller can override, never so it can drop the Authorization.
+          ...?extraHeaders,
         };
 
         http.Response response;
@@ -97,8 +102,20 @@ class SupabaseService {
               headers: reqHeaders, body: json.encode(body));
         }
 
+        final respHeaders = returnHeaders
+            ? response.headers.map((k, v) => MapEntry(k.toLowerCase(), v))
+            : const <String, String>{};
+
         if (response.statusCode == 200) {
-          return SupabaseApiResponse.success(json.decode(response.body));
+          return SupabaseApiResponse.success(
+            json.decode(response.body),
+            headers: respHeaders,
+          );
+        } else if (response.statusCode == 304) {
+          // Not an error: the caller sent If-None-Match and its cached copy is
+          // still current. Without this branch a 304 would fall through to the
+          // error path below and a good cache would look like a failed fetch.
+          return SupabaseApiResponse.notModified(headers: respHeaders);
         } else if (response.statusCode == 401 && requireAuth && !isRetryAfterRefresh) {
           final refreshed = await _refreshToken();
           if (refreshed) {
@@ -110,6 +127,8 @@ class SupabaseService {
               queryParams: queryParams,
               method: method,
               isRetryAfterRefresh: true,
+              extraHeaders: extraHeaders,
+              returnHeaders: returnHeaders,
             );
           } else {
             return SupabaseApiResponse.error(

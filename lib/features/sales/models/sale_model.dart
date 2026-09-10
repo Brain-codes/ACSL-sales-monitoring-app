@@ -14,6 +14,11 @@ class SaleModel {
   String? stoveSerialNo;
   String? stoveId;
   String? endUserName;
+  /// The name in two parts. The server writes these alongside the joined name
+  /// (splitting the joined one by rule when only it arrives), so an edit can
+  /// round-trip the parts instead of re-guessing them.
+  String? endUserFirstName;
+  String? endUserSurname;
   String? aka;
   String? contactPerson;
   String? contactPhone;
@@ -22,6 +27,8 @@ class SaleModel {
   String? state;
   String? lga;
   String? address;
+  /// City/town/village, from inside the address object.
+  String? city;
   double? latitude;
   double? longitude;
   String? partnerName;
@@ -71,6 +78,9 @@ class SaleModel {
   String? creatorName;
   String? creatorRole;
   String? agentName; // flat fallback when creator object isn't expanded
+  /// The agent who SOLD the stove, as written on the agreement. Distinct from
+  /// [agentName]/`created_by`, which name whoever made the record.
+  String? salesAgentName;
 
   // Transient (offline queue only, not serialized): the numeric queue row id and
   // the last sync error, used by the pending-sales list to edit/retry/delete.
@@ -83,6 +93,8 @@ class SaleModel {
     this.stoveSerialNo,
     this.stoveId,
     this.endUserName,
+    this.endUserFirstName,
+    this.endUserSurname,
     this.aka,
     this.contactPerson,
     this.contactPhone,
@@ -91,6 +103,7 @@ class SaleModel {
     this.state,
     this.lga,
     this.address,
+    this.city,
     this.latitude,
     this.longitude,
     this.partnerName,
@@ -133,6 +146,7 @@ class SaleModel {
     this.creatorName,
     this.creatorRole,
     this.agentName,
+    this.salesAgentName,
   });
 
   /// What the customer has actually paid so far.
@@ -160,6 +174,9 @@ class SaleModel {
       stoveSerialNo: json["stove_serial_no"] ?? json["stoveSerialNo"],
       stoveId: json["stove_id"] ?? json["stoveId"],
       endUserName: json["end_user_name"] ?? json["endUserName"],
+      endUserFirstName:
+          json["end_user_first_name"] ?? json["endUserFirstName"],
+      endUserSurname: json["end_user_surname"] ?? json["endUserSurname"],
       aka: json["aka"],
       contactPerson: json["contact_person"] ?? json["contactPerson"],
       contactPhone: json["contact_phone"] ?? json["contactPhone"],
@@ -179,6 +196,13 @@ class SaleModel {
                   (json["address_data"] is Map
                       ? (json["address_data"] as Map)["street"]?.toString()
                       : null),
+      city: json["city"]?.toString() ??
+          (json["address"] is Map
+              ? (json["address"] as Map)["city"]?.toString()
+              : null) ??
+          (json["address_data"] is Map
+              ? (json["address_data"] as Map)["city"]?.toString()
+              : null),
       latitude: json["latitude"] != null
           ? (json["latitude"] as num).toDouble()
           : (json["address_data"] as Map?)?.containsKey("latitude") == true
@@ -237,6 +261,7 @@ class SaleModel {
       creatorName: creator?["full_name"]?.toString() ?? json["creator_name"]?.toString(),
       creatorRole: creator?["role"]?.toString() ?? json["creator_role"]?.toString(),
       agentName: json["agent_name"]?.toString(),
+      salesAgentName: json["selling_agent_name"] ?? json["salesAgentName"],
     );
   }
 

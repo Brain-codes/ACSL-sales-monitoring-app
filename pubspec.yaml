@@ -62,4 +62,5 @@ flutter:
     - assets/images/splash/
     - assets/icons/
     - assets/icons/app/
+    - assets/data/
     - .env

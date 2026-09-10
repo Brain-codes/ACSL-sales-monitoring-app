@@ -3,6 +3,7 @@ import 'package:get/get.dart';
 import 'package:logger/logger.dart';
 import 'package:stove_transaction/core/services/connectivity_service.dart';
 import 'package:stove_transaction/core/services/geo_data_service.dart';
+import 'package:stove_transaction/core/services/sale_dictionary_service.dart';
 import 'package:stove_transaction/core/services/local_cache_service.dart';
 import 'package:stove_transaction/core/services/session_manager.dart';
 import 'package:stove_transaction/core/services/supabase_service.dart';
@@ -118,6 +119,12 @@ class DataRefreshService extends GetxService {
       // hang this future forever — leaving isRefreshing stuck true and the
       // indicator spinning endlessly. Cap the whole run.
       await () async {
+        // The sale form's wording, choices and mandatory dates. Cheapest call
+        // in the run (a 304 when nothing moved) and the create-sale form reads
+        // its labels from it, so it goes first alongside the geo data. A
+        // failure here keeps the cached copy — it never blocks the sync.
+        if (loud) _stage('Getting sale form rules…', 0.02);
+        await Get.find<SaleDictionaryService>().refresh();
         // Cheap (one small call, TTL-gated to ~weekly) and the create-sale form
         // is unusable without it, so it runs FIRST — behind the 900-org partner
         // sync it would be the first casualty of the overall timeout below.

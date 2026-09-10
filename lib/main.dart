@@ -10,6 +10,7 @@ import 'package:stove_transaction/core/services/auth_service.dart';
 import 'package:stove_transaction/core/services/connectivity_service.dart';
 import 'package:stove_transaction/core/services/data_refresh_service.dart';
 import 'package:stove_transaction/core/services/geo_data_service.dart';
+import 'package:stove_transaction/core/services/sale_dictionary_service.dart';
 import 'package:stove_transaction/core/services/local_cache_service.dart';
 import 'package:stove_transaction/core/services/location_resolution_service.dart';
 import 'package:stove_transaction/core/services/offline_queue_service.dart';
@@ -88,6 +89,7 @@ Future<void> _initServices() async {
 
   Get.put(SupabaseService());
   Get.put(LocalCacheService());
+  Get.put(SaleDictionaryService());
   Get.put(GeoDataService());
   Get.put(SyncService());
   Get.put(LocationResolutionService());

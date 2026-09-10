@@ -13,6 +13,8 @@ import 'package:signature/signature.dart';
 import 'package:toastification/toastification.dart';
 import 'package:stove_transaction/core/model/upload_response_model.dart';
 import 'package:stove_transaction/core/router/app_navigator.dart';
+import 'package:stove_transaction/core/model/sale_field_dictionary.dart';
+import 'package:stove_transaction/core/services/sale_dictionary_service.dart';
 import 'package:stove_transaction/core/services/connectivity_service.dart';
 import 'package:stove_transaction/core/services/geo_data_service.dart';
 import 'package:stove_transaction/core/services/local_cache_service.dart';
@@ -201,6 +203,9 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
   final selectedState = ''.obs;
   final selectedLga = ''.obs;
   final fullAddressCtrl = TextEditingController();
+  /// City/town/village. Goes inside `addressData.city`, which the app used to
+  /// send as a hardcoded empty string. Mandatory from 2026-09-11.
+  final cityCtrl = TextEditingController();
   final latitude = Rxn<double>();
   final longitude = Rxn<double>();
   List<String> get lgas =>
@@ -212,6 +217,14 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
   // Step 4 — Partner/Retailer
   final partnerNameCtrl = TextEditingController();
   final retailerBranchCtrl = TextEditingController();
+
+  /// The agent who sold the stove, as written on the agreement.
+  ///
+  /// Defaults to the signed-in person and stays editable: the person typing is
+  /// not always the person who made the sale. `created_by` on the server keeps
+  /// naming whoever made the record, so this never overwrites the audit trail.
+  /// Mandatory from 2026-09-11.
+  final salesAgentNameCtrl = TextEditingController();
 
   // ACSL agent: partner picker state
   bool get isAcslAgent => _session.isAcslAgent || _session.isAcslAgentManager;
@@ -288,7 +301,30 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
 
   // null = full payment; non-null = installment with this model
   final selectedModel = Rxn<PaymentModel>();
-  bool get isInstallment => selectedModel.value != null;
+
+  /// Payment type, as an explicit choice the user makes.
+  ///
+  /// The app used to infer this: a payment model meant installment, no model
+  /// meant cash, and a cash sale therefore never sent `isInstallment` at all.
+  /// Now it is its own control (Cash purchase / Installment purchase) and
+  /// `isInstallment` is always sent. The payload keys do not change:
+  /// `isInstallment` plus `paymentModelId` for the model.
+  final isInstallmentSale = false.obs;
+
+  bool get isInstallment => isInstallmentSale.value;
+
+  /// Switches payment type, clearing the model when moving back to cash so a
+  /// stale model cannot ride along on a cash sale.
+  void setInstallmentSale(bool value) {
+    isInstallmentSale.value = value;
+    if (!value) selectedModel.value = null;
+  }
+
+  /// A full payment settles the whole sale amount up front, so sale amount and
+  /// amount received are the same figure — the form asks for it once and
+  /// mirrors it into both. Editing a synced sale keeps both fields visible so
+  /// we never silently rewrite historical figures.
+  bool get isSingleAmountField => !isEditingSale && !isInstallment;
   final initialPaymentCtrl = TextEditingController();
   final initialPaymentText = ''.obs;
   Timer? _initialPaymentDebounce;
@@ -315,8 +351,11 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
   final previousStoveType = ''.obs;
   final previousStoveOtherCtrl = TextEditingController();
   final mealsPerDayCtrl = TextEditingController();
-  final cookingFuelSourceCtrl = TextEditingController();
-  final cookingLocationCtrl = TextEditingController();
+  // Choices, not free text: these carry dictionary option VALUES (`collect`,
+  // `semi_indoor`), never the words on screen. The server used to guess-map
+  // typed text ("market" -> purchase, "kitchen" -> indoor); it no longer has to.
+  final cookingFuelSource = ''.obs;
+  final cookingLocation = ''.obs;
 
   // Step 8 — T&C
   final tcPoaGoverned = false.obs;
@@ -403,12 +442,94 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
 
   // Option lists
   final paymentMethods = ['Cash', 'Bank Transfer', 'POS', 'Mobile Money'];
-  // value → display label (value is what the API expects)
-  final stoveTypes = const {
+
+  // ─────────────────────── The sale field dictionary ────────────────────────
+  //
+  // The agreement's wording, the choices and the day each field becomes
+  // mandatory all come from `GET /functions/v1/sale-dictionary` at run time.
+  // Nothing here is typed into the app: an administrator can relabel a field,
+  // retire a choice or move a mandatory date without a release.
+  //
+  // Held as an Rx so the form redraws if the refresh lands after the screen is
+  // already open. Null only on a cold first install with no network AND no
+  // bundled seed, in which case the fallbacks below keep the form usable.
+
+  final dictionary = Rxn<SaleFieldDictionary>();
+
+  /// The agreement's wording for [key], falling back to [fallback] when the
+  /// dictionary has not loaded or does not carry the field.
+  String dictLabel(String key, String fallback) =>
+      dictionary.value?.labelFor(key, fallback: fallback) ?? fallback;
+
+  /// Whether [key] is required for THIS sale, judged by the sale's own date.
+  ///
+  /// A record is judged by the rules of its own day, so back-dating a sale to
+  /// before a rule came in correctly relaxes that rule for it.
+  bool dictRequired(String key) =>
+      dictionary.value?.isRequired(key, salesDate.value) ?? false;
+
+  /// The choices for [key]. Empty until the dictionary loads, which is why the
+  /// widgets below fall back to their seeded list rather than an empty menu.
+  List<SaleFieldOption> dictOptions(String key) =>
+      dictionary.value?.optionsFor(key) ?? const [];
+
+  /// Choices for [key] as value→label, for the existing dropdown widgets.
+  ///
+  /// [seed] is used only while the dictionary is still loading. When a stored
+  /// [current] value is no longer on the live list it is appended, so a record
+  /// holding a retired choice keeps it instead of silently blanking on edit.
+  Map<String, String> dictOptionMap(
+    String key, {
+    Map<String, String> seed = const {},
+    String? current,
+  }) {
+    final live = dictOptions(key);
+    final map = live.isEmpty
+        ? Map<String, String>.from(seed)
+        : {for (final o in live) o.value: o.label};
+    if (current != null && current.isNotEmpty && !map.containsKey(current)) {
+      map[current] = current;
+    }
+    return map;
+  }
+
+  /// Seed lists, used ONLY until the dictionary answers.
+  ///
+  /// These mirror the dictionary's values (`firewood`, `charcoal`, `lpg`), not
+  /// the older `wood_stove` the app used to send — the server used to map that
+  /// by rule, and no longer has to.
+  static const _seedStoveTypes = {
+    'firewood': 'Firewood',
     'charcoal': 'Charcoal',
-    'wood_stove': 'Wood (3 stone)',
-    'other': 'Other',
+    'lpg': 'LPG',
   };
+  static const _seedFuelSources = {
+    'collect': 'Collect it',
+    'purchase': 'Purchase it',
+  };
+  static const _seedCookingLocations = {
+    'indoor': 'Indoor',
+    'outdoor': 'Outdoor',
+    'semi_indoor': 'Semi-indoor',
+  };
+
+  Map<String, String> get stoveTypes => dictOptionMap('previous_stove_type',
+      seed: _seedStoveTypes, current: previousStoveType.value);
+  Map<String, String> get fuelSources => dictOptionMap('cooking_fuel_source',
+      seed: _seedFuelSources, current: cookingFuelSource.value);
+  Map<String, String> get cookingLocations => dictOptionMap('cooking_location',
+      seed: _seedCookingLocations, current: cookingLocation.value);
+
+  /// Pot quantities as ints, from the dictionary's `0` / `1` / `2`.
+  List<int> get potQuantities {
+    final live = dictOptions('pot_quantity');
+    if (live.isEmpty) return const [0, 1, 2];
+    final parsed = live
+        .map((o) => int.tryParse(o.value))
+        .whereType<int>()
+        .toList();
+    return parsed.isEmpty ? const [0, 1, 2] : parsed;
+  }
 
   // Cached Google API keys (fetched from Supabase, not .env)
   String? _googlePlacesApiKey;
@@ -457,10 +578,20 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
     endUserNameCtrl.addListener(_syncContactFromEndUser);
     endUserSurnameCtrl.addListener(_syncContactFromEndUser);
     phoneCtrl.addListener(_syncContactFromEndUser);
+    // Full payment collects one amount that serves as both sale amount and
+    // amount received; installments keep the two independent.
+    amountCtrl.addListener(_syncAmountReceivedForFullPayment);
+    amountReceivedCtrl.addListener(_dropInstallmentWhenPaidInFull);
     // Also attempt recovery immediately in case this controller is being
     // recreated right after such a kill.
     recoverLostImage();
     transactionId.value = _generateTransactionId();
+    // The sale form's wording, choices and mandatory dates. The cached or
+    // bundled copy resolves immediately so the form has labels on first paint;
+    // the refresh lands later and the Obx widgets redraw if anything moved.
+    _loadDictionary();
+    // The agent who sold the stove defaults to the signed-in person, editable.
+    salesAgentNameCtrl.text = _session.userName ?? '';
     partnerNameCtrl.text = _session.organizationName ?? '';
     retailerBranchCtrl.text = _session.organizationBranch ?? '';
     isOfflineMode.value = !_connectivity.isOnline.value;
@@ -790,6 +921,7 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
     amountCtrl.clear();
     amountReceivedCtrl.clear();
     selectedModel.value = null;
+    isInstallmentSale.value = false;
     initialPaymentCtrl.clear();
     initialPaymentText.value = '';
     selectedPaymentMethod.value = '';
@@ -803,8 +935,10 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
     previousStoveType.value = '';
     previousStoveOtherCtrl.clear();
     mealsPerDayCtrl.clear();
-    cookingFuelSourceCtrl.clear();
-    cookingLocationCtrl.clear();
+    cookingFuelSource.value = '';
+    cookingLocation.value = '';
+    cityCtrl.clear();
+    salesAgentNameCtrl.text = _session.userName ?? '';
 
     // Step 8 — Terms
     tcPoaGoverned.value = false;
@@ -905,10 +1039,15 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
     // Sale & payment
     amountCtrl.text = _fmtAmountInput(payload['amount']);
     amountReceivedCtrl.text = _fmtAmountInput(payload['amountReceived']);
+    isInstallmentSale.value = payload['isInstallment'] == true;
     if (payload['isInstallment'] == true && payload['paymentModelId'] != null) {
       selectedModel.value =
           paymentModels.firstWhereOrNull((m) => m.id == payload['paymentModelId'].toString());
     }
+    // A draft saved before full payment collapsed to a single field can carry a
+    // received figure below the amount. The form would then show only the
+    // amount while submitting the stale figure, so realign it now.
+    _syncAmountReceivedForFullPayment();
     if (payload['initialPaymentAmount'] != null) {
       initialPaymentCtrl.text = _fmtAmountInput(payload['initialPaymentAmount']);
       initialPaymentText.value = initialPaymentCtrl.text;
@@ -923,8 +1062,13 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
     previousStoveType.value = payload['previousStoveType']?.toString() ?? '';
     previousStoveOtherCtrl.text = payload['previousStoveOther']?.toString() ?? '';
     mealsPerDayCtrl.text = payload['mealsPerDay']?.toString() ?? '';
-    cookingFuelSourceCtrl.text = payload['cookingFuelSource']?.toString() ?? '';
-    cookingLocationCtrl.text = payload['cookingLocation']?.toString() ?? '';
+    cookingFuelSource.value = payload['cookingFuelSource']?.toString() ?? '';
+    cookingLocation.value = payload['cookingLocation']?.toString() ?? '';
+    cityCtrl.text =
+        (payload['addressData'] is Map ? payload['addressData']['city'] : null)
+                ?.toString() ??
+            '';
+    salesAgentNameCtrl.text = payload['salesAgentName']?.toString() ?? '';
 
     // Terms
     final terms = payload['termsAccepted'] is Map
@@ -996,11 +1140,26 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
     transactionId.value = sale.transactionId;
     salesDate.value = sale.salesDate ?? DateTime.now();
 
-    // End user full name → first + surname (mirrors web populateFormDataForEdit).
-    final fullName = (sale.endUserName ?? '').trim();
-    final parts = fullName.isEmpty ? <String>[] : fullName.split(RegExp(r'\s+'));
-    endUserNameCtrl.text = parts.isNotEmpty ? parts.first : '';
-    endUserSurnameCtrl.text = parts.length > 1 ? parts.sublist(1).join(' ') : '';
+    // Prefer the parts the server holds; only fall back to splitting the joined
+    // name for an older record saved before the app sent them.
+    //
+    // Re-guessing the split is what used to swap surname and aka on edit: a
+    // one-word name put everything in the first name, a three-word one put two
+    // words in the surname, and neither matched what was stored. The server now
+    // keeps the parts, so this guesses only when it must.
+    final storedFirst = (sale.endUserFirstName ?? '').trim();
+    final storedSurname = (sale.endUserSurname ?? '').trim();
+    if (storedFirst.isNotEmpty || storedSurname.isNotEmpty) {
+      endUserNameCtrl.text = storedFirst;
+      endUserSurnameCtrl.text = storedSurname;
+    } else {
+      final fullName = (sale.endUserName ?? '').trim();
+      final parts =
+          fullName.isEmpty ? <String>[] : fullName.split(RegExp(r'\s+'));
+      endUserNameCtrl.text = parts.isNotEmpty ? parts.first : '';
+      endUserSurnameCtrl.text =
+          parts.length > 1 ? parts.sublist(1).join(' ') : '';
+    }
     akaCtrl.text = sale.aka ?? '';
     phoneCtrl.text = sale.phone ?? '';
     contactPersonCtrl.text = sale.contactPerson ?? '';
@@ -1011,6 +1170,10 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
     // Detect whether the contact person actually IS the end user (matches web
     // behaviour) so the "Same as end user" checkbox reflects saved data instead
     // of always starting unticked on edit.
+    // Recomposed from the two fields above, whichever way they were filled.
+    final fullName = [endUserNameCtrl.text.trim(), endUserSurnameCtrl.text.trim()]
+        .where((p) => p.isNotEmpty)
+        .join(' ');
     sameAsEndUser.value = contactPersonCtrl.text.trim() == fullName &&
         contactPhoneCtrl.text.trim() == phoneCtrl.text.trim();
     phoneDuplicateError.value = null;
@@ -1050,6 +1213,7 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
 
     // Payment model — locked in edit mode.
     final pmId = sale.paymentModelId ?? sale.selectedModelId;
+    isInstallmentSale.value = sale.isInstallment == true;
     if (sale.isInstallment == true && pmId != null) {
       selectedModel.value = paymentModels.firstWhereOrNull((m) => m.id == pmId);
     }
@@ -1062,8 +1226,12 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
     previousStoveType.value = sale.previousStoveType ?? '';
     previousStoveOtherCtrl.text = sale.previousStoveOther ?? '';
     mealsPerDayCtrl.text = sale.mealsPerDay ?? '';
-    cookingFuelSourceCtrl.text = sale.cookingFuelSource ?? '';
-    cookingLocationCtrl.text = sale.cookingLocation ?? '';
+    cookingFuelSource.value = sale.cookingFuelSource ?? '';
+    cookingLocation.value = sale.cookingLocation ?? '';
+    cityCtrl.text = sale.city ?? '';
+    // Falls back to the signed-in person only when the record carries no seller
+    // — an older sale saved before the app sent this field.
+    salesAgentNameCtrl.text = sale.salesAgentName ?? _session.userName ?? '';
 
     // Terms.
     final terms = sale.termsAccepted ?? const {};
@@ -1211,6 +1379,7 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
 
     // Sale & payment — full payment, amount + received.
     selectedModel.value = null;
+    isInstallmentSale.value = false;
     amountCtrl.text = (sample['amount'] ?? 0).toString();
     amountReceivedCtrl.text = (sample['amountReceived'] ?? sample['amount'] ?? 0).toString();
     selectedPaymentMethod.value = 'Cash';
@@ -1223,8 +1392,10 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
     previousStoveType.value = sample['previousStoveType'] ?? '';
     previousStoveOtherCtrl.text = sample['previousStoveOther'] ?? '';
     mealsPerDayCtrl.text = sample['mealsPerDay'] ?? '';
-    cookingFuelSourceCtrl.text = sample['cookingFuelSource'] ?? '';
-    cookingLocationCtrl.text = sample['cookingLocation'] ?? '';
+    cookingFuelSource.value = sample['cookingFuelSource'] ?? '';
+    cookingLocation.value = sample['cookingLocation'] ?? '';
+    cityCtrl.text = sample['city'] ?? '';
+    salesAgentNameCtrl.text = _session.userName ?? '';
 
     // Accept all terms
     tcPoaGoverned.value = true;
@@ -1345,13 +1516,44 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
     }
   }
 
+  // Guards the two amount listeners against re-entering each other.
+  bool _syncingAmounts = false;
+
+  /// Full payment shows one amount field; keep the received figure identical to
+  /// it so the payload stays consistent with what the user was shown.
+  void _syncAmountReceivedForFullPayment() {
+    if (_syncingAmounts || !isSingleAmountField) return;
+    if (amountReceivedCtrl.text == amountCtrl.text) return;
+    _syncingAmounts = true;
+    amountReceivedCtrl.text = amountCtrl.text;
+    _syncingAmounts = false;
+  }
+
+  /// An installment sale settled in full at the point of sale isn't an
+  /// installment sale — fall back to full payment, keeping the amount entered.
+  void _dropInstallmentWhenPaidInFull() {
+    if (_syncingAmounts || !isInstallment || isEditingSale) return;
+    final amount = double.tryParse(amountCtrl.text.replaceAll(',', '')) ?? 0;
+    final received = double.tryParse(amountReceivedCtrl.text.replaceAll(',', '')) ?? 0;
+    if (amount <= 0 || received < amount) return;
+    selectPaymentType(null, keepAmount: true);
+  }
+
   /// Called when the user picks a value from the Payment Type dropdown.
   /// [modelId] is null for full payment, or a model ID for installment.
-  void selectPaymentType(String? modelId) {
+  /// [keepAmount] retains the sale amount already entered instead of clearing
+  /// it — used when an installment collapses into a full payment.
+  void selectPaymentType(String? modelId, {bool keepAmount = false}) {
     if (modelId == null) {
       // Full payment selected
       selectedModel.value = null;
-      amountCtrl.clear();
+      isInstallmentSale.value = false;
+      if (keepAmount) {
+        _syncAmountReceivedForFullPayment();
+      } else {
+        amountCtrl.clear();
+        amountReceivedCtrl.clear();
+      }
       initialPaymentCtrl.clear();
       initialPaymentText.value = '';
       selectedPaymentMethod.value = '';
@@ -1359,6 +1561,7 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
     } else {
       final model = paymentModels.firstWhereOrNull((m) => m.id == modelId);
       selectedModel.value = model;
+      isInstallmentSale.value = true;
       if (model != null) {
         // Auto-fill amount with the model's fixed price
         final formatted = model.fixedPrice.toStringAsFixed(0).replaceAllMapped(
@@ -1366,6 +1569,9 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
           (m) => '${m[1]},',
         );
         amountCtrl.text = formatted;
+        // The model fixes the sale amount; the received figure now means the
+        // initial payment, so it has to be entered fresh.
+        amountReceivedCtrl.clear();
         initialPaymentCtrl.clear();
         initialPaymentText.value = '';
         selectedPaymentMethod.value = '';
@@ -1619,6 +1825,42 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
     }
   }
 
+  /// Resolves the dictionary, then refreshes it in the background.
+  ///
+  /// A failure at either step leaves the previous copy in place: the form must
+  /// stay usable with no signal, which is the ordinary case in the field.
+  Future<void> _loadDictionary() async {
+    final service = Get.find<SaleDictionaryService>();
+    dictionary.value = await service.ensureLoaded();
+    final fresh = await service.refresh();
+    if (fresh != null) dictionary.value = fresh;
+  }
+
+  /// Adds an error when a dictionary-owned field is required for this sale and
+  /// is empty.
+  ///
+  /// The message uses the agreement's wording, so what the form refuses and
+  /// what the paper says are the same words. [fallbackLabel] only shows if the
+  /// dictionary has not loaded.
+  void _requireFromDictionary(
+    List<ValidationError> errors, {
+    required String key,
+    required String value,
+    required int step,
+    required String stepTitle,
+    required String fallbackLabel,
+  }) {
+    if (!dictRequired(key)) return;
+    if (value.trim().isNotEmpty) return;
+    final label = dictLabel(key, fallbackLabel);
+    errors.add(ValidationError(
+      step: step,
+      stepTitle: stepTitle,
+      field: label,
+      message: '$label is required',
+    ));
+  }
+
   List<ValidationError> validateAll() {
     final errors = <ValidationError>[];
 
@@ -1634,12 +1876,26 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
     if (contactPhoneCtrl.text.trim().isEmpty) {
       errors.add(const ValidationError(step: 1, stepTitle: 'Buyer & End User', field: 'Contact Phone', message: 'Contact phone number is required'));
     }
-    if (endUserNameCtrl.text.trim().isEmpty) {
-      errors.add(const ValidationError(step: 1, stepTitle: 'Buyer & End User', field: 'End User First Name', message: 'End user first name is required'));
-    }
-    if (endUserSurnameCtrl.text.trim().isEmpty) {
-      errors.add(const ValidationError(step: 1, stepTitle: 'Buyer & End User', field: 'End User Surname', message: 'End user surname is required'));
-    }
+    // Required-ness comes from the dictionary's mandatoryFrom, judged against
+    // THIS sale's date — so the 2026-09-11 and 2027-01-05 waves switch
+    // themselves on with no release, and a back-dated draft is judged by the
+    // rules of its own day. The labels are the agreement's wording.
+    _requireFromDictionary(
+      errors,
+      key: 'end_user_first_name',
+      value: endUserNameCtrl.text,
+      step: 1,
+      stepTitle: 'Buyer & End User',
+      fallbackLabel: 'First name',
+    );
+    _requireFromDictionary(
+      errors,
+      key: 'end_user_surname',
+      value: endUserSurnameCtrl.text,
+      step: 1,
+      stepTitle: 'Buyer & End User',
+      fallbackLabel: 'Surname',
+    );
     if (phoneCtrl.text.trim().isEmpty) {
       errors.add(const ValidationError(step: 1, stepTitle: 'Buyer & End User', field: 'End User Phone', message: 'End user phone number is required'));
     } else if (phoneDuplicateError.value != null) {
@@ -1660,6 +1916,54 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
     if (fullAddressCtrl.text.trim().isEmpty) {
       errors.add(const ValidationError(step: 2, stepTitle: 'Location', field: 'Address', message: 'Full address is required'));
     }
+    _requireFromDictionary(
+      errors,
+      key: 'city',
+      value: cityCtrl.text,
+      step: 2,
+      stepTitle: 'Location',
+      fallbackLabel: 'City/town/village',
+    );
+    _requireFromDictionary(
+      errors,
+      key: 'sales_agent_name',
+      value: salesAgentNameCtrl.text,
+      step: 0,
+      stepTitle: 'Transaction Info',
+      fallbackLabel: "Sales agent's name",
+    );
+    _requireFromDictionary(
+      errors,
+      key: 'previous_stove_type',
+      value: previousStoveType.value,
+      step: 7,
+      stepTitle: 'Cooking Habits',
+      fallbackLabel: 'Baseline stove',
+    );
+    _requireFromDictionary(
+      errors,
+      key: 'cooking_fuel_source',
+      value: cookingFuelSource.value,
+      step: 7,
+      stepTitle: 'Cooking Habits',
+      fallbackLabel: 'Fuel source',
+    );
+    _requireFromDictionary(
+      errors,
+      key: 'cooking_location',
+      value: cookingLocation.value,
+      step: 7,
+      stepTitle: 'Cooking Habits',
+      fallbackLabel: 'Cooking location',
+    );
+    _requireFromDictionary(
+      errors,
+      key: 'pot_quantity',
+      value: '${potQuantity.value}',
+      step: 6,
+      stepTitle: 'Stove Set',
+      fallbackLabel: 'Pots quantity',
+    );
     // GPS is OPTIONAL. A raw address (not on Google Maps) can be typed manually
     // and submitted without coordinates — they default to 0,0 in _buildPayload.
 
@@ -1678,9 +1982,15 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
     }
     // Step 6 — Cooking Habits (all optional — no validation)
 
-    // Step 7 — Terms & Conditions
-    if (!allTcAccepted) {
-      errors.add(const ValidationError(step: 7, stepTitle: 'Terms & Conditions', field: 'Terms', message: 'All terms & conditions must be accepted'));
+    // The CPA block. Required from 2026-09-11 by the dictionary; the app has
+    // always asked for it, so this only ever relaxes for a back-dated draft.
+    if (!allTcAccepted && dictRequired('terms_accepted')) {
+      final label = dictLabel('terms_accepted', 'CPA (Terms and Conditions)');
+      errors.add(ValidationError(
+          step: 7,
+          stepTitle: 'Terms & Conditions',
+          field: label,
+          message: 'All $label consents must be accepted'));
     }
 
     // Step 8 — Media
@@ -2027,13 +2337,22 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
       'salesDate': salesDate.value.toIso8601String().substring(0, 10),
       'contactPerson': contactPersonCtrl.text,
       'contactPhone': contactPhoneCtrl.text,
-      // Web sends endUserName as the COMBINED "first surname" and no separate
-      // surname field (see salesFormUtils.transformFormDataForAPI). Sending them
-      // split caused the surname to be dropped on the backend, which then
-      // surfaced as surname/aka swapping on edit hydration.
+      // The name goes BOTH ways, on purpose.
+      //
+      // The joined name stays because the web side has not yet said it can go.
+      // The two parts stop the server guessing where the surname ends: it
+      // composes the joined name from them before its own required-field check
+      // (create-sale/index.ts:190-194) and writes end_user_first_name /
+      // end_user_surname only when a part actually arrives (:598-603).
+      //
+      // An older comment here said the split caused the surname to be dropped.
+      // That was true against the server of the day; the current function
+      // handles both, so the parts are safe to send.
       'endUserName': [endUserNameCtrl.text.trim(), endUserSurnameCtrl.text.trim()]
           .where((s) => s.isNotEmpty)
           .join(' '),
+      'endUserFirstName': endUserNameCtrl.text.trim(),
+      'endUserSurname': endUserSurnameCtrl.text.trim(),
       'aka': akaCtrl.text,
       'phone': phoneCtrl.text,
       'otherPhone': otherPhoneCtrl.text,
@@ -2042,7 +2361,9 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
       'addressData': {
         'fullAddress': fullAddressCtrl.text,
         'street': '',
-        'city': '',
+        // Was hardcoded empty, so every sale sent a blank city. Mandatory from
+        // 2026-09-11.
+        'city': cityCtrl.text.trim(),
         'state': selectedState.value,
         'country': 'Nigeria',
         // GPS optional — default to 0,0 when the address was typed manually.
@@ -2051,6 +2372,14 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
       },
       'partnerName': partnerNameCtrl.text,
       'retailerBranch': retailerBranchCtrl.text,
+      // Who sold the stove, as written on the agreement. The server keeps
+      // naming the record's creator separately in created_by.
+      //
+      // Omitted rather than sent empty while editing: an update that carried a
+      // blank here would overwrite a seller the server already holds. The
+      // server treats a missing key as "unchanged" and an empty one as "clear".
+      if (!isEditingSale || salesAgentNameCtrl.text.trim().isNotEmpty)
+        'salesAgentName': salesAgentNameCtrl.text.trim(),
       'amount': double.tryParse(amountCtrl.text.replaceAll(',', '')) ?? 0,
       'amountReceived': double.tryParse(amountReceivedCtrl.text.replaceAll(',', '')) ?? 0,
       'potQuantity': potQuantity.value,
@@ -2058,8 +2387,9 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
       'previousStoveType': previousStoveType.value,
       'previousStoveOther': previousStoveOtherCtrl.text,
       'mealsPerDay': mealsPerDayCtrl.text,
-      'cookingFuelSource': cookingFuelSourceCtrl.text,
-      'cookingLocation': cookingLocationCtrl.text,
+      // Dictionary option VALUES (`collect`, `semi_indoor`), never the labels.
+      'cookingFuelSource': cookingFuelSource.value,
+      'cookingLocation': cookingLocation.value,
       'termsAccepted': {
         'poaGoverned': tcPoaGoverned.value,
         'monitoring': tcMonitoring.value,
@@ -2072,8 +2402,11 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
       'platform': 'mobile',
       if (selectedOrgId.value.isNotEmpty) 'organizationId': selectedOrgId.value,
       // installment fields
+      // Payment type is now an explicit choice, so isInstallment is ALWAYS sent.
+      // It used to be omitted entirely for a cash sale, which left the server
+      // inferring the type from the presence of a model.
+      'isInstallment': isInstallmentSale.value,
       if (selectedModel.value != null) 'paymentModelId': selectedModel.value!.id,
-      if (selectedModel.value != null) 'isInstallment': true,
       if (initialPaymentAmount != null && initialPaymentAmount > 0) ...{
         'initialPaymentAmount': initialPaymentAmount,
         'initialPaymentMethod': selectedPaymentMethod.value,
@@ -2152,6 +2485,8 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
     fullAddressCtrl.dispose();
     partnerNameCtrl.dispose();
     retailerBranchCtrl.dispose();
+    amountCtrl.removeListener(_syncAmountReceivedForFullPayment);
+    amountReceivedCtrl.removeListener(_dropInstallmentWhenPaidInFull);
     amountCtrl.dispose();
     amountReceivedCtrl.dispose();
     initialPaymentCtrl.dispose();
@@ -2159,8 +2494,8 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
     _phoneCheckDebounce?.cancel();
     previousStoveOtherCtrl.dispose();
     mealsPerDayCtrl.dispose();
-    cookingFuelSourceCtrl.dispose();
-    cookingLocationCtrl.dispose();
+    cityCtrl.dispose();
+    salesAgentNameCtrl.dispose();
     super.onClose();
   }
 }

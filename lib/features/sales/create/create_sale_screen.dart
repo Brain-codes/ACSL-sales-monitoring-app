@@ -665,22 +665,24 @@ class _Step2Contact extends StatelessWidget {
         const SectionHeader(title: 'Buyer & End User'),
         // Field order mirrors the web form: end-user details first, then the
         // contact person / buyer.
-        AppTextField(
-            label: 'End User First Name',
+        // Labels and required-ness from the dictionary — the agreement says
+        // "First name" and "Surname", and both become mandatory on 2026-09-11.
+        Obx(() => AppTextField(
+            label: c.dictLabel('end_user_first_name', 'First name'),
             controller: c.endUserNameCtrl,
-            required: true,
+            required: c.dictRequired('end_user_first_name'),
             onChanged: c.onEndUserIdentityChanged,
-            textInputAction: TextInputAction.next),
+            textInputAction: TextInputAction.next)),
         const SizedBox(height: 12),
-        AppTextField(
-            label: 'End User Surname',
+        Obx(() => AppTextField(
+            label: c.dictLabel('end_user_surname', 'Surname'),
             controller: c.endUserSurnameCtrl,
-            required: true,
+            required: c.dictRequired('end_user_surname'),
             onChanged: c.onEndUserIdentityChanged,
-            textInputAction: TextInputAction.next),
+            textInputAction: TextInputAction.next)),
         const SizedBox(height: 12),
         AppTextField(
-            label: 'End User Phone',
+            label: c.dictLabel('phone', 'Telephone number'),
             controller: c.phoneCtrl,
             keyboardType: TextInputType.phone,
             required: true,
@@ -692,7 +694,7 @@ class _Step2Contact extends StatelessWidget {
             )),
         const SizedBox(height: 12),
         AppTextField(
-            label: 'AKA',
+            label: c.dictLabel('aka', 'Also known as'),
             controller: c.akaCtrl,
             textInputAction: TextInputAction.next),
         const SizedBox(height: 4),
@@ -1275,8 +1277,8 @@ class _Step3LocationState extends State<_Step3Location> {
           const SizedBox(height: 16),
 
           // ── LGA ───────────────────────────────────────────────────────
-          const Text('LGA',
-              style: TextStyle(fontWeight: FontWeight.w500, fontSize: 13)),
+          Obx(() => _FieldLabel(c.dictLabel('lga_backup', 'LGA'),
+              required: c.dictRequired('lga_backup'))),
           const SizedBox(height: 8),
           Obx(() {
             final stateSelected = c.selectedState.value.isNotEmpty;
@@ -1304,6 +1306,18 @@ class _Step3LocationState extends State<_Step3Location> {
           Obx(() => c.isOfflineMode.value
               ? _buildOfflineAddressSection(c)
               : _buildOnlineAddressSection(c)),
+
+          const SizedBox(height: 16),
+
+          // ── City/town/village ─────────────────────────────────────────
+          // Goes inside addressData.city, which the app used to send as a
+          // hardcoded empty string. Mandatory from 2026-09-11.
+          Obx(() => AppTextField(
+                label: c.dictLabel('city', 'City/town/village'),
+                controller: c.cityCtrl,
+                required: c.dictRequired('city'),
+                textInputAction: TextInputAction.next,
+              )),
 
           const SizedBox(height: 8),
         ],
@@ -1339,7 +1353,18 @@ class _Step4Partner extends StatelessWidget {
                 required: true),
           const SizedBox(height: 12),
           AppTextField(
-              label: 'Retailer Branch / CSO', controller: c.retailerBranchCtrl),
+              label: c.dictLabel('retailer_branch', 'Retailer/sales branch/agency'),
+              controller: c.retailerBranchCtrl),
+          const SizedBox(height: 12),
+          // Who sold the stove, as written on the agreement. Defaults to the
+          // signed-in person and stays editable — the typist is not always the
+          // seller. Mandatory from 2026-09-11.
+          Obx(() => AppTextField(
+                label: c.dictLabel('sales_agent_name', "Sales agent's name"),
+                controller: c.salesAgentNameCtrl,
+                required: c.dictRequired('sales_agent_name'),
+                textInputAction: TextInputAction.next,
+              )),
         ],
       ),
     );
@@ -1490,34 +1515,73 @@ class _Step5SaleDetails extends StatelessWidget {
           }),
           const SizedBox(height: 16),
 
-          // Payment Type dropdown — Full Payment + any installment models
-          const Text('Payment Type *',
-              style: TextStyle(fontWeight: FontWeight.w500, fontSize: 13)),
+          // ── Payment type — its own control ────────────────────────────
+          //
+          // Was one dropdown mixing "Full Payment" with the installment models,
+          // so the type was inferred from whether a model happened to be
+          // picked. Now the type is chosen first and the model only follows an
+          // installment. The payload keys are unchanged: `isInstallment` plus
+          // `paymentModelId`.
+          Obx(() => _FieldLabel(c.dictLabel('is_installment', 'Payment type'),
+              required: c.dictRequired('is_installment'))),
           const SizedBox(height: 8),
-          DropdownButtonFormField<String>(
-            value: isInstallment ? model!.id : 'full_payment',
-            isExpanded: true,
-            items: [
-              const DropdownMenuItem(
-                value: 'full_payment',
-                child: Text(
-                  'Full Payment — One-time complete payment',
-                  overflow: TextOverflow.ellipsis,
+          Obx(() => RadioGroup<bool>(
+                groupValue: c.isInstallmentSale.value,
+                onChanged: (v) {
+                  // Payment type is locked while editing a synced sale.
+                  if (c.isEditingSale) return;
+                  c.selectPaymentType(
+                      v == true ? c.visiblePaymentModels.first.id : null);
+                },
+                child: Column(
+                  children: [
+                    RadioListTile<bool>(
+                      contentPadding: EdgeInsets.zero,
+                      dense: true,
+                      value: false,
+                      title: const Text('Cash purchase'),
+                      enabled: !c.isEditingSale,
+                    ),
+                    RadioListTile<bool>(
+                      contentPadding: EdgeInsets.zero,
+                      dense: true,
+                      value: true,
+                      title: const Text('Installment purchase'),
+                      // No models for this partner means no installment to
+                      // pick, so the option is not offered.
+                      enabled:
+                          !c.isEditingSale && c.visiblePaymentModels.isNotEmpty,
+                    ),
+                  ],
                 ),
-              ),
+              )),
+
+          // The sales model, only for an installment.
+          if (isInstallment) ...[
+            const SizedBox(height: 8),
+            Obx(() => _FieldLabel(c.dictLabel('payment_model_id', 'Sales model'),
+                required: c.dictRequired('payment_model_id'))),
+            const SizedBox(height: 8),
+            DropdownButtonFormField<String>(
+              value: model?.id,
+              isExpanded: true,
+              hint: const Text('Select a sales model'),
               // Only the sales models this partner is tied to — resolved
               // locally against the cached catalogue, so this works offline.
-              ...c.visiblePaymentModels.map((m) => DropdownMenuItem(
-                    value: m.id,
-                    child: Text(m.dropdownLabel, overflow: TextOverflow.ellipsis),
-                  )),
-            ],
-            // Payment type is locked when editing a synced sale.
-            onChanged: c.isEditingSale
-                ? null
-                : (v) => c.selectPaymentType(v == 'full_payment' ? null : v),
-            decoration: const InputDecoration(),
-          ),
+              items: c.visiblePaymentModels
+                  .map((m) => DropdownMenuItem(
+                        value: m.id,
+                        child: Text(m.dropdownLabel,
+                            overflow: TextOverflow.ellipsis),
+                      ))
+                  .toList(),
+              // Payment type is locked when editing a synced sale.
+              onChanged: c.isEditingSale
+                  ? null
+                  : (v) => c.selectPaymentType(v),
+              decoration: const InputDecoration(),
+            ),
+          ],
           if (c.paymentCatalogueEmpty) ...[
             const SizedBox(height: 8),
             Text(
@@ -1588,23 +1652,36 @@ class _Step5SaleDetails extends StatelessWidget {
           ],
 
           // Sale amount — editable on create; LOCKED when editing a synced sale.
+          // On a full payment this same figure is the amount received, so we
+          // ask for it once instead of making the user type it twice.
           AppTextField(
-            label: 'Sale Amount (₦)',
+            label: c.isSingleAmountField
+                ? 'Sale Amount / Amount Received (₦)'
+                : 'Sale Amount (₦)',
             controller: c.amountCtrl,
             keyboardType: TextInputType.number,
             inputFormatters: [ThousandsSeparatorInputFormatter()],
             required: true,
             readOnly: c.isEditingSale,
-            textInputAction: TextInputAction.next,
+            textInputAction:
+                c.isSingleAmountField ? TextInputAction.done : TextInputAction.next,
           ),
-          const SizedBox(height: 16),
-          AppTextField(
-            label: 'Amount Received (₦)',
-            controller: c.amountReceivedCtrl,
-            keyboardType: TextInputType.number,
-            inputFormatters: [ThousandsSeparatorInputFormatter()],
-            textInputAction: TextInputAction.done,
-          ),
+          if (c.isSingleAmountField) ...[
+            const SizedBox(height: 6),
+            const Text(
+              'Full payment — the customer pays the sale amount in full.',
+              style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+            ),
+          ] else ...[
+            const SizedBox(height: 16),
+            AppTextField(
+              label: 'Amount Received (₦)',
+              controller: c.amountReceivedCtrl,
+              keyboardType: TextInputType.number,
+              inputFormatters: [ThousandsSeparatorInputFormatter()],
+              textInputAction: TextInputAction.done,
+            ),
+          ],
           const SizedBox(height: 16),
         ],
       );
@@ -1638,33 +1715,6 @@ class _Step6StoveSet extends StatelessWidget {
   final bool singleView;
   const _Step6StoveSet({this.singleView = false});
 
-  void _editPotQuantity(BuildContext context, CreateSaleController c) {
-    final ctrl = TextEditingController(text: '${c.potQuantity.value}');
-    showDialog(
-      context: context,
-      builder: (dialogCtx) => AlertDialog(
-        title: const Text('Number of Pots'),
-        content: TextField(
-          controller: ctrl,
-          keyboardType: TextInputType.number,
-          autofocus: true,
-          decoration: const InputDecoration(hintText: 'Enter quantity'),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(dialogCtx).pop(), child: const Text('Cancel')),
-          TextButton(
-            onPressed: () {
-              final v = int.tryParse(ctrl.text);
-              if (v != null && v >= 1) c.potQuantity.value = v;
-              Navigator.of(dialogCtx).pop();
-            },
-            child: const Text('OK'),
-          ),
-        ],
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final c = Get.find<CreateSaleController>();
@@ -1676,52 +1726,36 @@ class _Step6StoveSet extends StatelessWidget {
               padding: const EdgeInsets.all(16),
               child: Column(
                 children: [
-                  Row(
-                    children: [
-                      const Expanded(
-                          child: Text('Number of Pots',
-                              style: TextStyle(
-                                  fontSize: 14, fontWeight: FontWeight.w500))),
-                      Obx(() => Row(
-                            children: [
-                              IconButton(
-                                icon: const Icon(Icons.remove_circle_outline,
-                                    color: AppColors.brandPrimary),
-                                onPressed: () {
-                                  if (c.potQuantity.value > 1)
-                                    c.potQuantity.value--;
-                                },
-                              ),
-                              GestureDetector(
-                                onTap: () => _editPotQuantity(context, c),
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                  decoration: BoxDecoration(
-                                    border: Border.all(color: AppColors.brandPrimary),
-                                    borderRadius: BorderRadius.circular(6),
-                                  ),
-                                  child: Text('${c.potQuantity.value}',
-                                      style: const TextStyle(
-                                          fontSize: 18,
-                                          fontWeight: FontWeight.w700,
-                                          color: AppColors.brandPrimary)),
-                                ),
-                              ),
-                              IconButton(
-                                icon: const Icon(Icons.add_circle_outline,
-                                    color: AppColors.brandPrimary),
-                                onPressed: () => c.potQuantity.value++,
-                              ),
-                            ],
-                          )),
-                    ],
-                  ),
+                  // A fixed list of 0 / 1 / 2 from the dictionary, not an
+                  // open-ended stepper: the agreement offers exactly these.
+                  Obx(() => Row(
+                        children: [
+                          Expanded(
+                              child: _FieldLabel(
+                                  c.dictLabel('pot_quantity', 'Pots quantity'),
+                                  required: c.dictRequired('pot_quantity'))),
+                          DropdownButton<int>(
+                            value: c.potQuantities.contains(c.potQuantity.value)
+                                ? c.potQuantity.value
+                                : null,
+                            hint: const Text('Select'),
+                            items: c.potQuantities
+                                .map((q) => DropdownMenuItem(
+                                    value: q, child: Text('$q')))
+                                .toList(),
+                            onChanged: (v) {
+                              if (v != null) c.potQuantity.value = v;
+                            },
+                          ),
+                        ],
+                      )),
                   const Divider(),
                   Obx(() => SwitchListTile(
                         contentPadding: EdgeInsets.zero,
-                        title: const Text('Heat Retention Device',
-                            style: TextStyle(
-                                fontSize: 14, fontWeight: FontWeight.w500)),
+                        // "Wonderbox" is the agreement's word for this.
+                        title: _FieldLabel(
+                            c.dictLabel('heat_retention_device', 'Wonderbox'),
+                            required: c.dictRequired('heat_retention_device')),
                         subtitle: const Text('Included with the stove set'),
                         value: c.heatRetentionDevice.value,
                         activeColor: AppColors.brandPrimary,
@@ -1750,11 +1784,15 @@ class _Step7CookingHabits extends StatelessWidget {
     final col = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const SectionHeader(title: 'Customer Cooking Habits (optional)'),
-        _MapDropdownField(
-            label: 'Previous Stove Type',
+        const SectionHeader(title: 'Customer Cooking Habits'),
+        // Labels, choices and required-ness all come from the dictionary, so
+        // none of the three is typed here. Obx: the dictionary may land after
+        // this screen is already open.
+        Obx(() => _MapDropdownField(
+            label: c.dictLabel('previous_stove_type', 'Baseline stove'),
+            required: c.dictRequired('previous_stove_type'),
             options: c.stoveTypes,
-            valueObs: c.previousStoveType),
+            valueObs: c.previousStoveType)),
         Obx(() => c.previousStoveType.value == 'other'
             ? Padding(
                 padding: const EdgeInsets.only(top: 12),
@@ -1765,27 +1803,57 @@ class _Step7CookingHabits extends StatelessWidget {
             : const SizedBox.shrink()),
         const SizedBox(height: 16),
         AppTextField(
-            label: 'Meals Per Day',
+            label: c.dictLabel('meals_per_day', 'Meals per day'),
             controller: c.mealsPerDayCtrl,
             keyboardType: TextInputType.text,
             hint: 'e.g., 2 meals',
             textInputAction: TextInputAction.next),
         const SizedBox(height: 16),
-        AppTextField(
-            label: 'Cooking Fuel Source',
-            controller: c.cookingFuelSourceCtrl,
-            hint: 'e.g., Local market',
-            textInputAction: TextInputAction.next),
+        // Was free text the server had to guess-map ("market" -> purchase,
+        // "kitchen" -> indoor). Now a choice that sends the option value.
+        Obx(() => _MapDropdownField(
+            label: c.dictLabel('cooking_fuel_source', 'Fuel source'),
+            required: c.dictRequired('cooking_fuel_source'),
+            options: c.fuelSources,
+            valueObs: c.cookingFuelSource)),
         const SizedBox(height: 16),
-        AppTextField(
-            label: 'Cooking Location',
-            controller: c.cookingLocationCtrl,
-            hint: 'e.g., Outdoors, kitchen',
-            textInputAction: TextInputAction.done),
+        Obx(() => _MapDropdownField(
+            label: c.dictLabel('cooking_location', 'Cooking location'),
+            required: c.dictRequired('cooking_location'),
+            options: c.cookingLocations,
+            valueObs: c.cookingLocation)),
       ],
     );
     if (singleView) return Padding(padding: const EdgeInsets.all(16), child: col);
     return SingleChildScrollView(padding: const EdgeInsets.all(16), child: col);
+  }
+}
+
+/// A field label with the required marker driven by the dictionary.
+///
+/// The asterisk is never hardcoded: it comes from the same `mandatoryFrom`
+/// answer the validator uses, so the two cannot drift apart.
+class _FieldLabel extends StatelessWidget {
+  final String text;
+  final bool required;
+  const _FieldLabel(this.text, {this.required = false});
+
+  @override
+  Widget build(BuildContext context) {
+    return Text.rich(
+      TextSpan(
+        text: text,
+        style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 13),
+        children: required
+            ? const [
+                TextSpan(
+                  text: ' *',
+                  style: TextStyle(color: AppColors.error),
+                )
+              ]
+            : const [],
+      ),
+    );
   }
 }
 
@@ -1794,16 +1862,23 @@ class _MapDropdownField extends StatelessWidget {
   final String label;
   final Map<String, String> options;
   final RxString valueObs;
+
+  /// Drawn from the dictionary's mandatoryFrom, never hardcoded, so the marker
+  /// and the validator can never disagree.
+  final bool required;
+
   const _MapDropdownField(
-      {required this.label, required this.options, required this.valueObs});
+      {required this.label,
+      required this.options,
+      required this.valueObs,
+      this.required = false});
 
   @override
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label,
-            style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 13)),
+        _FieldLabel(label, required: required),
         const SizedBox(height: 8),
         Obx(() => DropdownButtonFormField<String>(
               value: valueObs.value.isEmpty ? null : valueObs.value,
@@ -1833,10 +1908,12 @@ class _Step8Terms extends StatelessWidget {
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Expanded(
-              child: SectionHeader(
-                  title: 'Terms & Conditions',
-                  subtitle: 'All terms must be accepted to proceed'),
+            // The agreement's heading for the six consents.
+            Expanded(
+              child: Obx(() => SectionHeader(
+                  title: c.dictLabel(
+                      'terms_accepted', 'CPA (Terms and Conditions)'),
+                  subtitle: 'All terms must be accepted to proceed')),
             ),
             Obx(() => TextButton(
                   onPressed: () => c.setAllTc(!c.allTcAccepted),
@@ -2701,40 +2778,47 @@ class _SalePreviewSheet extends StatelessWidget {
                 children: [
                   _PreviewSection('Transaction', [
                     _PreviewRow('Transaction ID', c.transactionId.value),
+                    if (c.salesAgentNameCtrl.text.isNotEmpty)
+                      _PreviewRow(c.dictLabel('sales_agent_name', "Sales agent's name"),
+                          c.salesAgentNameCtrl.text),
                     _PreviewRow('Stove', c.selectedStove.value?.displayId ?? '—'),
-                    _PreviewRow('Sales Date', DateFormat('d MMM yyyy').format(c.salesDate.value)),
+                    _PreviewRow(c.dictLabel('sales_date', 'Sales date'), DateFormat('d MMM yyyy').format(c.salesDate.value)),
                   ]),
                   _PreviewSection('Buyer & End User', [
-                    _PreviewRow('Contact Person', c.contactPersonCtrl.text),
-                    _PreviewRow('Contact Phone', c.contactPhoneCtrl.text),
-                    _PreviewRow('First Name', c.endUserNameCtrl.text),
-                    _PreviewRow('Surname', c.endUserSurnameCtrl.text),
-                    _PreviewRow('End User Phone', c.phoneCtrl.text),
-                    if (c.akaCtrl.text.isNotEmpty) _PreviewRow('AKA', c.akaCtrl.text),
-                    if (c.otherPhoneCtrl.text.isNotEmpty) _PreviewRow('Other Phone', c.otherPhoneCtrl.text),
+                    _PreviewRow(c.dictLabel('contact_person', 'Buyer Name'), c.contactPersonCtrl.text),
+                    _PreviewRow(c.dictLabel('contact_phone', 'Contact phone'), c.contactPhoneCtrl.text),
+                    _PreviewRow(c.dictLabel('end_user_first_name', 'First name'), c.endUserNameCtrl.text),
+                    _PreviewRow(c.dictLabel('end_user_surname', 'Surname'), c.endUserSurnameCtrl.text),
+                    _PreviewRow(c.dictLabel('phone', 'Telephone number'), c.phoneCtrl.text),
+                    if (c.akaCtrl.text.isNotEmpty) _PreviewRow(c.dictLabel('aka', 'Also known as'), c.akaCtrl.text),
+                    if (c.otherPhoneCtrl.text.isNotEmpty) _PreviewRow(c.dictLabel('other_phone', 'Other telephone number'), c.otherPhoneCtrl.text),
                   ]),
                   _PreviewSection('Location', [
-                    _PreviewRow('State', c.selectedState.value),
-                    if (c.selectedLga.value.isNotEmpty) _PreviewRow('LGA', c.selectedLga.value),
-                    _PreviewRow('Address', c.fullAddressCtrl.text),
+                    _PreviewRow(c.dictLabel('state_backup', 'State'), c.selectedState.value),
+                    if (c.selectedLga.value.isNotEmpty) _PreviewRow(c.dictLabel('lga_backup', 'LGA'), c.selectedLga.value),
+                    _PreviewRow(c.dictLabel('full_address', 'Address'), c.fullAddressCtrl.text),
+                    if (c.cityCtrl.text.isNotEmpty)
+                      _PreviewRow(c.dictLabel('city', 'City/town/village'), c.cityCtrl.text),
                     if (c.latitude.value != null)
                       _PreviewRow('GPS', '${c.latitude.value!.toStringAsFixed(5)}, ${c.longitude.value!.toStringAsFixed(5)}'),
                   ]),
                   _PreviewSection('Sale & Payment', [
                     _PreviewRow('Stove', c.selectedStove.value?.displayId ?? '—'),
-                    _PreviewRow('Payment Type', c.isInstallment ? (c.selectedModel.value?.name ?? 'Installment') : 'Full Payment'),
-                    _PreviewRow('Amount', formatNaira(amt)),
-                    _PreviewRow('Amount Received', formatNaira(double.tryParse(c.amountReceivedCtrl.text.replaceAll(',', '')))),
-                    _PreviewRow('Pots', '${c.potQuantity.value}'),
-                    _PreviewRow('Heat Retention', c.heatRetentionDevice.value ? 'Yes' : 'No'),
+                    _PreviewRow(c.dictLabel('is_installment', 'Payment type'), c.isInstallment ? (c.selectedModel.value?.name ?? 'Installment purchase') : 'Cash purchase'),
+                    _PreviewRow(c.dictLabel('amount', 'Total Amount'), formatNaira(amt)),
+                    _PreviewRow(c.dictLabel('total_paid', 'Total paid to date'), formatNaira(double.tryParse(c.amountReceivedCtrl.text.replaceAll(',', '')))),
+                    _PreviewRow(c.dictLabel('pot_quantity', 'Pots quantity'), '${c.potQuantity.value}'),
+                    _PreviewRow(c.dictLabel('heat_retention_device', 'Wonderbox'), c.heatRetentionDevice.value ? 'Yes' : 'No'),
                   ]),
                   _PreviewSection('Cooking Habits', [
-                    _PreviewRow('Previous Stove', c.stoveTypes[c.previousStoveType.value] ?? c.previousStoveType.value),
+                    _PreviewRow(c.dictLabel('previous_stove_type', 'Baseline stove'), c.stoveTypes[c.previousStoveType.value] ?? c.previousStoveType.value),
                     if (c.previousStoveOtherCtrl.text.isNotEmpty)
-                      _PreviewRow('Specify', c.previousStoveOtherCtrl.text),
-                    _PreviewRow('Meals Per Day', c.mealsPerDayCtrl.text),
-                    _PreviewRow('Fuel Source', c.cookingFuelSourceCtrl.text),
-                    _PreviewRow('Cooking Location', c.cookingLocationCtrl.text),
+                      _PreviewRow(c.dictLabel('previous_stove_other', 'Baseline stove, other'), c.previousStoveOtherCtrl.text),
+                    _PreviewRow(c.dictLabel('meals_per_day', 'Meals per day'), c.mealsPerDayCtrl.text),
+                    _PreviewRow(c.dictLabel('cooking_fuel_source', 'Fuel source'),
+                        c.fuelSources[c.cookingFuelSource.value] ?? ''),
+                    _PreviewRow(c.dictLabel('cooking_location', 'Cooking location'),
+                        c.cookingLocations[c.cookingLocation.value] ?? ''),
                   ]),
                   _PreviewSection('Documents', [
                     _PreviewRow('Stove Image', c.stoveImageSet.value ? '✓  Attached' : '—'),
