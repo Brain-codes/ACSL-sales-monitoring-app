@@ -33,6 +33,38 @@ class ProfileScreen extends StatelessWidget {
               padding: const EdgeInsets.all(20),
               child: Column(
                 children: [
+                  // M15: a failed profile refresh used to be invisible. The
+                  // stored profile below is still shown — this only says it
+                  // could not be confirmed against the server.
+                  Obx(() => c.refreshError.value.isEmpty
+                      ? const SizedBox.shrink()
+                      : Container(
+                          margin: const EdgeInsets.only(top: 12),
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: AppColors.warning.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.sync_problem,
+                                  size: 18, color: AppColors.warning),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  c.refreshError.value,
+                                  style: const TextStyle(
+                                      fontSize: 12,
+                                      color: AppColors.textPrimary),
+                                ),
+                              ),
+                              TextButton(
+                                onPressed: c.refreshProfile,
+                                child: const Text('Retry'),
+                              ),
+                            ],
+                          ),
+                        )),
                   const SizedBox(height: 16),
                   CircleAvatar(
                     radius: 44,

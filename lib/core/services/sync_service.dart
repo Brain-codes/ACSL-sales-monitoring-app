@@ -88,16 +88,33 @@ class SyncService extends GetxService {
                 body: {'file': tmpFile, 'type': entry.key},
                 isFormData: true,
               );
-              if (uploadResp.success && uploadResp.data != null) {
-                final data = Map<String, dynamic>.from(uploadResp.data as Map);
-                final uploadMap = data['upload'] is Map
-                    ? Map<String, dynamic>.from(data['upload'] as Map)
-                    : data;
-                final imageId = uploadMap['id']?.toString();
-                final payloadField = fieldMap[entry.key];
-                if (imageId != null && payloadField != null) {
-                  payload[payloadField] = imageId;
-                }
+              // M13: a failed upload used to fall straight through, and the
+              // sale then synced WITHOUT its photo — permanently, and with
+              // nobody told. The agreement photo is evidence of the sale, so
+              // losing it silently is worse than not syncing yet.
+              //
+              // Throwing hands this row to the catch below, which records the
+              // error and leaves it queued: the pending card shows what went
+              // wrong and the next sync retries the upload. Nothing is lost,
+              // and the failure is visible.
+              if (!uploadResp.success || uploadResp.data == null) {
+                throw 'Could not upload the ${_imageLabel(entry.key)} — the '
+                    'sale stays queued so the photo is not lost. '
+                    '${uploadResp.message}'.trim();
+              }
+
+              final data = Map<String, dynamic>.from(uploadResp.data as Map);
+              final uploadMap = data['upload'] is Map
+                  ? Map<String, dynamic>.from(data['upload'] as Map)
+                  : data;
+              final imageId = uploadMap['id']?.toString();
+              final payloadField = fieldMap[entry.key];
+              if (imageId == null || imageId.isEmpty) {
+                throw 'The ${_imageLabel(entry.key)} uploaded but the server '
+                    'returned no id — the sale stays queued.';
+              }
+              if (payloadField != null) {
+                payload[payloadField] = imageId;
               }
             } finally {
               if (await tmpFile.exists()) await tmpFile.delete();
@@ -131,6 +148,20 @@ class SyncService extends GetxService {
       isSyncing.value = false;
     }
     _showSyncResultToast();
+  }
+
+  /// A photo's name as the user knows it, for a failure message.
+  String _imageLabel(String key) {
+    switch (key) {
+      case 'stove_image':
+        return 'stove photo';
+      case 'agreement_image':
+        return 'agreement photo';
+      case 'payment_proof':
+        return 'payment proof';
+      default:
+        return key.replaceAll('_', ' ');
+    }
   }
 
   /// True when the create-sale call failed only because a sale with this exact

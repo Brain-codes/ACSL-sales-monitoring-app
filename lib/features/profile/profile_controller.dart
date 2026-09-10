@@ -11,6 +11,11 @@ class ProfileController extends GetxController {
   final _supabase = Get.find<SupabaseService>();
   final isLoading = false.obs;
 
+  /// Set when the last profile refresh did not land. The stored profile is
+  /// still shown; this says it could not be confirmed against the server.
+  final refreshError = ''.obs;
+
+
   @override
   void onInit() {
     super.onInit();
@@ -72,29 +77,54 @@ class ProfileController extends GetxController {
     try { return Get.find<OfflineQueueService>().pendingCount.value; } catch (_) { return 0; }
   }
 
+  /// Re-reads the signed-in user's profile from the server.
+  ///
+  /// M15: a failure here used to be invisible — the call returned, nothing was
+  /// saved, and the screen went on showing the stored profile as though it had
+  /// just been confirmed. The user had no way to tell a fresh profile from a
+  /// stale one, which matters when a role or an organisation has changed.
+  ///
+  /// The stored profile is deliberately KEPT on failure — this app is
+  /// offline-first, and a dead network must never blank someone's identity.
+  /// [refreshError] says the refresh did not land; it does not mean the profile
+  /// on screen is unusable.
   Future<void> refreshProfile() async {
     isLoading.value = true;
-    final resp = await _supabase.callEdgeFunction(
-      'manage-profile',
-      body: {},
-      method: 'GET',
-    );
-    isLoading.value = false;
+    refreshError.value = '';
+    try {
+      final resp = await _supabase.callEdgeFunction(
+        'manage-profile',
+        body: {},
+        method: 'GET',
+      );
 
-    if (resp.success && resp.data is Map) {
-      final data = resp.data as Map;
-      final profileData = data['data'] as Map?;
-      if (profileData != null) {
-        final profileMap = profileData['profile'] as Map?;
-        final orgMap = profileData['organization'] as Map?;
-        if (profileMap != null) {
-          final merged = Map<String, dynamic>.from(profileMap);
-          if (orgMap != null) {
-            merged['organization'] = Map<String, dynamic>.from(orgMap);
-          }
-          _session.saveUserProfile(merged);
-        }
+      if (!resp.success) {
+        refreshError.value = resp.message.isEmpty
+            ? 'Could not refresh your profile.'
+            : resp.message;
+        return;
       }
+
+      final data = resp.data is Map ? resp.data as Map : null;
+      final profileData = data?['data'] as Map?;
+      final profileMap = profileData?['profile'] as Map?;
+
+      if (profileMap == null) {
+        refreshError.value =
+            'Could not refresh your profile — the server sent no profile.';
+        return;
+      }
+
+      final merged = Map<String, dynamic>.from(profileMap);
+      final orgMap = profileData?['organization'] as Map?;
+      if (orgMap != null) {
+        merged['organization'] = Map<String, dynamic>.from(orgMap);
+      }
+      _session.saveUserProfile(merged);
+    } catch (e) {
+      refreshError.value = 'Could not refresh your profile — $e';
+    } finally {
+      isLoading.value = false;
     }
   }
 

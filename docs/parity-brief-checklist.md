@@ -76,17 +76,17 @@ phone** is wrong or short today. Totals come from the server
 
 ## Correctness hygiene
 
-- [ ] **M11. No timezone is pinned anywhere.** SAFE
+- [x] **M11. No timezone is pinned anywhere.** SAFE
       Every date and the "Today" filter use the handset's zone, so a sale made
       late in the evening lands on the wrong day. One helper pinned to
       Africa/Lagos, used everywhere including filter boundaries.
-- [ ] **M12. Profile parsing uses bare `DateTime.parse`.** SAFE
+- [x] **M12. Profile parsing uses bare `DateTime.parse`.** SAFE
       One malformed value throws and kills the profile. Use `tryParse`.
-- [ ] **M13. A failed photo upload during offline sync is silent.** WRITES
+- [x] **M13. A failed photo upload during offline sync is silent.** WRITES
       The sale syncs without its photo and nobody is told.
-- [ ] **M14. Queued unsynced sales can vanish on a decode error.** WRITES
+- [x] **M14. Queued unsynced sales can vanish on a decode error.** WRITES
       A bare `catch` swallows it. Never a bare catch around unsynced work.
-- [ ] **M15. A failed profile refresh is invisible.** SAFE
+- [x] **M15. A failed profile refresh is invisible.** SAFE
 
 ## Platform
 

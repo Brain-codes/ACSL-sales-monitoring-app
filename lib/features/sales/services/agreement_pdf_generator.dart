@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:stove_transaction/core/utils/app_date.dart';
 import 'dart:ui' as ui;
 
 import 'package:flutter/services.dart';
@@ -25,8 +26,11 @@ class AgreementPDFGenerator {
   static const _white = PdfColors.white;
   static const _black = PdfColors.black;
 
+  /// M11: the printed agreement dates in West Africa Time. This goes on a
+  /// legal document, so the day it names must be the day of the sale — not the
+  /// day the printing handset happened to think it was.
   static String _formatDate(DateTime? d) =>
-      d != null ? DateFormat('dd MMM yyyy').format(d) : '';
+      d != null ? DateFormat('dd MMM yyyy').format(toLagos(d)) : '';
 
   static String _formatAmount(double? v) =>
       v != null ? NumberFormat.decimalPattern('en_NG').format(v) : '';

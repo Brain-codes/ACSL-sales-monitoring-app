@@ -4,8 +4,8 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:go_router/go_router.dart';
-import 'package:intl/intl.dart';
 import 'package:stove_transaction/core/constants/app_colors.dart';
+import 'package:stove_transaction/core/utils/app_date.dart';
 import 'package:stove_transaction/core/services/connectivity_service.dart';
 import 'package:stove_transaction/core/services/offline_queue_service.dart';
 import 'package:stove_transaction/core/services/supabase_service.dart';
@@ -19,7 +19,8 @@ import 'package:stove_transaction/features/sales/services/agreement_pdf_generato
 import 'package:printing/printing.dart';
 import 'sales_list_controller.dart';
 
-final _dateFmt = DateFormat('d MMM yyyy');
+// M11: dates render in West Africa Time, not the handset's zone. See
+// core/utils/app_date.dart.
 
 String _fmtAmount(double? v) => formatNaira(v);
 
@@ -71,7 +72,7 @@ double? _balanceOwed(SaleModel s) {
   return owed > 0.005 ? owed : null;
 }
 
-String _fmtDate(DateTime? d) => d != null ? _dateFmt.format(d) : '—';
+String _fmtDate(DateTime? d) => formatLagosDate(d);
 String _fmtRole(String s) => s.replaceAll('_', ' ').split(' ').map((w) => w.isEmpty ? '' : '${w[0].toUpperCase()}${w.substring(1)}').join(' ');
 
 String _fmtPaymentStatus(String s) {
@@ -911,7 +912,7 @@ class _DateRangeSheet extends StatefulWidget {
 class _DateRangeSheetState extends State<_DateRangeSheet> {
   DateTime? _start;
   DateTime? _end;
-  final _dateFmt2 = DateFormat('d MMM yyyy');
+
 
   @override
   void initState() {
@@ -981,13 +982,13 @@ class _DateRangeSheetState extends State<_DateRangeSheet> {
                 const SizedBox(height: 20),
                 _DatePickerTile(
                   label: 'Start Date',
-                  value: _start != null ? _dateFmt2.format(_start!) : null,
+                  value: _start != null ? formatLagosDate(_start) : null,
                   onTap: _pickStart,
                 ),
                 const SizedBox(height: 12),
                 _DatePickerTile(
                   label: 'End Date',
-                  value: _end != null ? _dateFmt2.format(_end!) : null,
+                  value: _end != null ? formatLagosDate(_end) : null,
                   placeholder: _start == null ? 'Pick a start date first' : 'Select end date (optional)',
                   enabled: _start != null,
                   onTap: _pickEnd,

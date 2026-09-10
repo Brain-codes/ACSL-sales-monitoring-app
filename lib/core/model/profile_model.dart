@@ -39,7 +39,11 @@ class ProfileModel {
         phone: json["phone"],
         role: json["role"],
         hasChangedPassword: json["has_changed_password"],
-        createdAt: json["created_at"] != null ? DateTime.parse(json["created_at"]) : null,
+        // M12: tryParse, never parse. A malformed timestamp used to throw
+        // out of fromJson, which killed the whole profile — and the profile
+        // is what isSignedIn depends on, so one bad character logged the
+        // user out. A date we cannot read is worth less than the account.
+        createdAt: DateTime.tryParse(json["created_at"]?.toString() ?? ""),
         organization: json["organizations"] != null
             ? (json["organizations"] is List && (json["organizations"] as List).isNotEmpty
                 ? OrganizationModel.fromJson((json["organizations"] as List).first)
@@ -105,7 +109,8 @@ class OrganizationModel {
         alternativePhone: json["alternative_phone"],
         email: json["email"] ?? json["partner_email"],
         address: json["address"],
-        createdAt: json["created_at"] != null ? DateTime.parse(json["created_at"]) : null,
+        // M12: tryParse, never parse — as above.
+        createdAt: DateTime.tryParse(json["created_at"]?.toString() ?? ""),
       );
 
   Map<String, dynamic> toJson() => {

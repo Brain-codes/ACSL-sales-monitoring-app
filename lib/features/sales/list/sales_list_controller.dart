@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'package:get/get.dart';
+import 'package:logger/logger.dart';
 import 'package:stove_transaction/core/services/connectivity_service.dart';
+import 'package:stove_transaction/core/utils/app_date.dart';
 import 'package:stove_transaction/core/services/local_cache_service.dart';
 import 'package:stove_transaction/core/services/offline_queue_service.dart';
 import 'package:stove_transaction/core/services/supabase_service.dart';
@@ -23,6 +25,7 @@ class _SalesPage {
 
 class SalesListController extends GetxController {
   final _supabase = Get.find<SupabaseService>();
+  final _logger = Logger();
   final _connectivity = Get.find<ConnectivityService>();
 
   final isLoading = false.obs;
@@ -179,11 +182,25 @@ class SalesListController extends GetxController {
     }
   }
 
+  /// Loads the sales still waiting to sync.
+  ///
+  /// M14: this used to decode every row inside ONE try wrapped in a bare
+  /// `catch (_) {}`. A single row that failed to decode threw out of the whole
+  /// map, so EVERY queued sale disappeared from the list — silently, and while
+  /// still sitting in the queue. An agent would see their unsynced work vanish
+  /// with no explanation.
+  ///
+  /// Each row is decoded on its own now: a bad row is skipped and counted, the
+  /// rest still show, and the failure is logged and surfaced.
   Future<void> _loadPendingSales() async {
     try {
       final queue = Get.find<OfflineQueueService>();
       final pending = await queue.getPending();
-      final pendingModels = pending.map((row) {
+      var undecodable = 0;
+      final pendingModels = <SaleModel>[];
+
+      for (final row in pending) {
+        try {
         final payload = jsonDecode(row['payload'] as String) as Map<String, dynamic>;
         // Which images were captured (stored separately from the payload) —
         // used to show "Attached / Captured" in the offline detail view.
@@ -251,10 +268,31 @@ class SalesListController extends GetxController {
         model.syncError = (row['error'] as String?)?.trim().isEmpty ?? true
             ? null
             : (row['error'] as String).trim();
-        return model;
-      }).toList();
+        pendingModels.add(model);
+        } catch (e, st) {
+          // This row is unreadable, but it is still queued and will still be
+          // retried. Losing it from the LIST is the bug; losing it from the
+          // queue would be worse, so nothing is deleted here.
+          undecodable++;
+          _logger.e('Could not decode queued sale ${row['id']}: $e', stackTrace: st);
+        }
+      }
+
       pendingSales.assignAll(pendingModels);
-    } catch (_) {}
+
+      if (undecodable > 0) {
+        error.value = undecodable == 1
+            ? '1 unsynced sale on this device could not be read. It is still '
+                'queued — report this rather than reinstalling.'
+            : '$undecodable unsynced sales on this device could not be read. '
+                'They are still queued — report this rather than reinstalling.';
+      }
+    } catch (e, st) {
+      // The queue itself could not be read. Never swallow this: the user's
+      // unsynced work is what is at stake.
+      _logger.e('Could not read the offline sales queue: $e', stackTrace: st);
+      error.value = 'Could not read the unsynced sales on this device.';
+    }
   }
 
   Future<_SalesPage> _fetchViaEdgeFunction() async {
@@ -302,21 +340,27 @@ class SalesListController extends GetxController {
   }
 
   (String, String?)? _dateRange() {
+    // M11: these boundaries used to come off the handset's clock via
+    // toIso8601String(), so "Today" meant the phone's today. A sale made at
+    // 23:30 WAT on a phone set to UTC fell under the previous day, and the
+    // filter quietly disagreed with the record. Every boundary is a Lagos
+    // calendar day now.
     switch (filter.value) {
       case SalesFilter.today:
-        final today = DateTime.now().toIso8601String().substring(0, 10);
+        final today = lagosDateString(DateTime.now());
         return (today, today);
       case SalesFilter.week:
-        final now = DateTime.now();
+        final now = lagosToday();
         final monday = now.subtract(Duration(days: now.weekday - 1));
-        return (monday.toIso8601String().substring(0, 10), null);
+        return (lagosDateString(monday), null);
       case SalesFilter.month:
-        final now = DateTime.now();
+        final now = lagosToday();
         return ('${now.year}-${now.month.toString().padLeft(2, '0')}-01', null);
       case SalesFilter.custom:
         final s = customStart.value;
         if (s == null) return null;
-        return (s.toIso8601String().substring(0, 10), customEnd.value?.toIso8601String().substring(0, 10));
+        final end = customEnd.value;
+        return (lagosDateString(s), end == null ? null : lagosDateString(end));
       default:
         return null;
     }
