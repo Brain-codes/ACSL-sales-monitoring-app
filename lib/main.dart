@@ -97,7 +97,7 @@ Future<void> _initServices() async {
   await Get.putAsync(() => ConnectivityService().init());
   Get.put(DataRefreshService());
   Get.put(AuthService());
-  Get.put(AppReleaseService());
+  await Get.putAsync(() => AppReleaseService().init());
   Get.put(PermissionService());
 }
 

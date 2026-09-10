@@ -301,30 +301,6 @@ class SupabaseService {
     }
   }
 
-  Future<SupabaseApiResponse<List<Map<String, dynamic>>>> selectWhere({
-    required String table,
-    String? column,
-    dynamic value,
-  }) async {
-    try {
-      var query = Supabase.instance.client.from(table).select();
-
-      if (column != null && value != null) {
-        query = query.eq(column, value);
-      }
-
-      final response = await query;
-      _logger.d(response);
-      _logger.d(query);
-
-      return SupabaseApiResponse.success(
-        List<Map<String, dynamic>>.from(response),
-      );
-    } catch (e) {
-      return SupabaseApiResponse.error('Select failed: ${e.toString()}');
-    }
-  }
-
   /// Optionally expose auth session if needed
   Session? get currentSession => _client.auth.currentSession;
 

@@ -90,20 +90,20 @@ phone** is wrong or short today. Totals come from the server
 
 ## Platform
 
-- [ ] **M16. App version is a hardcoded constant.** SAFE
+- [x] **M16. App version is a hardcoded constant.** SAFE
       Read it from `package_info_plus`.
-- [ ] **M17. The update check bypasses `callEdgeFunction`.** SAFE
+- [x] **M17. The update check bypasses `callEdgeFunction`.** SAFE
       Uses a raw HTTP GET. Route it through the normal client.
 - [ ] **M18. User management is granted to the wrong roles.** SAFE
       The phone grants it to agent managers and partners; the web grants it to
       super admins only. Match the web — the two files are one rule from now on.
-- [ ] **M19. Stale references in the permissions file and CLAUDE.md.** SAFE
-- [ ] **M20. The last direct table read is dead code.** SAFE
+- [x] **M19. Stale references in the permissions file and CLAUDE.md.** SAFE
+- [x] **M20. The last direct table read is dead code.** SAFE
       Delete it so "edge functions only" can be proven by search.
 
 ## Verification
 
-- [ ] **V1. `flutter analyze` clean.**
-- [ ] **V2. No `Supabase.from(` anywhere in `lib/`.**
+- [x] **V1. `flutter analyze` clean.**
+- [x] **V2. No `Supabase.from(` anywhere in `lib/`.**
 - [ ] **V3. Update `docs/memory.md`.**
 - [ ] **V4. On-device testing — yours.**

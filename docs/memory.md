@@ -641,3 +641,31 @@ Resolved: the old comment claiming the split name broke the backend was true
 against the server of the day only. `create-sale` now composes the joined name
 from the parts before its own checks, so the app sends `endUserName`,
 `endUserFirstName` and `endUserSurname` together.
+
+## Parity brief M1-M20 (2026-09-10)
+
+ACSL's 3 Sept brief is worked through. Four rules came out of it that outlive
+the individual fixes:
+
+1. **Never sum rows to get a total.** Every list edge function caps ONE
+   response (sales/stoves 500, transfers 200, agents/users/orgs 100) and
+   production is well past those caps. Totals come from `get-sales-advanced`
+   with `withSummary: true`, computed in SQL and scoped to the caller. Rows
+   page with `pagination.total` / `has_more` — use `core/services/paged_fetch.dart`.
+2. **Dates are West Africa Time.** `core/utils/app_date.dart` is the only place
+   a date is formatted or a day boundary is decided. A fixed UTC+1 is exact
+   because Nigeria has never observed daylight saving.
+3. **`total_paid` is what was collected**, for cash sales as well as
+   instalments, and is never substituted with `amount`. Payment badges,
+   balances and reports all derive from it.
+4. **`sales.status` is form completeness, not payment.** Never show it as a
+   payment or verification state — `payment_status` is the payment one.
+
+Also fixed, found while testing rather than in the brief: permissions resolved
+once on the splash screen and never recomputed, so every role (super admin
+included) was bounced to /unauthorized after login. `SessionManager.revision`
+ticks on identity writes and Riverpod watches it — if you add another identity
+write, bump it.
+
+The permissions map and the web's `src/lib/permissions.ts` are ONE rule and
+change together. Reference repo: acsl-80/ACSL-Sales-Monitoring-Web-App.

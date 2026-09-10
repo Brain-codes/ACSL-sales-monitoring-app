@@ -3,7 +3,10 @@
 /// Screens stay single-view: widgets and nav entries are shown/hidden through
 /// `canAccess` / `can`, never by forking a screen per role. The role ->
 /// permissions map below is a direct port of the web app's `PERMISSIONS`
-/// (`frontend-transactions/src/lib/permissions.ts`) — keep the two in sync.
+/// (`src/lib/permissions.ts` in acsl-80/ACSL-Sales-Monitoring-Web-App) — keep
+/// the two in sync. M18/M19: the old pointer named `frontend-transactions`, a
+/// repository path that no longer exists, and the two files had drifted apart
+/// as a result. They are ONE rule and change together from now on.
 library;
 
 /// Every route the app can show. Mirror of the web `RouteKey`.
@@ -97,8 +100,8 @@ String? resolveRole(String? role) {
 }
 
 /// Role -> permissions. Ported from the web app's `PERMISSIONS`
-/// (`frontend-transactions/src/lib/permissions.ts`) so mobile and web agree on
-/// what each role can see. Web-only route keys with no mobile screen yet
+/// (`src/lib/permissions.ts` in acsl-80/ACSL-Sales-Monitoring-Web-App) so
+/// mobile and web agree on what each role can see. Web-only route keys with no mobile screen yet
 /// (sales-cancelled, end-user-records, performance-report, …) are omitted.
 const Map<String, RolePermissions> rolePermissions = {
   // Super admin: every route, every feature.
