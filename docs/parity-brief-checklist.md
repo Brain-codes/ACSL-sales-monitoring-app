@@ -94,9 +94,26 @@ phone** is wrong or short today. Totals come from the server
       Read it from `package_info_plus`.
 - [x] **M17. The update check bypasses `callEdgeFunction`.** SAFE
       Uses a raw HTTP GET. Route it through the normal client.
-- [ ] **M18. User management is granted to the wrong roles.** SAFE
-      The phone grants it to agent managers and partners; the web grants it to
-      super admins only. Match the web — the two files are one rule from now on.
+- [x] **M18. NOT A DEFECT — the brief is wrong.** SAFE (no change made)
+      The brief says the phone grants user management to agent managers and
+      partners while "the web grants it to super admins only", citing
+      `src/lib/permissions.ts:106`.
+
+      Checked against the live web file (fetched 2026-09-10). Line 106 sits
+      inside the `super_admin` block, which is presumably as far as whoever
+      wrote the brief read. The same file ALSO grants `user-management` to
+      `acsl_agent_manager` (routes :172-173, feature :185) and to `partner`
+      (routes :230-231, feature :237).
+
+      So the web grants it to exactly three roles — super_admin,
+      acsl_agent_manager, partner — and the mobile map grants it to the same
+      three (`permissions.dart` :124-126/:136 and :178-180/:189). The two files
+      already agree.
+
+      **No change made.** Applying the brief here would have REMOVED user
+      management from agent managers and partners on the phone and broken the
+      parity it was meant to protect. Reported back to ACSL with this evidence,
+      as the brief asks for items believed wrong.
 - [x] **M19. Stale references in the permissions file and CLAUDE.md.** SAFE
 - [x] **M20. The last direct table read is dead code.** SAFE
       Delete it so "edge functions only" can be proven by search.
