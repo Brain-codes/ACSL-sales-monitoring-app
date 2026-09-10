@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:get/get.dart';
 import 'package:get_storage/get_storage.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -5,6 +6,17 @@ import 'package:stove_transaction/core/model/profile_model.dart';
 
 class SessionManager extends GetxService {
   final GetStorage _box = GetStorage();
+
+  /// Ticks whenever the signed-in identity changes.
+  ///
+  /// GetStorage is not reactive, so nothing downstream can tell that a login
+  /// or logout happened just by holding this service. Riverpod watches this to
+  /// know when to recompute the role and the permissions that follow from it —
+  /// without it, permissions resolved once on the splash screen (nobody signed
+  /// in, role null) and every user was refused every route afterwards.
+  final ValueNotifier<int> revision = ValueNotifier<int>(0);
+
+  void _bumpRevision() => revision.value++;
 
   /// Initialize the SessionManager service
   Future<SessionManager> init() async {
@@ -175,6 +187,7 @@ class SessionManager extends GetxService {
 
   void setRole(String role) {
     _box.write(_roleKey, role);
+    _bumpRevision();
   }
 
   void saveUser({
@@ -189,6 +202,7 @@ class SessionManager extends GetxService {
     _box.write(_tokenKey, token);
     _box.write(_userNameKey, userName);
     _box.write(_timeLoggedInKey, timeLoggedIn);
+    _bumpRevision();
   }
 
   void saveUserProfile(Map<String, dynamic> profile) {
@@ -198,6 +212,9 @@ class SessionManager extends GetxService {
     if (profile['organization'] != null) {
       _box.write(_organizationKey, profile['organization']);
     }
+    // isSignedIn also depends on the profile being present, so this write
+    // changes the answer as much as the role write does.
+    _bumpRevision();
   }
 
   void saveCompleteUserData({
@@ -297,6 +314,7 @@ class SessionManager extends GetxService {
     _box.remove(_timeLoggedInKey);
     _box.remove(_userProfileKey);
     _box.remove(_organizationKey);
+    _bumpRevision();
   }
 
   void logoutAndClearOfflineData() {

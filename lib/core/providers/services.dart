@@ -39,8 +39,29 @@ final syncServiceProvider =
 final connectivityProvider =
     Provider<ConnectivityService>((ref) => Get.find<ConnectivityService>());
 
+/// Bumps whenever the signed-in identity changes (login, logout, role change).
+///
+/// The role lives in GetStorage, which is not reactive, and [sessionProvider]
+/// hands back the same [SessionManager] instance forever. Without this, a plain
+/// `Provider` reading `.role` computed ONCE — on the splash screen, before
+/// anyone had signed in — resolved to null, and never recomputed. Every role,
+/// super admin included, was then bounced to /unauthorized after logging in.
+///
+/// [SessionManager.revision] ticks on every identity write; this provider
+/// invalidates itself when it does, so everything downstream recomputes.
+final sessionRevisionProvider = Provider<int>((ref) {
+  final session = ref.watch(sessionProvider);
+  void onChanged() => ref.invalidateSelf();
+  session.revision.addListener(onChanged);
+  ref.onDispose(() => session.revision.removeListener(onChanged));
+  return session.revision.value;
+});
+
 /// Current user's role (canonical or legacy string), or null when logged out.
-final roleProvider = Provider<String?>((ref) => ref.watch(sessionProvider).role);
+final roleProvider = Provider<String?>((ref) {
+  ref.watch(sessionRevisionProvider);
+  return ref.read(sessionProvider).role;
+});
 
 /// Resolved permissions for the current role. Drives sidebar visibility and
 /// in-screen widget gating. Super admin => every route + feature.

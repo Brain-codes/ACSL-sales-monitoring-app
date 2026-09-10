@@ -1974,11 +1974,34 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
     }
     // Amount received cannot exceed the sale amount
     final receivedText = amountReceivedCtrl.text.replaceAll(',', '').trim();
-    if (receivedText.isNotEmpty) {
-      final received = double.tryParse(receivedText);
-      if (received != null && amt != null && received > amt) {
-        errors.add(const ValidationError(step: 4, stepTitle: 'Sale Details', field: 'Amount Received', message: 'Amount received cannot be greater than the sale amount'));
-      }
+    final received = receivedText.isEmpty ? null : double.tryParse(receivedText);
+    if (received != null && amt != null && received > amt) {
+      errors.add(const ValidationError(step: 4, stepTitle: 'Sale Details', field: 'Amount Received', message: 'Amount received cannot be greater than the sale amount'));
+    }
+
+    // M6 — a part payment on a cash sale must name a payment plan.
+    //
+    // The server's outright path sets total_paid to the FULL amount, so a cash
+    // sale saved with less than the full sum collected is recorded as paid in
+    // full and the shortfall disappears from every report. The web's bench
+    // applies the same rule at the form: no payment plan is only allowed when
+    // the money collected settles the sale.
+    //
+    // Refused here, on the field, rather than at submit — once it reaches the
+    // server the figure is already wrong.
+    if (!isInstallmentSale.value &&
+        amt != null &&
+        amt > 0 &&
+        received != null &&
+        received + 0.005 < amt) {
+      errors.add(const ValidationError(
+        step: 4,
+        stepTitle: 'Sale & Payment',
+        field: 'Payment type',
+        message:
+            'This is a part payment, so it needs an installment plan. Either '
+            'collect the full amount or switch to Installment purchase.',
+      ));
     }
     // Step 6 — Cooking Habits (all optional — no validation)
 

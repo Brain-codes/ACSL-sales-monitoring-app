@@ -52,7 +52,8 @@ class FinancialReportsScreen extends ConsumerWidget {
                   ],
                 ),
                 const SizedBox(height: 20),
-                Text('By status', style: Theme.of(context).textTheme.titleMedium),
+                Text('By payment status',
+                    style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 8),
                 ...r.byStatus.entries.map((e) => _StatusRow(label: e.key, count: e.value, total: r.count)),
               ],
@@ -86,11 +87,38 @@ class _Report {
     for (final s in sales) {
       value += s.amount ?? s.paymentModelFixedPrice ?? 0;
       collected += s.paidAmount;
-      final status = (s.status ?? 'unknown').replaceAll('_', ' ');
+      // M5: this used to group by `sales.status`, which is the FORM's
+      // completeness state ("incomplete", "pending", "assigned") — not payment.
+      // On a financial report that read as a money figure, and today every live
+      // sale says "Incomplete", so the whole chart said nothing. Group by
+      // payment state instead, which is what a financial report is about.
+      final status = _paymentBucket(s);
       byStatus[status] = (byStatus[status] ?? 0) + 1;
     }
     return _Report(count: sales.length, totalValue: value, collected: collected, byStatus: byStatus);
   }
+}
+
+/// Which payment bucket a sale falls in, for the report's chart.
+///
+/// Prefers the server's `payment_status`; falls back to the money when it says
+/// nothing usable. `total_paid` is the collected figure for both sale types and
+/// is never substituted with `amount`.
+String _paymentBucket(SaleModel s) {
+  switch ((s.paymentStatus ?? '').toLowerCase()) {
+    case 'fully_paid':
+    case 'paid':
+      return 'Paid in full';
+    case 'partially_paid':
+      return 'Partly paid';
+    case 'unpaid':
+      return 'Unpaid';
+  }
+  final total = s.amount ?? s.paymentModelFixedPrice;
+  final paid = s.paidAmount;
+  if (total == null || total <= 0 || paid <= 0) return 'Unpaid';
+  if (paid + 0.005 < total) return 'Partly paid';
+  return 'Paid in full';
 }
 
 class _StatusRow extends StatelessWidget {

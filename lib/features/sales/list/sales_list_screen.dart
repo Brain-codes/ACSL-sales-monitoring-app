@@ -29,14 +29,46 @@ double _amountPaid(SaleModel s) => s.paidAmount;
 
 String _fmtAmountPaid(SaleModel s) => formatNaira(_amountPaid(s));
 
-/// A sale is only ever shown as **Completed** or **Partially Paid** — never
-/// "incomplete"/"pending"/raw statuses. Only an installment sale that is not
-/// fully paid is "partially paid"; everything else reads as completed.
+/// The payment state of a sale, as a badge.
+///
+/// M3: this used to return `completed` for everything except an instalment
+/// sale explicitly marked `partially_paid` — so an unpaid instalment and an
+/// underpaid cash sale both showed a green "Completed". The badge is a payment
+/// statement, and it now derives from what was actually collected.
+///
+/// `total_paid` is the collected figure for BOTH sale types and is never
+/// substituted with `amount`; see [SaleModel.paidAmount]. The server's own
+/// `payment_status` is preferred when it says something definite, and the money
+/// decides when it does not.
 String _derivedStatus(SaleModel s) {
-  if (s.isInstallment == true && (s.paymentStatus ?? '').toLowerCase() == 'partially_paid') {
-    return 'partially_paid';
+  switch ((s.paymentStatus ?? '').toLowerCase()) {
+    case 'fully_paid':
+    case 'paid':
+      return 'fully_paid';
+    case 'partially_paid':
+      return 'partially_paid';
+    case 'unpaid':
+      return 'unpaid';
   }
-  return 'completed';
+
+  // No usable status from the server — read the money.
+  final total = s.amount;
+  final paid = _amountPaid(s);
+  if (total == null || total <= 0) return 'unpaid';
+  if (paid <= 0) return 'unpaid';
+  if (paid + 0.005 < total) return 'partially_paid';
+  return 'fully_paid';
+}
+
+/// What is still owed, or null when the sale is settled.
+///
+/// M7: the balance used to be shown only for instalment sales, so an underpaid
+/// cash sale never said what was outstanding. Owed is owed, whatever the type.
+double? _balanceOwed(SaleModel s) {
+  final total = s.amount;
+  if (total == null || total <= 0) return null;
+  final owed = total - _amountPaid(s);
+  return owed > 0.005 ? owed : null;
 }
 
 String _fmtDate(DateTime? d) => d != null ? _dateFmt.format(d) : '—';
@@ -45,6 +77,9 @@ String _fmtRole(String s) => s.replaceAll('_', ' ').split(' ').map((w) => w.isEm
 String _fmtPaymentStatus(String s) {
   switch (s.toLowerCase()) {
     case 'paid': return 'Paid';
+    // M4: `fully_paid` is the value the server actually writes, and it had no
+    // case here — so the detail sheet printed the raw string "fully_paid".
+    case 'fully_paid': return 'Paid in full';
     case 'partially_paid': return 'Partially Paid';
     case 'unpaid': return 'Unpaid';
     default: return s;
@@ -1130,7 +1165,8 @@ class _StatusBadge extends StatelessWidget {
       case 'fully_paid':
         color = AppColors.success; label = 'Fully Paid'; break;
       case 'partially_paid':
-        color = const Color(0xFFD97706); label = 'Partially Paid'; break;
+        // Was a raw hex, which hard rule #2 forbids outside app_colors.dart.
+        color = AppColors.warning; label = 'Partially Paid'; break;
       case 'unpaid':
         color = AppColors.error; label = 'Unpaid'; break;
       case 'pending':
@@ -1218,12 +1254,15 @@ class _SaleDetailSheet extends StatelessWidget {
                       _DetailRow('Payment Model', sale.paymentModelName!),
                     if (isInstallment && sale.paymentModelDurationMonths != null)
                       _DetailRow('Duration', '${sale.paymentModelDurationMonths} months'),
-                    if (isInstallment && sale.paymentStatus != null)
+                    // M7: payment status, amount collected and the outstanding
+                    // balance apply to EVERY sale, not only instalments. Gated
+                    // on isInstallment, an underpaid cash sale showed none of
+                    // the three and looked settled.
+                    if (sale.paymentStatus != null)
                       _DetailRow('Payment Status', _fmtPaymentStatus(sale.paymentStatus!)),
-                    if (isInstallment && sale.totalPaid != null)
-                      _DetailRow('Total Paid', _fmtAmount(sale.totalPaid)),
-                    if (isInstallment && sale.amount != null && sale.totalPaid != null && sale.amount! > sale.totalPaid!)
-                      _DetailRow('Balance', _fmtAmount(sale.amount! - sale.totalPaid!)),
+                    _DetailRow('Total Paid', _fmtAmountPaid(sale)),
+                    if (_balanceOwed(sale) != null)
+                      _DetailRow('Balance', _fmtAmount(_balanceOwed(sale))),
                     if (isInstallment && sale.initialPaymentAmount != null)
                       _DetailRow('Initial Payment', _fmtAmount(sale.initialPaymentAmount)),
                     if (isInstallment && sale.initialPaymentMethod != null && sale.initialPaymentMethod!.isNotEmpty)
@@ -1339,17 +1378,31 @@ class _AgreementActions extends StatefulWidget {
 class _AgreementActionsState extends State<_AgreementActions> {
   bool _busy = false;
 
+  /// The full sale record, for the agreement PDF.
+  ///
+  /// M2: this used to POST `{saleId}`. The function is GET-only and reads `id`
+  /// off the query string, so the call failed EVERY time — and the failure was
+  /// swallowed by the fallback below, so the PDF was quietly built from the
+  /// truncated list row instead of the real record. Called the same way
+  /// create_sale_service.getSale already does.
+  ///
+  /// A failure now throws: an agreement printed from partial data is worse
+  /// than no agreement, because nothing on the page says which one it is.
   Future<SaleModel> _fetchFullSale() async {
     final supabase = Get.find<SupabaseService>();
     final resp = await supabase.callEdgeFunction(
       'get-sale',
-      body: {'saleId': widget.sale.id},
+      body: {},
+      method: 'GET',
+      queryParams: {'id': widget.sale.id},
     );
     if (resp.success && resp.data is Map) {
       final data = (resp.data as Map)['sale'] ?? (resp.data as Map)['data'] ?? resp.data;
       if (data is Map) return SaleModel.fromJson(Map<String, dynamic>.from(data));
     }
-    return widget.sale; // fallback to list data if fetch fails
+    throw resp.message.isEmpty
+        ? 'Could not load the full sale record for this agreement.'
+        : resp.message;
   }
 
   Future<List<int>> _build() async {
@@ -1369,7 +1422,7 @@ class _AgreementActionsState extends State<_AgreementActions> {
         ),
       ));
     } catch (e) {
-      _showError();
+      _showError(e);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -1384,16 +1437,21 @@ class _AgreementActionsState extends State<_AgreementActions> {
         filename: 'Agreement_${widget.sale.transactionId}.pdf',
       );
     } catch (e) {
-      _showError();
+      _showError(e);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
   }
 
-  void _showError() {
+  void _showError([Object? reason]) {
     if (!mounted) return;
+    final detail = reason?.toString().trim() ?? '';
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Could not generate agreement PDF')),
+      SnackBar(
+        content: Text(detail.isEmpty
+            ? 'Could not generate agreement PDF'
+            : 'Could not generate agreement PDF — $detail'),
+      ),
     );
   }
 
