@@ -1,12 +1,20 @@
-import 'dart:convert';
 import 'package:get/get.dart';
-import 'package:http/http.dart' as http;
 import 'package:logger/logger.dart';
-import 'package:stove_transaction/core/constants/app_config.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:stove_transaction/core/services/connectivity_service.dart';
+import 'package:stove_transaction/core/services/supabase_service.dart';
 
-/// Current hard-coded app version — keep in sync with pubspec.yaml version field.
-const String kAppVersion = '1.0.17';
+/// The running app's version, read from the build at start-up.
+///
+/// M16: this was a hardcoded constant that somebody had to remember to keep in
+/// step with pubspec.yaml by hand. When the two drifted, the update check
+/// compared the release against the WRONG current version — either nagging
+/// about an update already installed, or missing one entirely.
+///
+/// [AppReleaseService.init] fills this from package_info_plus, which reads the
+/// version the build was actually stamped with. The literal is only a fallback
+/// for the moment before init runs.
+String kAppVersion = '1.0.17';
 
 class AppReleaseInfo {
   final String version;
@@ -40,6 +48,21 @@ class AppReleaseInfo {
 
 class AppReleaseService extends GetxService {
   final Logger _logger = Logger();
+  final SupabaseService _supabase = Get.find<SupabaseService>();
+
+  /// Reads the running version off the build before anything checks it.
+  Future<AppReleaseService> init() async {
+    try {
+      final info = await PackageInfo.fromPlatform();
+      if (info.version.isNotEmpty) kAppVersion = info.version;
+      _logger.i('App version: $kAppVersion (build ${info.buildNumber})');
+    } catch (e) {
+      // Keep the fallback literal rather than failing start-up over a version
+      // string. The update check still runs, just against the constant.
+      _logger.w('Could not read the app version from the build: $e');
+    }
+    return this;
+  }
 
   final Rx<AppReleaseInfo?> latestRelease = Rx(null);
   final RxBool hasUpdate = false.obs;
@@ -67,12 +90,22 @@ class AppReleaseService extends GetxService {
       if (!Get.find<ConnectivityService>().isOnline.value) return;
     } catch (_) {}
     try {
-      final uri = Uri.parse('${AppConfig.acslSupabaseURL}/functions/v1/manage-app-release');
-      final response = await http.get(uri).timeout(const Duration(seconds: 10));
+      // M17: this used to build a URL and call http.get directly, bypassing the
+      // app's own edge-function client — so it missed the auth header, the 401
+      // refresh-and-retry, and the shared error handling every other call gets.
+      // No endpoint should be reached two different ways.
+      final resp = await _supabase
+          .callEdgeFunction(
+            'manage-app-release',
+            body: const {},
+            method: 'GET',
+            requireAuth: false,
+          )
+          .timeout(const Duration(seconds: 10));
 
-      if (response.statusCode != 200) return;
+      if (!resp.success || resp.data is! Map) return;
 
-      final data = json.decode(response.body) as Map<String, dynamic>;
+      final data = Map<String, dynamic>.from(resp.data as Map);
       final info = AppReleaseInfo.fromJson(data);
       latestRelease.value = info;
 

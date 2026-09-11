@@ -14,6 +14,7 @@ import 'package:stove_transaction/core/widgets/update_prompt_sheet.dart';
 import 'package:stove_transaction/features/sales/resolve/location_resolution_banner.dart';
 import 'package:stove_transaction/features/sales/list/sales_list_screen.dart' show showReadonlySaleDetail;
 import 'package:stove_transaction/features/sales/models/sale_model.dart';
+import 'package:stove_transaction/features/sales/sales_summary_provider.dart';
 import 'package:stove_transaction/features/sales/models/stove_model.dart';
 import 'dashboard_controller.dart';
 
@@ -594,24 +595,39 @@ class _DashboardSalesSheetState extends State<_DashboardSalesSheet> {
     try {
       final resp = await _supabase.callEdgeFunction(
         'get-sales-advanced',
-        body: {'page': 1, 'limit': 500, 'responseFormat': 'format2'},
+        // M8: the header line used to be summed from these rows. One response
+        // caps at 500 and production holds 2,145 sales, so the figure was
+        // short. `withSummary` returns the totals computed in SQL, scoped to
+        // the caller — the rows below stay a preview of the first page.
+        body: {
+          'page': 1,
+          'limit': 500,
+          'responseFormat': 'format2',
+          'withSummary': true,
+        },
       );
       if (!mounted) return;
 
       if (resp.success && resp.data != null) {
         List raw = [];
+        SalesSummary? summary;
         if (resp.data is List) {
           raw = resp.data as List;
         } else if (resp.data is Map) {
-          raw = (resp.data as Map)['data'] as List? ??
-              (resp.data as Map)['sales'] as List? ??
-              [];
+          final map = resp.data as Map;
+          raw = map['data'] as List? ?? map['sales'] as List? ?? [];
+          final rawSummary = map['summary'];
+          if (rawSummary is Map) {
+            summary =
+                SalesSummary.fromJson(Map<String, dynamic>.from(rawSummary));
+          }
         }
         final all = raw
             .map((e) => SaleModel.fromJson(Map<String, dynamic>.from(e as Map)))
             .toList();
         setState(() {
           _sales = _applyFilter(all);
+          _summary = summary;
           _loading = false;
         });
       } else {
@@ -694,7 +710,41 @@ class _DashboardSalesSheetState extends State<_DashboardSalesSheet> {
     }
   }
 
-  double get _total => _sales.fold(0.0, (sum, s) => sum + _keyAmount(s));
+  /// Server-computed totals for this sheet, when the server gave them.
+  SalesSummary? _summary;
+
+  /// The figure in the sheet header.
+  ///
+  /// From the server when available. Falls back to adding up the rows on the
+  /// device, which is only ever a floor — [_totalIsPartial] says which.
+  double get _total {
+    final s = _summary;
+    if (s != null) {
+      switch (widget.mode) {
+        case _SalesMode.soldStoves:
+        case _SalesMode.amountReceived:
+          return s.collected;
+        case _SalesMode.expectedReceivable:
+          return s.receivable;
+        case _SalesMode.outstandingBalance:
+          return s.outstanding;
+      }
+    }
+    return _sales.fold(0.0, (sum, s) => sum + _keyAmount(s));
+  }
+
+  /// How many sales the figure covers — the server's count when it gave one.
+  int get _totalCount {
+    final s = _summary;
+    if (s == null) return _sales.length;
+    return widget.mode == _SalesMode.outstandingBalance
+        ? s.partiallyPaid + s.unpaid
+        : s.total;
+  }
+
+  /// True when the header figure was added up on the device and is therefore
+  /// only a floor. Never let a partial figure pass as a total.
+  bool get _totalIsPartial => _summary == null;
 
   @override
   Widget build(BuildContext context) {
@@ -747,12 +797,20 @@ class _DashboardSalesSheetState extends State<_DashboardSalesSheet> {
                     if (!_loading && _sales.isNotEmpty) ...[
                       const SizedBox(height: 2),
                       Text(
-                        '${_sales.length} sale${_sales.length == 1 ? '' : 's'}  ·  ${fmt(_total)}',
+                        '$_totalCount sale${_totalCount == 1 ? '' : 's'}  ·  '
+                        '${fmt(_total)}${_totalIsPartial ? ' (on this device)' : ''}',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                               color: accent,
                               fontWeight: FontWeight.w600,
                             ),
                       ),
+                      if (_totalCount > _sales.length) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          'Showing the first ${_sales.length}',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ],
                     ],
                   ]),
             ),

@@ -4,8 +4,8 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:go_router/go_router.dart';
-import 'package:intl/intl.dart';
 import 'package:stove_transaction/core/constants/app_colors.dart';
+import 'package:stove_transaction/core/utils/app_date.dart';
 import 'package:stove_transaction/core/services/connectivity_service.dart';
 import 'package:stove_transaction/core/services/offline_queue_service.dart';
 import 'package:stove_transaction/core/services/supabase_service.dart';
@@ -19,7 +19,8 @@ import 'package:stove_transaction/features/sales/services/agreement_pdf_generato
 import 'package:printing/printing.dart';
 import 'sales_list_controller.dart';
 
-final _dateFmt = DateFormat('d MMM yyyy');
+// M11: dates render in West Africa Time, not the handset's zone. See
+// core/utils/app_date.dart.
 
 String _fmtAmount(double? v) => formatNaira(v);
 
@@ -29,22 +30,57 @@ double _amountPaid(SaleModel s) => s.paidAmount;
 
 String _fmtAmountPaid(SaleModel s) => formatNaira(_amountPaid(s));
 
-/// A sale is only ever shown as **Completed** or **Partially Paid** — never
-/// "incomplete"/"pending"/raw statuses. Only an installment sale that is not
-/// fully paid is "partially paid"; everything else reads as completed.
+/// The payment state of a sale, as a badge.
+///
+/// M3: this used to return `completed` for everything except an instalment
+/// sale explicitly marked `partially_paid` — so an unpaid instalment and an
+/// underpaid cash sale both showed a green "Completed". The badge is a payment
+/// statement, and it now derives from what was actually collected.
+///
+/// `total_paid` is the collected figure for BOTH sale types and is never
+/// substituted with `amount`; see [SaleModel.paidAmount]. The server's own
+/// `payment_status` is preferred when it says something definite, and the money
+/// decides when it does not.
 String _derivedStatus(SaleModel s) {
-  if (s.isInstallment == true && (s.paymentStatus ?? '').toLowerCase() == 'partially_paid') {
-    return 'partially_paid';
+  switch ((s.paymentStatus ?? '').toLowerCase()) {
+    case 'fully_paid':
+    case 'paid':
+      return 'fully_paid';
+    case 'partially_paid':
+      return 'partially_paid';
+    case 'unpaid':
+      return 'unpaid';
   }
-  return 'completed';
+
+  // No usable status from the server — read the money.
+  final total = s.amount;
+  final paid = _amountPaid(s);
+  if (total == null || total <= 0) return 'unpaid';
+  if (paid <= 0) return 'unpaid';
+  if (paid + 0.005 < total) return 'partially_paid';
+  return 'fully_paid';
 }
 
-String _fmtDate(DateTime? d) => d != null ? _dateFmt.format(d) : '—';
+/// What is still owed, or null when the sale is settled.
+///
+/// M7: the balance used to be shown only for instalment sales, so an underpaid
+/// cash sale never said what was outstanding. Owed is owed, whatever the type.
+double? _balanceOwed(SaleModel s) {
+  final total = s.amount;
+  if (total == null || total <= 0) return null;
+  final owed = total - _amountPaid(s);
+  return owed > 0.005 ? owed : null;
+}
+
+String _fmtDate(DateTime? d) => formatLagosDate(d);
 String _fmtRole(String s) => s.replaceAll('_', ' ').split(' ').map((w) => w.isEmpty ? '' : '${w[0].toUpperCase()}${w.substring(1)}').join(' ');
 
 String _fmtPaymentStatus(String s) {
   switch (s.toLowerCase()) {
     case 'paid': return 'Paid';
+    // M4: `fully_paid` is the value the server actually writes, and it had no
+    // case here — so the detail sheet printed the raw string "fully_paid".
+    case 'fully_paid': return 'Paid in full';
     case 'partially_paid': return 'Partially Paid';
     case 'unpaid': return 'Unpaid';
     default: return s;
@@ -68,6 +104,11 @@ class SalesListScreen extends StatelessWidget {
           )),
         ],
       ),
+      // A2: the paginator used to sit at the bottom of the body, where the
+      // "New Sale" button floated directly over it — the next-page arrow could
+      // not be tapped, so nothing past page one was reachable by touch either.
+      // As the bottom bar, Scaffold lifts the button clear of it.
+      bottomNavigationBar: _Paginator(c: c),
       floatingActionButton: FloatingActionButton.extended(
         heroTag: 'sales_list_create_sale',
         backgroundColor: AppColors.brandPrimary,
@@ -108,7 +149,6 @@ class SalesListScreen extends StatelessWidget {
                           ? _SalesTableView(sales: c.pageSales)
                           : _SalesCardList(sales: c.pageSales),
                     ),
-                    _Paginator(c: c),
                   ],
                 ),
               );
@@ -739,11 +779,18 @@ class _Paginator extends StatelessWidget {
     if (c.sales.isEmpty) return const SizedBox.shrink();
     final page = c.page.value;
     final total = c.totalPages;
-    final first = (page - 1) * SalesListController.pageSize + 1;
-    final last = (first + c.pageSales.length - 1);
+    // The real count now comes from the server (pagination.total). This used to
+    // report the number of rows FETCHED, which made 2,145 sales look like 100.
+    final first = c.rangeStart;
+    final last = c.rangeEnd;
+    final overall = c.rangeTotal;
 
-    return Container(
+    return Material(
       color: AppColors.white,
+      elevation: 8,
+      child: SafeArea(
+        top: false,
+        child: Padding(
       padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -757,7 +804,7 @@ class _Paginator extends StatelessWidget {
             children: [
               Text('Page $page of $total',
                   style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-              Text('$first–$last of ${c.sales.length} sales',
+              Text('$first–$last of $overall sales',
                   style: const TextStyle(fontSize: 11, color: AppColors.textMuted)),
             ],
           ),
@@ -766,6 +813,8 @@ class _Paginator extends StatelessWidget {
             onPressed: page < total ? () => c.goToPage(page + 1) : null,
           ),
         ],
+      ),
+        ),
       ),
     );
   }
@@ -863,7 +912,7 @@ class _DateRangeSheet extends StatefulWidget {
 class _DateRangeSheetState extends State<_DateRangeSheet> {
   DateTime? _start;
   DateTime? _end;
-  final _dateFmt2 = DateFormat('d MMM yyyy');
+
 
   @override
   void initState() {
@@ -933,13 +982,13 @@ class _DateRangeSheetState extends State<_DateRangeSheet> {
                 const SizedBox(height: 20),
                 _DatePickerTile(
                   label: 'Start Date',
-                  value: _start != null ? _dateFmt2.format(_start!) : null,
+                  value: _start != null ? formatLagosDate(_start) : null,
                   onTap: _pickStart,
                 ),
                 const SizedBox(height: 12),
                 _DatePickerTile(
                   label: 'End Date',
-                  value: _end != null ? _dateFmt2.format(_end!) : null,
+                  value: _end != null ? formatLagosDate(_end) : null,
                   placeholder: _start == null ? 'Pick a start date first' : 'Select end date (optional)',
                   enabled: _start != null,
                   onTap: _pickEnd,
@@ -1130,7 +1179,8 @@ class _StatusBadge extends StatelessWidget {
       case 'fully_paid':
         color = AppColors.success; label = 'Fully Paid'; break;
       case 'partially_paid':
-        color = const Color(0xFFD97706); label = 'Partially Paid'; break;
+        // Was a raw hex, which hard rule #2 forbids outside app_colors.dart.
+        color = AppColors.warning; label = 'Partially Paid'; break;
       case 'unpaid':
         color = AppColors.error; label = 'Unpaid'; break;
       case 'pending':
@@ -1218,12 +1268,15 @@ class _SaleDetailSheet extends StatelessWidget {
                       _DetailRow('Payment Model', sale.paymentModelName!),
                     if (isInstallment && sale.paymentModelDurationMonths != null)
                       _DetailRow('Duration', '${sale.paymentModelDurationMonths} months'),
-                    if (isInstallment && sale.paymentStatus != null)
+                    // M7: payment status, amount collected and the outstanding
+                    // balance apply to EVERY sale, not only instalments. Gated
+                    // on isInstallment, an underpaid cash sale showed none of
+                    // the three and looked settled.
+                    if (sale.paymentStatus != null)
                       _DetailRow('Payment Status', _fmtPaymentStatus(sale.paymentStatus!)),
-                    if (isInstallment && sale.totalPaid != null)
-                      _DetailRow('Total Paid', _fmtAmount(sale.totalPaid)),
-                    if (isInstallment && sale.amount != null && sale.totalPaid != null && sale.amount! > sale.totalPaid!)
-                      _DetailRow('Balance', _fmtAmount(sale.amount! - sale.totalPaid!)),
+                    _DetailRow('Total Paid', _fmtAmountPaid(sale)),
+                    if (_balanceOwed(sale) != null)
+                      _DetailRow('Balance', _fmtAmount(_balanceOwed(sale))),
                     if (isInstallment && sale.initialPaymentAmount != null)
                       _DetailRow('Initial Payment', _fmtAmount(sale.initialPaymentAmount)),
                     if (isInstallment && sale.initialPaymentMethod != null && sale.initialPaymentMethod!.isNotEmpty)
@@ -1339,17 +1392,31 @@ class _AgreementActions extends StatefulWidget {
 class _AgreementActionsState extends State<_AgreementActions> {
   bool _busy = false;
 
+  /// The full sale record, for the agreement PDF.
+  ///
+  /// M2: this used to POST `{saleId}`. The function is GET-only and reads `id`
+  /// off the query string, so the call failed EVERY time — and the failure was
+  /// swallowed by the fallback below, so the PDF was quietly built from the
+  /// truncated list row instead of the real record. Called the same way
+  /// create_sale_service.getSale already does.
+  ///
+  /// A failure now throws: an agreement printed from partial data is worse
+  /// than no agreement, because nothing on the page says which one it is.
   Future<SaleModel> _fetchFullSale() async {
     final supabase = Get.find<SupabaseService>();
     final resp = await supabase.callEdgeFunction(
       'get-sale',
-      body: {'saleId': widget.sale.id},
+      body: {},
+      method: 'GET',
+      queryParams: {'id': widget.sale.id},
     );
     if (resp.success && resp.data is Map) {
       final data = (resp.data as Map)['sale'] ?? (resp.data as Map)['data'] ?? resp.data;
       if (data is Map) return SaleModel.fromJson(Map<String, dynamic>.from(data));
     }
-    return widget.sale; // fallback to list data if fetch fails
+    throw resp.message.isEmpty
+        ? 'Could not load the full sale record for this agreement.'
+        : resp.message;
   }
 
   Future<List<int>> _build() async {
@@ -1369,7 +1436,7 @@ class _AgreementActionsState extends State<_AgreementActions> {
         ),
       ));
     } catch (e) {
-      _showError();
+      _showError(e);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -1384,16 +1451,21 @@ class _AgreementActionsState extends State<_AgreementActions> {
         filename: 'Agreement_${widget.sale.transactionId}.pdf',
       );
     } catch (e) {
-      _showError();
+      _showError(e);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
   }
 
-  void _showError() {
+  void _showError([Object? reason]) {
     if (!mounted) return;
+    final detail = reason?.toString().trim() ?? '';
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Could not generate agreement PDF')),
+      SnackBar(
+        content: Text(detail.isEmpty
+            ? 'Could not generate agreement PDF'
+            : 'Could not generate agreement PDF — $detail'),
+      ),
     );
   }
 

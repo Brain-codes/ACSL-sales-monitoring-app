@@ -573,3 +573,99 @@ requirement). `SalesListController` slices client-side: `pageSize = 25`,
 `page`, `totalPages`, `pageSales`, `goToPage`. `_Paginator` at the bottom of
 the list shows "Page X of Y · a–b of N sales". Filter/date changes reset to
 page 1. No network call is involved in paging.
+
+## Full payment = one amount field (Aug 2026)
+
+A **full payment** means the customer settles the entire sale amount up front,
+so "Sale Amount" and "Amount Received" are the same number. The create-sale
+form therefore collapses them into **one input** — labelled *Sale Amount /
+Amount Received (₦)* — and mirrors the value into `amountReceived` behind the
+scenes. The payload shape is unchanged; both fields are still sent.
+
+- Mobile: `isSingleAmountField` on `CreateSaleController` (`!isEditingSale &&
+  !isInstallment`) drives both the label and whether the second field renders.
+  Two `TextEditingController` listeners wired in `onInit` do the work —
+  `_syncAmountReceivedForFullPayment` mirrors the amount, and
+  `_dropInstallmentWhenPaidInFull` switches an installment back to full payment
+  when the received figure reaches the sale amount (`selectPaymentType(null,
+  keepAmount: true)` keeps the amount entered rather than wiping it).
+- Web mirror: `CreateSalesForm.jsx` has the same `isSingleAmountField` flag,
+  the mirroring inside `handleInputChange`, and the `keepAmount` option on
+  `handlePaymentTypeChange`.
+- **Edit mode keeps both fields.** A synced sale may legitimately carry a
+  part-paid non-installment record; merging would silently rewrite it.
+- Picking an installment model clears the received field on both platforms —
+  under a plan that figure means the *initial payment*, not the full amount.
+- **Server side (`create-sale`, `update-sale`).** Both coerce rather than
+  reject: a non-installment sale gets `total_paid = amount` and
+  `payment_status = 'fully_paid'`. Coercion (not a 400) so old app builds and
+  offline sales queued before this change still sync. `update-sale` also now
+  recomputes `payment_status` — previously an amount edit left it stale.
+- **Legacy rows rectified (2026-08-15).** Three Silvex sales (`57WQUL`,
+  `8RXIO3`, `KFDUJB`) predated the rule: non-installment, ₦38,100, part-paid
+  ₦12,700 / ₦10,000 / ₦10,000. They were real deposits, so they were
+  reclassified as installments on **Institutional Sales - Flexible Payment**
+  rather than written up as fully paid. `amount` stayed at ₦38,100 —
+  `create-sale` treats a model's `fixed_price` as a fallback only, so an
+  installment sale may carry an operator-set amount. Each also had `total_paid`
+  set with **no** `installment_payments` row, so the deposit was backfilled as
+  a `cash` payment dated to the sale's own `sales_date`. Backup lives in
+  `public.backup_partpaid_outright_20260815`. The user confirmed these were the
+  only affected rows; no general backfill was written.
+
+## Field alignment — sale dictionary (2026-09-09)
+
+The sale form's wording, choices and required-ness are **no longer hardcoded**.
+They come from `GET /functions/v1/sale-dictionary` at run time, via
+`SaleDictionaryService` (ETag-revalidated, cached offline, seeded from
+`assets/data/sale-dictionary.json`). Three rules follow, and they are the whole
+contract with the web side:
+
+1. Labels come from the dictionary's `label` — no field name is typed in the app.
+2. Required follows `mandatoryFrom`, judged against **the sale's own date**, so a
+   back-dated draft is never refused for a rule that came later. Two waves are
+   already scheduled (2026-09-11 and 2027-01-05) and an administrator can move
+   either without an app release.
+3. Choices come from `options` — show `label`, send `value` (the values are
+   slugs: `firewood`, `collect`, `semi_indoor`, not the words on screen).
+
+Add a new sale field by adding it to the dictionary on the web side; the app
+picks it up. Do not add a hardcoded label, validator or option list.
+
+**The reference repo is `acsl-80/ACSL-Sales-Monitoring-Web-App`.** The local
+`supabase/` folder in this repo is a months-old copy and is STALE — never read it
+as truth. (`/Users/Efe/Projects/Web/sales-monitoring-web` is also a different,
+unrelated repo: `shakarho/...`.)
+
+Resolved: the old comment claiming the split name broke the backend was true
+against the server of the day only. `create-sale` now composes the joined name
+from the parts before its own checks, so the app sends `endUserName`,
+`endUserFirstName` and `endUserSurname` together.
+
+## Parity brief M1-M20 (2026-09-10)
+
+ACSL's 3 Sept brief is worked through. Four rules came out of it that outlive
+the individual fixes:
+
+1. **Never sum rows to get a total.** Every list edge function caps ONE
+   response (sales/stoves 500, transfers 200, agents/users/orgs 100) and
+   production is well past those caps. Totals come from `get-sales-advanced`
+   with `withSummary: true`, computed in SQL and scoped to the caller. Rows
+   page with `pagination.total` / `has_more` — use `core/services/paged_fetch.dart`.
+2. **Dates are West Africa Time.** `core/utils/app_date.dart` is the only place
+   a date is formatted or a day boundary is decided. A fixed UTC+1 is exact
+   because Nigeria has never observed daylight saving.
+3. **`total_paid` is what was collected**, for cash sales as well as
+   instalments, and is never substituted with `amount`. Payment badges,
+   balances and reports all derive from it.
+4. **`sales.status` is form completeness, not payment.** Never show it as a
+   payment or verification state — `payment_status` is the payment one.
+
+Also fixed, found while testing rather than in the brief: permissions resolved
+once on the splash screen and never recomputed, so every role (super admin
+included) was bounced to /unauthorized after login. `SessionManager.revision`
+ticks on identity writes and Riverpod watches it — if you add another identity
+write, bump it.
+
+The permissions map and the web's `src/lib/permissions.ts` are ONE rule and
+change together. Reference repo: acsl-80/ACSL-Sales-Monitoring-Web-App.

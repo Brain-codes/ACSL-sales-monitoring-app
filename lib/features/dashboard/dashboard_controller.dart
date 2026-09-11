@@ -1,4 +1,5 @@
 import 'package:get/get.dart';
+import 'package:stove_transaction/core/utils/app_date.dart';
 import 'package:intl/intl.dart';
 import 'package:stove_transaction/core/services/connectivity_service.dart';
 import 'package:stove_transaction/core/services/local_cache_service.dart';
@@ -11,7 +12,8 @@ class DashboardController extends GetxController {
   final _connectivity = Get.find<ConnectivityService>();
 
   final isLoading = false.obs;
-  final selectedYear = DateTime.now().year.obs;
+  // M11: the working year is the Lagos year, not the handset's.
+  final selectedYear = lagosToday().year.obs;
   final Rxn<DashboardStats> stats = Rxn<DashboardStats>();
 
   /// True when the figures on screen came from the local cache (offline or a
@@ -34,7 +36,7 @@ class DashboardController extends GetxController {
   }
 
   List<int> get years {
-    final now = DateTime.now().year;
+    final now = lagosToday().year;
     return List.generate(now - 2023, (i) => now - i);
   }
 

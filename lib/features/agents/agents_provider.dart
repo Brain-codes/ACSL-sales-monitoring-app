@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:stove_transaction/core/providers/services.dart';
+import 'package:stove_transaction/core/services/paged_fetch.dart';
 import 'package:stove_transaction/features/agents/models/agent_model.dart';
 
 const _cacheKey = 'cache_agents';
@@ -28,18 +29,19 @@ class AgentsNotifier extends AsyncNotifier<List<AgentModel>> {
       return cached;
     }
 
-    final resp = await ref.read(supabaseServiceProvider).callEdgeFunction(
-          'super-admin-agents',
-          body: {},
-          method: 'GET',
-        );
-
-    if (!resp.success || resp.data == null) {
+    // M10: fetched one capped page and showed it as the whole roster.
+    List<Map<String, dynamic>> rows;
+    try {
+      rows = await fetchAllPages(
+        ref.read(supabaseServiceProvider),
+        'super-admin-agents',
+        pageSize: 100,
+        errorMessage: 'Could not load agents',
+      );
+    } catch (e) {
       if (cached.isNotEmpty) return cached;
-      throw resp.message;
+      rethrow;
     }
-
-    final rows = _extractRows(resp.data);
     cache.saveJsonList(_cacheKey, rows);
     return rows.map((e) => AgentModel.fromJson(e)).toList();
   }
@@ -51,12 +53,6 @@ class AgentsNotifier extends AsyncNotifier<List<AgentModel>> {
   }
 
   /// Edge functions return either a bare list or `{ data: [...] }`.
-  List<Map<String, dynamic>> _extractRows(dynamic data) {
-    final List raw = data is List
-        ? data
-        : (data is Map ? (data['data'] as List? ?? data['agents'] as List? ?? []) : []);
-    return raw.map((e) => Map<String, dynamic>.from(e as Map)).toList();
-  }
 }
 
 final agentsProvider =

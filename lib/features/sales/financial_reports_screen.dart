@@ -5,17 +5,20 @@ import 'package:stove_transaction/core/constants/app_colors.dart';
 import 'package:stove_transaction/core/utils/formatters.dart';
 import 'package:stove_transaction/core/widgets/empty_state.dart';
 import 'package:stove_transaction/core/widgets/kpi_card.dart';
-import 'package:stove_transaction/features/sales/models/sale_model.dart';
-import 'package:stove_transaction/features/sales/sales_provider.dart';
+import 'package:stove_transaction/features/sales/sales_summary_provider.dart';
 
-/// Financial reports — summary metrics computed client-side from the sales list
-/// (works offline from cache). Super admin sees org-wide totals.
+/// Financial reports.
+///
+/// M8: every figure here used to be added up on the phone from a single
+/// 500-row fetch. One response caps at 500 and production holds 2,145 sales,
+/// so the whole report was short — and got shorter every day. The totals now
+/// come from the server, computed in SQL and scoped to the caller.
 class FinancialReportsScreen extends ConsumerWidget {
   const FinancialReportsScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final async = ref.watch(salesProvider);
+    final async = ref.watch(salesSummaryProvider);
     return Scaffold(
       appBar: AppBar(title: const Text('Financial Reports')),
       body: async.when(
@@ -24,19 +27,19 @@ class FinancialReportsScreen extends ConsumerWidget {
           message: '$e',
           icon: Icons.error_outline,
           actionLabel: 'Retry',
-          onAction: () => ref.read(salesProvider.notifier).refresh(),
+          onAction: () => ref.invalidate(salesSummaryProvider),
         ),
-        data: (sales) {
-          if (sales.isEmpty) {
+        data: (r) {
+          if (r.total == 0) {
             return const EmptyState(message: 'No sales to report on yet.', icon: Icons.assessment_outlined);
           }
-          final r = _Report.from(sales);
           return RefreshIndicator(
-            onRefresh: () => ref.read(salesProvider.notifier).refresh(),
+            onRefresh: () async => ref.invalidate(salesSummaryProvider),
             child: ListView(
               padding: const EdgeInsets.all(16),
               physics: const AlwaysScrollableScrollPhysics(),
               children: [
+                if (r.isLocalEstimate) const _EstimateNotice(),
                 GridView.count(
                   crossAxisCount: 2,
                   shrinkWrap: true,
@@ -45,16 +48,23 @@ class FinancialReportsScreen extends ConsumerWidget {
                   mainAxisSpacing: 12,
                   childAspectRatio: 1.5,
                   children: [
-                    KpiCard(title: 'Total Sales', value: '${r.count}', icon: Icons.receipt_long, gradient: AppColors.gradientNavy),
-                    KpiCard(title: 'Total Value', value: formatNaira(r.totalValue), icon: Icons.sell, gradient: AppColors.gradientTeal),
+                    KpiCard(title: 'Total Sales', value: '${r.total}', icon: Icons.receipt_long, gradient: AppColors.gradientNavy),
+                    KpiCard(title: 'Total Value', value: formatNaira(r.receivable), icon: Icons.sell, gradient: AppColors.gradientTeal),
                     KpiCard(title: 'Collected', value: formatNaira(r.collected), icon: Icons.account_balance_wallet, gradient: AppColors.gradientGreen),
                     KpiCard(title: 'Outstanding', value: formatNaira(r.outstanding), icon: Icons.pending_actions, gradient: AppColors.gradientGold),
                   ],
                 ),
                 const SizedBox(height: 20),
-                Text('By status', style: Theme.of(context).textTheme.titleMedium),
+                Text('By payment status',
+                    style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 8),
-                ...r.byStatus.entries.map((e) => _StatusRow(label: e.key, count: e.value, total: r.count)),
+                // M5: was grouped by sales.status — the FORM's completeness
+                // state, not payment — so every live sale read "Incomplete" on
+                // a financial report. These counts are payment states, and the
+                // server counts them.
+                _StatusRow(label: 'Paid in full', count: r.fullyPaid, total: r.total),
+                _StatusRow(label: 'Partly paid', count: r.partiallyPaid, total: r.total),
+                _StatusRow(label: 'Unpaid', count: r.unpaid, total: r.total),
               ],
             ),
           );
@@ -64,32 +74,36 @@ class FinancialReportsScreen extends ConsumerWidget {
   }
 }
 
-class _Report {
-  _Report({
-    required this.count,
-    required this.totalValue,
-    required this.collected,
-    required this.byStatus,
-  });
+/// Shown when the figures were added up on the device because the server could
+/// not be reached. The device holds a fraction of the sales, so these are a
+/// floor rather than a total, and saying so is the whole point of this banner.
+class _EstimateNotice extends StatelessWidget {
+  const _EstimateNotice();
 
-  final int count;
-  final double totalValue;
-  final double collected;
-  final Map<String, int> byStatus;
-
-  double get outstanding => (totalValue - collected).clamp(0, double.infinity);
-
-  factory _Report.from(List<SaleModel> sales) {
-    double value = 0;
-    double collected = 0;
-    final byStatus = <String, int>{};
-    for (final s in sales) {
-      value += s.amount ?? s.paymentModelFixedPrice ?? 0;
-      collected += s.paidAmount;
-      final status = (s.status ?? 'unknown').replaceAll('_', ' ');
-      byStatus[status] = (byStatus[status] ?? 0) + 1;
-    }
-    return _Report(count: sales.length, totalValue: value, collected: collected, byStatus: byStatus);
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.warning.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.cloud_off, size: 18, color: AppColors.warning),
+          const SizedBox(width: 8),
+          const Expanded(
+            child: Text(
+              'Offline — these totals cover only the sales stored on this '
+              'device, so the real figures are higher. Reconnect for the full '
+              'report.',
+              style: TextStyle(fontSize: 12, color: AppColors.textPrimary),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
