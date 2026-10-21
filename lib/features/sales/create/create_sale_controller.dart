@@ -27,6 +27,7 @@ import 'package:stove_transaction/features/sales/models/payment_model.dart';
 import 'package:stove_transaction/features/sales/models/sale_model.dart';
 import 'package:stove_transaction/features/sales/models/stove_model.dart';
 import 'create_sale_service.dart';
+import 'buyer_rule_messages.dart';
 import 'create_sale_test_data.dart';
 
 class ValidationError {
@@ -115,7 +116,11 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
 
   /// Called from the end-user name fields' onChanged so the contact fields
   /// mirror keystrokes live while "same as end user" is ticked.
-  void onEndUserIdentityChanged(String _) => _syncContactFromEndUser();
+  void onEndUserIdentityChanged(String _) {
+    _syncContactFromEndUser();
+    // A name change can turn the same customer into a family member (or back).
+    _scheduleBuyerCheck();
+  }
 
   void _syncContactFromEndUser() {
     if (!sameAsEndUser.value) return;
@@ -126,78 +131,102 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
     contactPhoneCtrl.text = phoneCtrl.text;
   }
 
-  // ── End-user phone: live uniqueness ─────────────────────────────────────
+  // ── End-user phone: the phone and buyer rule (1.0.19) ──────────────────
   //
-  // Every sale must carry a unique end-user phone, and the seller must learn
-  // about a clash AS THEY TYPE — not after filling nine steps and submitting.
-  // The check runs entirely against local data (the cached phone set plus
-  // phones held in the offline queue), so it behaves identically offline. The
-  // server re-checks on submit and is the final authority.
-  //
-  // No FORMAT validation here by design (removed 22 Jul 2026): sellers enter
-  // numbers in whatever notation they have, and nagging about it blocked real
-  // entries. Uniqueness still normalizes to the last 10 digits, so the same
-  // number in different notations still collides.
+  // Same phone + same customer (buyer key) → refused, red error, blocks
+  // submit. Same phone, different name → allowed: a family shares one phone,
+  // so a yellow note and one confirmation. Runs entirely on local data (the
+  // cached phones/keys plus the offline queue), so it behaves the same
+  // offline. The server re-checks on submit and is the final authority.
+  // See docs/contractor/sales-mobile-phone-buyer-rule.md (sales-web repo).
 
-  /// Set when the typed end-user phone is already taken. Null when it's free.
+  /// Set when this customer is already registered on this number. Blocks
+  /// submit ([validateAll]). Null otherwise.
   final phoneDuplicateError = RxnString();
+
+  /// Set when the number is on another sale but the name differs. Never
+  /// blocks submit; asks for one confirmation instead.
+  final phoneSharedNote = RxnString();
 
   Timer? _phoneCheckDebounce;
 
-  /// Phones sitting in the offline queue — refreshed alongside each check so a
-  /// second offline sale can't reuse the first one's number.
-  Set<String> _pendingQueuePhones = <String>{};
-
-  /// True while the end-user phone is unusable — i.e. already taken.
+  /// True while the end-user phone is unusable — i.e. the same customer.
   bool get hasEndUserPhoneProblem => phoneDuplicateError.value != null;
 
   /// Debounced so a fast typist triggers one check, not twelve.
   void onEndUserPhoneChanged(String value) {
     // Live-mirror into Contact Phone when "same as end user" is on.
     _syncContactFromEndUser();
-    _phoneCheckDebounce?.cancel();
-    final trimmed = value.trim();
+    _scheduleBuyerCheck();
+  }
 
+  void _scheduleBuyerCheck() {
+    _phoneCheckDebounce?.cancel();
+    final trimmed = phoneCtrl.text.trim();
     if (trimmed.length < 6) {
       phoneDuplicateError.value = null;
+      phoneSharedNote.value = null;
       return;
     }
-
     _phoneCheckDebounce = Timer(const Duration(milliseconds: 300), () {
       checkEndUserPhoneDuplicate(trimmed);
     });
   }
 
-  /// Flags the number if it already belongs to a sale — synced or still queued.
+  /// Checks the number and the name against synced and queued sales.
   Future<void> checkEndUserPhoneDuplicate(String value) async {
-    final key = PhoneUtils.normalizePhone(value);
-    if (key.isEmpty) {
-      phoneDuplicateError.value = null;
-      return;
-    }
+    final cache = Get.find<LocalCacheService>();
+    final titles = cache.getBuyerKeyTitles();
+    final tail = BuyerKey.phoneTail(value);
+    final key = _currentBuyerKey(titles, phone: value);
 
-    // A draft being edited legitimately keeps its own phone.
-    if (key == _editingOriginalPhoneKey) {
-      phoneDuplicateError.value = null;
-      return;
-    }
-
+    var pendingPhones = <String>{};
+    var pendingKeys = <String>{};
     try {
-      _pendingQueuePhones = await _queue.getPendingEndUserPhones();
+      pendingPhones =
+          await _queue.getPendingEndUserPhones(excludeId: _editingQueueId);
+      pendingKeys = await _queue.getPendingBuyerKeys(titles,
+          excludeId: _editingQueueId);
     } catch (_) {
-      // Queue unreadable — fall through to the cached set rather than blocking.
+      // Queue unreadable — fall through to the cached sets rather than blocking.
     }
 
-    final cached = Get.find<LocalCacheService>().getEndUserPhones();
-    final taken = cached.contains(key) || _pendingQueuePhones.contains(key);
-
-    phoneDuplicateError.value = taken
-        ? 'A customer with this phone number already exists.'
-        : null;
+    final result = classifyPhoneCheck(
+      tail: tail,
+      key: key,
+      knownPhones: {...cache.getEndUserPhones(), ...pendingPhones},
+      knownKeys: {...cache.getBuyerKeys(), ...pendingKeys},
+      originalKey: _editingOriginalBuyerKey,
+      originalTail: _editingOriginalPhoneKey,
+    );
+    phoneDuplicateError.value =
+        result == PhoneCheck.sameBuyer ? BuyerRuleMessages.e1 : null;
+    phoneSharedNote.value =
+        result == PhoneCheck.shared ? BuyerRuleMessages.n1 : null;
   }
 
-  /// The phone a restored draft started with — editing it must not flag itself.
+  String _currentBuyerKey(List<String> titles, {String? phone}) =>
+      BuyerKey.compute(
+        phone ?? phoneCtrl.text,
+        endUserNameCtrl.text,
+        endUserSurnameCtrl.text,
+        null,
+        titles,
+      );
+
+  /// The tail a sale being edited started with — its own number is not "in use".
   String? _editingOriginalPhoneKey;
+
+  /// The buyer key a sale being edited started with — it never matches itself.
+  String? _editingOriginalBuyerKey;
+
+  void _rememberEditingOriginals() {
+    _editingOriginalPhoneKey = PhoneUtils.normalizePhone(phoneCtrl.text);
+    _editingOriginalBuyerKey =
+        _currentBuyerKey(Get.find<LocalCacheService>().getBuyerKeyTitles());
+    phoneDuplicateError.value = null;
+    phoneSharedNote.value = null;
+  }
 
   // Step 3 — Location
   final selectedState = ''.obs;
@@ -965,6 +994,8 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
     _editingQueueId = null;
     editingSaleId.value = null;
     _editingOriginalPhoneKey = null;
+    _editingOriginalBuyerKey = null;
+    phoneSharedNote.value = null;
     _hydrated = false;
     _hydratedSaleId = null;
   }
@@ -1001,10 +1032,9 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
     akaCtrl.text = payload['aka']?.toString() ?? '';
     phoneCtrl.text = payload['phone']?.toString() ?? '';
     otherPhoneCtrl.text = payload['otherPhone']?.toString() ?? '';
-    // A queued sale being edited already owns its phone — remember it so the
-    // duplicate check doesn't flag the draft against itself.
-    _editingOriginalPhoneKey = PhoneUtils.normalizePhone(phoneCtrl.text);
-    phoneDuplicateError.value = null;
+    // A queued sale being edited already owns its phone and name — remember
+    // them so the check doesn't flag the draft against itself.
+    _rememberEditingOriginals();
 
     // Location
     selectedState.value = payload['stateBackup']?.toString() ?? '';
@@ -1165,8 +1195,8 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
     contactPersonCtrl.text = sale.contactPerson ?? '';
     contactPhoneCtrl.text = sale.contactPhone ?? '';
     otherPhoneCtrl.text = sale.otherPhone ?? '';
-    // Editing a sale owns its phone — don't flag it as a duplicate of itself.
-    _editingOriginalPhoneKey = PhoneUtils.normalizePhone(phoneCtrl.text);
+    // Editing a sale owns its phone and name — never flag it against itself.
+    _rememberEditingOriginals();
     // Detect whether the contact person actually IS the end user (matches web
     // behaviour) so the "Same as end user" checkbox reflects saved data instead
     // of always starting unticked on edit.
@@ -2237,11 +2267,19 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
         }
         // Reserve the phone locally right away. Waiting for the next full sync
         // would leave a window where this number still looks free.
-        Get.find<LocalCacheService>()
-            .addEndUserPhone(PhoneUtils.normalizePhone(payload['phone']?.toString()));
-        _showSuccess('Sale created successfully!');
+        final cache = Get.find<LocalCacheService>();
+        cache.addEndUserPhone(PhoneUtils.normalizePhone(payload['phone']?.toString()));
+        cache.addBuyerKey(BuyerKey.ofPayload(payload, cache.getBuyerKeyTitles()));
+        final shared = sharedTransactionIds(resp.data);
+        _showSuccess(shared.isEmpty
+            ? 'Sale created successfully!'
+            : 'Sale created successfully! ${BuyerRuleMessages.s1(shared)}');
         resetForm();
         rootNavigatorKey.currentState?.pop(true);
+      } else if (resp.errorCode == BuyerRuleMessages.sameBuyerCode) {
+        // Same customer: never queued. A queued sale being edited keeps its
+        // row untouched; the agent fixes the name or phone and resubmits.
+        _showSameBuyerRefusal(resp.message);
       } else {
         _showError(resp.message);
       }
@@ -2297,6 +2335,8 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
         _showSuccess('Sale updated successfully!');
         resetForm();
         rootNavigatorKey.currentState?.pop(true);
+      } else if (resp.errorCode == BuyerRuleMessages.sameBuyerCode) {
+        _showSameBuyerRefusal(resp.message);
       } else {
         _showError(resp.message);
       }
@@ -2439,6 +2479,43 @@ class CreateSaleController extends GetxController with WidgetsBindingObserver {
     _logger.i('=== CREATE SALE PAYLOAD ===\n${const JsonEncoder.withIndent('  ').convert(payload)}');
 
     return payload;
+  }
+
+  /// Transaction ids of other sales on this number, from a create-sale 200's
+  /// `shares_phone_with`. Unnamed sales (null id) are left out.
+  static List<String> sharedTransactionIds(dynamic body) {
+    if (body is! Map || body['shares_phone_with'] is! List) return const [];
+    return (body['shares_phone_with'] as List)
+        .whereType<Map>()
+        .map((e) => e['transaction_id']?.toString())
+        .whereType<String>()
+        .where((id) => id.isNotEmpty)
+        .toList();
+  }
+
+  /// Server refused: same customer. The message is long and must be read,
+  /// so it goes under the field (blocking resubmit until phone or name
+  /// changes) and into a dialog that stays until closed — not a toast.
+  void _showSameBuyerRefusal(String message) {
+    phoneSharedNote.value = null;
+    phoneDuplicateError.value = message;
+    final ctx = rootNavigatorKey.currentContext;
+    if (ctx == null) {
+      _showError(message);
+      return;
+    }
+    showDialog(
+      context: ctx,
+      builder: (dialogCtx) => AlertDialog(
+        title: const Text('Not saved'),
+        content: Text(message),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.of(dialogCtx).pop(),
+              child: const Text('OK')),
+        ],
+      ),
+    );
   }
 
   void _showError(String msg) {

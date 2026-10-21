@@ -4,6 +4,7 @@ import 'package:logger/logger.dart';
 import 'package:stove_transaction/core/services/connectivity_service.dart';
 import 'package:stove_transaction/core/utils/app_date.dart';
 import 'package:stove_transaction/core/services/local_cache_service.dart';
+import 'package:stove_transaction/core/utils/phone_utils.dart';
 import 'package:stove_transaction/core/services/offline_queue_service.dart';
 import 'package:stove_transaction/core/services/supabase_service.dart';
 import 'package:stove_transaction/features/sales/models/sale_model.dart';
@@ -196,6 +197,9 @@ class SalesListController extends GetxController {
     try {
       final queue = Get.find<OfflineQueueService>();
       final pending = await queue.getPending();
+      final cache = Get.find<LocalCacheService>();
+      final titles = cache.getBuyerKeyTitles();
+      final knownKeys = cache.getBuyerKeys();
       var undecodable = 0;
       final pendingModels = <SaleModel>[];
 
@@ -268,6 +272,12 @@ class SalesListController extends GetxController {
         model.syncError = (row['error'] as String?)?.trim().isEmpty ?? true
             ? null
             : (row['error'] as String).trim();
+        model.syncRefused = (row['refused'] as int? ?? 0) == 1;
+        // R2: a known customer by the latest key list. Warning only.
+        if (!model.syncRefused) {
+          final key = BuyerKey.ofPayload(payload, titles);
+          model.maybeSameBuyer = key.isNotEmpty && knownKeys.contains(key);
+        }
         pendingModels.add(model);
         } catch (e, st) {
           // This row is unreadable, but it is still queued and will still be

@@ -10,12 +10,21 @@ class SupabaseApiResponse<T> {
   /// cache, which read `etag` here and send it back as `If-None-Match`.
   final Map<String, String> headers;
 
+  /// The error body's `code` (e.g. `SAME_BUYER_SAME_PHONE`). Decide on this,
+  /// never on the wording of [message].
+  final String? errorCode;
+
+  /// The error body's `transactionId`: the other sale a refusal names, if any.
+  final String? errorTransactionId;
+
   SupabaseApiResponse({
     this.code,
     required this.message,
     this.data,
     this.success = false,
     this.headers = const {},
+    this.errorCode,
+    this.errorTransactionId,
   });
 
   factory SupabaseApiResponse.success(
@@ -48,12 +57,19 @@ class SupabaseApiResponse<T> {
     );
   }
 
-  factory SupabaseApiResponse.error(String message, {int? code}) {
+  factory SupabaseApiResponse.error(
+    String message, {
+    int? code,
+    String? errorCode,
+    String? errorTransactionId,
+  }) {
     return SupabaseApiResponse(
       code: code,
       message: message,
       data: null,
       success: false,
+      errorCode: errorCode,
+      errorTransactionId: errorTransactionId,
     );
   }
 }

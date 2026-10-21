@@ -208,6 +208,79 @@ class LocalCacheService extends GetxService {
     return raw == null ? null : DateTime.tryParse(raw);
   }
 
+  // ── Buyer keys (same customer, same phone) ────────────────────────────────
+  //
+  // 16-char keys from get-end-user-phones, scoped to what the signed-in
+  // account can see — so they MUST be cleared when another user signs in
+  // ([clear]). The title rules ride with them; the two are saved together.
+
+  static const _keyBuyerKeys = 'cache_buyer_keys';
+  static const _keyBuyerKeyRules = 'cache_buyer_key_rules';
+  static const _keyEndUserPhonesEtag = 'cache_end_user_phones_etag';
+
+  Set<String>? _buyerKeySetCache;
+
+  void saveBuyerKeys(Iterable<String> keys, Map<String, dynamic> rules) {
+    final unique = keys.where((k) => k.isNotEmpty).toSet();
+    _box.write(_keyBuyerKeys, jsonEncode(unique.toList()));
+    _box.write(_keyBuyerKeyRules, jsonEncode(rules));
+    _buyerKeySetCache = unique;
+  }
+
+  Set<String> getBuyerKeys() {
+    final cached = _buyerKeySetCache;
+    if (cached != null) return cached;
+    final raw = _box.read<String>(_keyBuyerKeys);
+    try {
+      return _buyerKeySetCache = raw == null
+          ? <String>{}
+          : (jsonDecode(raw) as List).map((e) => e.toString()).toSet();
+    } catch (_) {
+      return _buyerKeySetCache = <String>{};
+    }
+  }
+
+  bool get hasBuyerKeys => _box.read<String>(_keyBuyerKeys) != null;
+  bool get hasEndUserPhones => _box.read<String>(_keyEndUserPhones) != null;
+
+  void addBuyerKey(String key) {
+    if (key.isEmpty) return;
+    final set = {...getBuyerKeys(), key};
+    _box.write(_keyBuyerKeys, jsonEncode(set.toList()));
+    _buyerKeySetCache = set;
+  }
+
+  Map<String, dynamic> get _buyerKeyRules {
+    final raw = _box.read<String>(_keyBuyerKeyRules);
+    if (raw == null) return const {};
+    try {
+      return Map<String, dynamic>.from(jsonDecode(raw) as Map);
+    } catch (_) {
+      return const {};
+    }
+  }
+
+  /// Titles the key drops. Empty before the first successful fetch.
+  List<String> getBuyerKeyTitles() =>
+      ((_buyerKeyRules['titles'] as List?) ?? const [])
+          .map((e) => e.toString())
+          .toList();
+
+  String? get buyerKeyRulesVersion => _buyerKeyRules['version']?.toString();
+
+  /// The ETag exactly as received (it may be weak, `W/"…"`).
+  String? get endUserPhonesEtag => _box.read<String>(_keyEndUserPhonesEtag);
+  set endUserPhonesEtag(String? v) => v == null
+      ? _box.remove(_keyEndUserPhonesEtag)
+      : _box.write(_keyEndUserPhonesEtag, v);
+
+  /// Empties every in-memory set. Call after the storage is erased, or the
+  /// previous user's phones and keys outlive the wipe.
+  void clear() {
+    _phoneSetCache = null;
+    _buyerKeySetCache = null;
+  }
+
   // ── Per-org stoves (ACSL agents) ──────────────────────────────────────────
 
   void saveStovesForOrg(String orgId, List<StoveModel> stoves) {

@@ -30,6 +30,8 @@ class _OfflineCacheDebugScreenState extends State<OfflineCacheDebugScreen> {
   int _orgsWithZero = 0;
   int _globalModels = 0;
   int _cachedPhones = 0;
+  int _buyerKeys = 0;
+  String _rulesVersion = '—';
 
   @override
   void initState() {
@@ -61,6 +63,8 @@ class _OfflineCacheDebugScreenState extends State<OfflineCacheDebugScreen> {
     // read the same for every logged-in user. A number that differs between
     // accounts means the phone sync is being scoped somewhere it shouldn't be.
     _cachedPhones = _cache.endUserPhoneCount;
+    _buyerKeys = _cache.getBuyerKeys().length;
+    _rulesVersion = _cache.buyerKeyRulesVersion ?? '—';
     // Surface partners with 0 cached stoves first — those are the suspicious ones.
     rows.sort((a, b) => a.stoves.compareTo(b.stoves));
     setState(() {
@@ -152,10 +156,12 @@ class _OfflineCacheDebugScreenState extends State<OfflineCacheDebugScreen> {
               _stat('Empty partners', '$_orgsWithZero',
                   danger: _orgsWithZero > 0),
               const SizedBox(width: 12),
-              // Keeps the two rows on the same 3-column grid.
-              const Expanded(child: SizedBox.shrink()),
+              _stat('Buyer keys', '$_buyerKeys'),
             ],
           ),
+          const SizedBox(height: 10),
+          Text('Buyer key rules: $_rulesVersion',
+              style: const TextStyle(fontSize: 12, color: AppColors.textMuted)),
           const SizedBox(height: 10),
           Text('Last full download: $lastLabel',
               style: const TextStyle(fontSize: 12, color: AppColors.textMuted)),

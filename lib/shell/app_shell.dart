@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:stove_transaction/core/widgets/update_prompt_sheet.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:get/get.dart';
 import 'package:go_router/go_router.dart';
@@ -34,6 +35,9 @@ class _AppShellState extends ConsumerState<AppShell> {
     // system dialog halfway through recording a sale. Deferred to a post-frame
     // callback because the platform needs a resumed Activity to show a prompt.
     WidgetsBinding.instance.addPostFrameCallback((_) => _requestStartupPermissions());
+    // Once per launch: agents learn of a new release without pull-to-refresh.
+    // Shown only online, and respects the 12h snooze.
+    showUpdatePromptIfNeeded();
   }
 
   Future<void> _requestStartupPermissions() async {

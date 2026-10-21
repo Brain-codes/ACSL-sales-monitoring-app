@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:get/get.dart';
 import 'package:logger/logger.dart';
 import 'package:stove_transaction/core/services/connectivity_service.dart';
@@ -422,31 +423,48 @@ class DataRefreshService extends GetxService {
   Future<void> _refreshEndUserPhones() async {
     try {
       final supabase = Get.find<SupabaseService>();
+      final cache = Get.find<LocalCacheService>();
+      // Revalidate only when both halves are on disk; otherwise a 304 would
+      // leave a missing half missing.
+      final etag = (cache.hasEndUserPhones && cache.hasBuyerKeys)
+          ? cache.endUserPhonesEtag
+          : null;
       final resp = await supabase.callEdgeFunction(
         'get-end-user-phones',
         body: {},
         method: 'GET',
+        returnHeaders: true,
+        extraHeaders:
+            (etag != null && etag.isNotEmpty) ? {'If-None-Match': etag} : null,
       );
+      if (resp.code == 304) return; // unchanged: keep everything
       if (!resp.success || resp.data == null) {
         _logger.w('End-user phone refresh returned no data');
         return;
       }
-      final data = resp.data;
-      final List raw = data is List
-          ? data
-          : (data is Map ? (data['data'] as List? ?? []) : []);
-      // A truncated set would silently let duplicates through offline, so keep
-      // the previous (complete) cache rather than replacing it with a partial one.
-      final truncated = data is Map && data['truncated'] == true;
-      if (truncated) {
-        _logger.w('End-user phone list truncated by the server — keeping cache');
-        return;
-      }
-      final phones = raw.map((e) => e.toString()).where((e) => e.isNotEmpty);
-      Get.find<LocalCacheService>().saveEndUserPhones(phones);
+      applyEndUserPhonesResponse(cache, resp.data, resp.headers['etag']);
     } catch (e) {
       _logger.w('End-user phone refresh failed: $e');
     }
+  }
+
+  /// Stores a 200 from get-end-user-phones. A truncated list stores nothing,
+  /// not even the ETag, so the previous complete cache stays. Keys and rules
+  /// come together or not at all; when absent, the old pair is kept.
+  @visibleForTesting
+  static void applyEndUserPhonesResponse(
+      LocalCacheService cache, dynamic data, String? etag) {
+    final List raw =
+        data is List ? data : (data is Map ? (data['data'] as List? ?? []) : []);
+    if (data is Map && data['truncated'] == true) return;
+    cache.saveEndUserPhones(raw.map((e) => e.toString()).where((e) => e.isNotEmpty));
+    if (data is Map && data['buyerKeys'] is List && data['buyerKeyRules'] is Map) {
+      cache.saveBuyerKeys(
+        (data['buyerKeys'] as List).map((e) => e.toString()),
+        Map<String, dynamic>.from(data['buyerKeyRules'] as Map),
+      );
+    }
+    cache.endUserPhonesEtag = etag;
   }
 
   Future<void> _refreshGoogleKeys() async {

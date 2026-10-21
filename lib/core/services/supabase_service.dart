@@ -19,6 +19,27 @@ class SupabaseService {
 
   // This is the reusable Edge Function handler
   // Add this to the callEdgeFunction method parameters
+  /// Turns an error reply into a response, keeping the body's `message`,
+  /// `code` and `transactionId`.
+  @visibleForTesting
+  static SupabaseApiResponse<T> errorFromBody<T>(String body, int status) {
+    String errorMsg = 'Something went wrong. Please try again.';
+    String? errorCode;
+    String? errorTxn;
+    try {
+      final parsed = json.decode(body);
+      if (parsed is Map) {
+        errorMsg = parsed['message']?.toString() ??
+            parsed['error']?.toString() ??
+            errorMsg;
+        errorCode = parsed['code']?.toString();
+        errorTxn = parsed['transactionId']?.toString();
+      }
+    } catch (_) {}
+    return SupabaseApiResponse.error(errorMsg,
+        code: status, errorCode: errorCode, errorTransactionId: errorTxn);
+  }
+
   Future<SupabaseApiResponse<dynamic>> callEdgeFunction(
     String functionName, {
     required Map<String, dynamic> body,
@@ -138,16 +159,7 @@ class SupabaseService {
           }
         } else {
           _logger.e('Function [$functionName] failed: ${response.body}');
-          String errorMsg = 'Something went wrong. Please try again.';
-          try {
-            final parsed = json.decode(response.body);
-            if (parsed is Map) {
-              errorMsg = parsed['message']?.toString() ??
-                  parsed['error']?.toString() ??
-                  errorMsg;
-            }
-          } catch (_) {}
-          return SupabaseApiResponse.error(errorMsg, code: response.statusCode);
+          return errorFromBody(response.body, response.statusCode);
         }
       }
     } on FunctionException catch (e) {

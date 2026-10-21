@@ -6,7 +6,12 @@ import 'package:toastification/toastification.dart';
 import 'package:flutter/material.dart';
 import 'package:stove_transaction/core/services/location_resolution_service.dart';
 import 'package:stove_transaction/core/services/offline_queue_service.dart';
+import 'package:crypto/crypto.dart';
+import 'package:stove_transaction/core/model/supabase_api_response.dart';
+import 'package:stove_transaction/core/services/local_cache_service.dart';
 import 'package:stove_transaction/core/services/supabase_service.dart';
+import 'package:stove_transaction/core/utils/phone_utils.dart';
+import 'package:stove_transaction/features/sales/create/buyer_rule_messages.dart';
 
 class SyncService extends GetxService {
   final _logger = Logger();
@@ -14,6 +19,12 @@ class SyncService extends GetxService {
   final RxInt successCount = 0.obs;
   final RxInt failCount = 0.obs;
   final RxInt heldForResolutionCount = 0.obs;
+
+  /// Rows the server refused this run (same customer).
+  final RxInt refusedCount = 0.obs;
+
+  static const _saleTimeout = Duration(seconds: 30);
+  static const _uploadTimeout = Duration(seconds: 45);
 
   /// Pushes queued sales to the server.
   ///
@@ -29,6 +40,10 @@ class SyncService extends GetxService {
     if (onlyIds != null) {
       final wanted = onlyIds.toSet();
       pending = pending.where((r) => wanted.contains(r['id'] as int)).toList();
+    } else {
+      // "Sync all" skips sales the server already refused; they wait for an
+      // edit. Syncing one on purpose (onlyIds) still sends it.
+      pending = pending.where((r) => (r['refused'] as int? ?? 0) == 0).toList();
     }
 
     if (pending.isEmpty) return;
@@ -37,6 +52,7 @@ class SyncService extends GetxService {
     successCount.value = 0;
     failCount.value = 0;
     heldForResolutionCount.value = 0;
+    refusedCount.value = 0;
 
     _showSyncStartToast(pending.length);
 
@@ -67,6 +83,10 @@ class SyncService extends GetxService {
         // Upload images first if any
         if (imagesJson != null) {
           final images = jsonDecode(imagesJson) as Map<String, dynamic>;
+          // Photos uploaded by an earlier attempt: {key: {id, sig}}. Reused
+          // while the photo is unchanged, so a retry uploads nothing again.
+          final uploaded = Map<String, dynamic>.from(
+              payload[OfflineQueueService.uploadedImagesKey] as Map? ?? {});
           // Maps image key → payload field name
           const fieldMap = {
             'stove_image': 'stoveImageId',
@@ -79,15 +99,24 @@ class SyncService extends GetxService {
               payload['signature'] = entry.value;
               continue;
             }
+            final payloadField = fieldMap[entry.key];
+            final sig = imageSignature(entry.value as String);
+            final prior = uploaded[entry.key];
+            if (prior is Map && prior['sig'] == sig && prior['id'] != null) {
+              if (payloadField != null) payload[payloadField] = prior['id'];
+              continue;
+            }
             final bytes = base64Decode(entry.value as String);
             final tmpFile = File('${Directory.systemTemp.path}/sync_${entry.key}.jpg');
             await tmpFile.writeAsBytes(bytes);
             try {
-              final uploadResp = await supabase.callEdgeFunction(
-                'upload-image',
-                body: {'file': tmpFile, 'type': entry.key},
-                isFormData: true,
-              );
+              final uploadResp = await supabase
+                  .callEdgeFunction(
+                    'upload-image',
+                    body: {'file': tmpFile, 'type': entry.key},
+                    isFormData: true,
+                  )
+                  .timeout(_uploadTimeout);
               // M13: a failed upload used to fall straight through, and the
               // sale then synced WITHOUT its photo — permanently, and with
               // nobody told. The agreement photo is evidence of the sale, so
@@ -108,7 +137,6 @@ class SyncService extends GetxService {
                   ? Map<String, dynamic>.from(data['upload'] as Map)
                   : data;
               final imageId = uploadMap['id']?.toString();
-              final payloadField = fieldMap[entry.key];
               if (imageId == null || imageId.isEmpty) {
                 throw 'The ${_imageLabel(entry.key)} uploaded but the server '
                     'returned no id — the sale stays queued.';
@@ -116,22 +144,39 @@ class SyncService extends GetxService {
               if (payloadField != null) {
                 payload[payloadField] = imageId;
               }
+              uploaded[entry.key] = {'id': imageId, 'sig': sig};
+              payload[OfflineQueueService.uploadedImagesKey] = uploaded;
+              await queue.savePayload(id, payload);
             } finally {
               if (await tmpFile.exists()) await tmpFile.delete();
             }
           }
         }
 
-        final resp = await supabase.callEdgeFunction('create-sale', body: payload);
-        if (resp.success || _alreadyCreated(resp)) {
-          // `_alreadyCreated`: a prior attempt for THIS transaction id actually
+        final body = Map<String, dynamic>.from(payload)
+          ..remove(OfflineQueueService.uploadedImagesKey);
+        final resp = await supabase
+            .callEdgeFunction('create-sale', body: body)
+            .timeout(_saleTimeout);
+        if (resp.success || alreadyCreated(resp)) {
+          // `alreadyCreated`: a prior attempt for THIS transaction id actually
           // saved on the server but the ack was lost before we could mark it
           // synced. The backend's duplicate-transaction guard returns 409, which
           // means the sale IS there — treat it as a success, not a failure, so
           // it clears the queue instead of looking failed forever. This is our
           // idempotency guarantee: the same sale can never double-create.
           await queue.markSynced(id);
+          // Its number and customer are on the server now; don't wait for the
+          // next full refresh to see them.
+          final cache = Get.find<LocalCacheService>();
+          cache.addEndUserPhone(PhoneUtils.normalizePhone(payload['phone']?.toString()));
+          cache.addBuyerKey(BuyerKey.ofPayload(payload, cache.getBuyerKeyTitles()));
           successCount.value++;
+        } else if (resp.code == 409 &&
+            resp.errorCode == BuyerRuleMessages.sameBuyerCode) {
+          // A definite refusal: stop retrying it until it is edited.
+          await queue.markRefused(id, resp.message);
+          refusedCount.value++;
         } else {
           await queue.markError(id, resp.message);
           failCount.value++;
@@ -171,11 +216,17 @@ class SyncService extends GetxService {
   ///
   /// Matched narrowly on the transaction-id duplicate message so it never
   /// swallows the other 409 ("stove already sold"), which is a real failure.
-  bool _alreadyCreated(dynamic resp) {
+  static bool alreadyCreated(SupabaseApiResponse resp) {
+    if (resp.errorCode == BuyerRuleMessages.sameBuyerCode) return false;
     if (resp.code != 409) return false;
-    final msg = (resp.message as String? ?? '').toLowerCase();
+    final msg = resp.message.toLowerCase();
     return msg.contains('transaction id') && msg.contains('already exists');
   }
+
+  /// Fingerprint of a queued photo, to tell an unchanged photo from a
+  /// replaced one.
+  static String imageSignature(String base64) =>
+      sha256.convert(utf8.encode(base64)).toString();
 
   /// True once a sale's location has been resolved (auto-matched or user-picked).
   bool _alreadyResolved(Map<String, dynamic> payload) {
@@ -223,7 +274,18 @@ class SyncService extends GetxService {
     final heldSuffix = held > 0
         ? ' · $held need${held > 1 ? '' : 's'} location review'
         : '';
-    if (failCount.value > 0) {
+    final refused = refusedCount.value;
+    if (refused > 0) {
+      final retry = failCount.value > 0
+          ? ', ${failCount.value} failed — will retry'
+          : '';
+      toastification.show(
+        title: Text('${successCount.value} synced, '
+            '${BuyerRuleMessages.t1(refused)}$retry$heldSuffix'),
+        type: ToastificationType.warning,
+        autoCloseDuration: const Duration(seconds: 6),
+      );
+    } else if (failCount.value > 0) {
       toastification.show(
         title: Text('${successCount.value} synced, ${failCount.value} failed — will retry$heldSuffix'),
         type: ToastificationType.warning,

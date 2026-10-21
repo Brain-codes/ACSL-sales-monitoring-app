@@ -14,13 +14,23 @@ class OfflineQueueService extends GetxService {
   /// (the typed address didn't confidently match a Google result).
   final RxInt needsResolutionCount = 0.obs;
 
+  /// Sales the server definitely refused (same customer). "Sync all" skips
+  /// them until they are edited.
+  final RxInt refusedCount = 0.obs;
+
   Future<OfflineQueueService> init() async {
     final dbPath = join(await getDatabasesPath(), 'acsl_offline.db');
-    _db = await openDatabase(
-      dbPath,
-      version: 2,
-      onCreate: (db, version) async {
-        await db.execute('''
+    _db = await openDatabase(dbPath,
+        version: 3, onCreate: onCreate, onUpgrade: onUpgrade);
+    await _refreshCounts();
+    return this;
+  }
+
+  /// Opens [db] directly — for tests only.
+  void attachForTest(Database db) => _db = db;
+
+  static Future<void> onCreate(Database db, int version) async {
+    await db.execute('''
           CREATE TABLE offline_sales (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             payload TEXT NOT NULL,
@@ -29,21 +39,22 @@ class OfflineQueueService extends GetxService {
             synced INTEGER DEFAULT 0,
             error TEXT,
             needs_resolution INTEGER DEFAULT 0,
-            candidates TEXT
+            candidates TEXT,
+            refused INTEGER NOT NULL DEFAULT 0
           )
         ''');
-      },
-      onUpgrade: (db, oldVersion, newVersion) async {
-        if (oldVersion < 2) {
-          await db.execute(
-              'ALTER TABLE offline_sales ADD COLUMN needs_resolution INTEGER DEFAULT 0');
-          await db.execute(
-              'ALTER TABLE offline_sales ADD COLUMN candidates TEXT');
-        }
-      },
-    );
-    await _refreshCounts();
-    return this;
+  }
+
+  static Future<void> onUpgrade(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      await db.execute(
+          'ALTER TABLE offline_sales ADD COLUMN needs_resolution INTEGER DEFAULT 0');
+      await db.execute('ALTER TABLE offline_sales ADD COLUMN candidates TEXT');
+    }
+    if (oldVersion < 3) {
+      await db.execute(
+          'ALTER TABLE offline_sales ADD COLUMN refused INTEGER NOT NULL DEFAULT 0');
+    }
   }
 
   Future<int> enqueue({
@@ -110,6 +121,11 @@ class OfflineQueueService extends GetxService {
           if (prev['clientRequestId'] != null) {
             payload['clientRequestId'] = prev['clientRequestId'];
           }
+          // Photos already uploaded keep their ids; a replaced photo no
+          // longer matches its fingerprint and is uploaded again.
+          if (prev[uploadedImagesKey] != null) {
+            payload[uploadedImagesKey] = prev[uploadedImagesKey];
+          }
         } catch (_) {}
       }
       payload.putIfAbsent('clientRequestId', () => const Uuid().v4());
@@ -123,6 +139,7 @@ class OfflineQueueService extends GetxService {
         'needs_resolution': 0,
         'candidates': null,
         'synced': 0,
+        'refused': 0,
       },
       where: 'id = ?',
       whereArgs: [id],
@@ -167,6 +184,24 @@ class OfflineQueueService extends GetxService {
 
   Future<void> markError(int id, String error) async {
     await _db.update('offline_sales', {'error': error}, where: 'id = ?', whereArgs: [id]);
+  }
+
+  /// The server definitely refused this sale (same customer). It keeps its
+  /// card and Edit, but "sync all" skips it until it is edited.
+  Future<void> markRefused(int id, String message) async {
+    await _db.update('offline_sales', {'error': message, 'refused': 1},
+        where: 'id = ?', whereArgs: [id]);
+    await _refreshCounts();
+  }
+
+  /// Payload field holding `{imageKey: {id, sig}}` for photos already
+  /// uploaded, so a retry reuses them. Stripped before sending.
+  static const uploadedImagesKey = '_uploadedImages';
+
+  /// Overwrites a row's payload only (used to persist uploaded photo ids).
+  Future<void> savePayload(int id, Map<String, dynamic> payload) async {
+    await _db.update('offline_sales', {'payload': jsonEncode(payload)},
+        where: 'id = ?', whereArgs: [id]);
   }
 
   /// Flags a sale as needing manual location resolution and stores the Google
@@ -228,12 +263,11 @@ class OfflineQueueService extends GetxService {
   /// the server yet, so the cached phone set can't know about them — without
   /// this, two sales created back-to-back offline could share a phone and the
   /// second would only fail later, at sync, with the sale already "made".
-  Future<Set<String>> getPendingEndUserPhones() async {
-    final rows = await _db.query(
-      'offline_sales',
-      columns: ['payload'],
-      where: 'synced = 0',
-    );
+  ///
+  /// [excludeId] leaves out the queued sale being edited, so it never matches
+  /// itself.
+  Future<Set<String>> getPendingEndUserPhones({int? excludeId}) async {
+    final rows = await _pendingPayloadRows(excludeId);
     final phones = <String>{};
     for (final row in rows) {
       try {
@@ -245,12 +279,39 @@ class OfflineQueueService extends GetxService {
     return phones;
   }
 
+  /// Buyer keys of sales still waiting to sync, computed now with [titles]
+  /// (never stored). Same rows as [getPendingEndUserPhones].
+  Future<Set<String>> getPendingBuyerKeys(List<String> titles,
+      {int? excludeId}) async {
+    final rows = await _pendingPayloadRows(excludeId);
+    final keys = <String>{};
+    for (final row in rows) {
+      try {
+        final payload = jsonDecode(row['payload'] as String) as Map<String, dynamic>;
+        final key = BuyerKey.ofPayload(payload, titles);
+        if (key.isNotEmpty) keys.add(key);
+      } catch (_) {}
+    }
+    return keys;
+  }
+
+  Future<List<Map<String, Object?>>> _pendingPayloadRows(int? excludeId) =>
+      _db.query(
+        'offline_sales',
+        columns: ['payload'],
+        where: excludeId == null ? 'synced = 0' : 'synced = 0 AND id != ?',
+        whereArgs: excludeId == null ? null : [excludeId],
+      );
+
   Future<void> _refreshCounts() async {
     final pending = await _db.rawQuery(
-        'SELECT COUNT(*) as c FROM offline_sales WHERE synced = 0');
+        'SELECT COUNT(*) as c FROM offline_sales WHERE synced = 0 AND refused = 0');
     pendingCount.value = (pending.first['c'] as int? ?? 0);
     final needs = await _db.rawQuery(
         'SELECT COUNT(*) as c FROM offline_sales WHERE synced = 0 AND needs_resolution = 1');
     needsResolutionCount.value = (needs.first['c'] as int? ?? 0);
+    final refused = await _db.rawQuery(
+        'SELECT COUNT(*) as c FROM offline_sales WHERE synced = 0 AND refused = 1');
+    refusedCount.value = (refused.first['c'] as int? ?? 0);
   }
 }

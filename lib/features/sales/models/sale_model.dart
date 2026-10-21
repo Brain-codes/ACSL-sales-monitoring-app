@@ -86,6 +86,11 @@ class SaleModel {
   // the last sync error, used by the pending-sales list to edit/retry/delete.
   int? queueId;
   String? syncError;
+  /// The server refused this queued sale (same customer); "sync all" skips it.
+  bool syncRefused = false;
+  /// After a refresh, this queued sale's customer is already known. A warning
+  /// only — the server decides.
+  bool maybeSameBuyer = false;
 
   SaleModel({
     required this.id,

@@ -3,6 +3,7 @@ import 'package:get/get.dart';
 import 'package:get_storage/get_storage.dart';
 import 'package:stove_transaction/core/router/app_navigator.dart';
 import 'package:stove_transaction/core/services/offline_queue_service.dart';
+import 'package:stove_transaction/core/services/local_cache_service.dart';
 import 'package:stove_transaction/core/services/session_manager.dart';
 import 'package:stove_transaction/features/dashboard/dashboard_controller.dart';
 import 'package:stove_transaction/features/partners/partners_controller.dart';
@@ -100,6 +101,11 @@ class AuthService extends GetxService {
     // All cached data + session keys (GetStorage default box holds both).
     try {
       await GetStorage().erase();
+    } catch (_) {}
+    // The in-memory phone and buyer-key sets outlive the erase; the keys are
+    // scoped to who is signed in, so the next user must not inherit them.
+    try {
+      Get.find<LocalCacheService>().clear();
     } catch (_) {}
     // Drop stale in-memory feature controllers.
     _resetControllers();

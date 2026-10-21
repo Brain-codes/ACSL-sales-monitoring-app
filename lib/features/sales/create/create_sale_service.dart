@@ -105,7 +105,12 @@ class CreateSaleService {
   }
 
   Future<SupabaseApiResponse<dynamic>> createSale(Map<String, dynamic> payload) {
-    return _supabase.callEdgeFunction('create-sale', body: payload);
+    // A hung request must not hold the agent: a timeout throws, and the
+    // caller queues the sale. Safe — the server recognises a retry by its
+    // transaction id.
+    return _supabase
+        .callEdgeFunction('create-sale', body: payload)
+        .timeout(const Duration(seconds: 30));
   }
 
   /// Update an existing (already-synced) sale. Mirrors the web

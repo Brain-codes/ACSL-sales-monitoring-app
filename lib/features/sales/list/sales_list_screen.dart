@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:stove_transaction/features/sales/create/buyer_rule_messages.dart';
 import 'package:get/get.dart';
 import 'package:go_router/go_router.dart';
 import 'package:stove_transaction/core/constants/app_colors.dart';
@@ -382,7 +383,11 @@ class _PendingSalesSectionState extends State<_PendingSalesSection> {
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: Text(
-                            failed ? 'Sync Failed' : 'Pending Sync',
+                            s.syncRefused
+                                ? 'Not Saved'
+                                : failed
+                                    ? 'Sync Failed'
+                                    : 'Pending Sync',
                             style: TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.w600,
@@ -405,10 +410,32 @@ class _PendingSalesSectionState extends State<_PendingSalesSection> {
                           const SizedBox(width: 4),
                           Expanded(
                             child: Text(
-                              s.syncError!,
+                              // Refused: the short reason; the server's full
+                              // message is in the detail sheet.
+                              s.syncRefused ? BuyerRuleMessages.r1 : s.syncError!,
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(fontSize: 11.5, color: AppColors.error),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                    if (!failed && s.maybeSameBuyer) ...[
+                      const SizedBox(height: 6),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Icon(Icons.warning_amber_rounded,
+                              size: 14, color: AppColors.warning),
+                          const SizedBox(width: 4),
+                          const Expanded(
+                            child: Text(
+                              BuyerRuleMessages.r2,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                  fontSize: 11.5, color: AppColors.warning),
                             ),
                           ),
                         ],

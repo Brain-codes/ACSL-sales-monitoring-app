@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:get/get.dart';
 import 'map_picker_screen.dart';
+import 'buyer_rule_messages.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:signature/signature.dart';
@@ -320,6 +321,26 @@ Future<void> _handleSubmitRequest(BuildContext context, CreateSaleController c) 
       builder: (_) => _SaleValidationSheet(errors: errors),
     );
     return;
+  }
+  // The number is on another sale under a different name: allowed (a family
+  // can share a phone), but confirm once before the preview.
+  if (c.phoneSharedNote.value != null) {
+    final go = await showDialog<bool>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        title: const Text('Phone number in use'),
+        content: const Text(BuyerRuleMessages.n2),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.of(dialogCtx).pop(false),
+              child: const Text('Check again')),
+          TextButton(
+              onPressed: () => Navigator.of(dialogCtx).pop(true),
+              child: const Text('Continue')),
+        ],
+      ),
+    );
+    if (go != true || !context.mounted) return;
   }
   showModalBottomSheet(
     context: context,
@@ -692,6 +713,12 @@ class _Step2Contact extends StatelessWidget {
               message: c.phoneDuplicateError.value,
               isError: true,
             )),
+        Obx(() => c.phoneDuplicateError.value != null
+            ? const SizedBox.shrink()
+            : _FieldMessage(
+                message: c.phoneSharedNote.value,
+                isWarning: true,
+              )),
         const SizedBox(height: 12),
         AppTextField(
             label: c.dictLabel('aka', 'Also known as'),
@@ -2949,24 +2976,37 @@ class _PreviewSection extends StatelessWidget {
 /// Inline message under a field. Collapses to nothing when [message] is null so
 /// the form doesn't jump around as validation comes and goes.
 class _FieldMessage extends StatelessWidget {
-  const _FieldMessage({required this.message, this.isError = false});
+  const _FieldMessage(
+      {required this.message, this.isError = false, this.isWarning = false});
 
   final String? message;
   final bool isError;
+
+  /// Advisory only: shown, never blocks (e.g. a phone shared by a family).
+  final bool isWarning;
 
   @override
   Widget build(BuildContext context) {
     final text = message;
     if (text == null || text.isEmpty) return const SizedBox.shrink();
+    final color = isError
+        ? AppColors.error
+        : isWarning
+            ? AppColors.warning
+            : AppColors.textMuted;
     return Padding(
       padding: const EdgeInsets.only(top: 6, left: 2),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Icon(
-            isError ? Icons.error_outline : Icons.info_outline,
+            isError
+                ? Icons.error_outline
+                : isWarning
+                    ? Icons.warning_amber_rounded
+                    : Icons.info_outline,
             size: 14,
-            color: isError ? AppColors.error : AppColors.textMuted,
+            color: color,
           ),
           const SizedBox(width: 6),
           Expanded(
@@ -2974,7 +3014,7 @@ class _FieldMessage extends StatelessWidget {
               text,
               style: TextStyle(
                 fontSize: 12,
-                color: isError ? AppColors.error : AppColors.textMuted,
+                color: color,
               ),
             ),
           ),
