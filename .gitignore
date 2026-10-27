@@ -52,3 +52,4 @@ app.*.map.json
 # Project-scoped credentials and CLI auth (see scripts/project-env.sh).
 # Kept out of git and out of the machine-wide credential stores.
 *.local
+.gstack/
