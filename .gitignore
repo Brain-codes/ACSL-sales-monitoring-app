@@ -53,3 +53,6 @@ app.*.map.json
 # Kept out of git and out of the machine-wide credential stores.
 *.local
 .gstack/
+
+# iOS Google Maps key (see ios/Flutter/Secrets.xcconfig)
+ios/Flutter/Secrets.xcconfig
